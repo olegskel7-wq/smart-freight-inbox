@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - JWT_SECRET=${JWT_SECRET:-defaultSecretKeyWhichIsAtLeast32BytesLong12345!}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartfreight
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - OLLAMA_URL=http://ollama:11434
+      - IMAP_HOST=${IMAP_HOST:-imap.example.com}
+      - IMAP_USER=${IMAP_USER:-inbox@example.com}
+      - IMAP_PASSWORD=${IMAP_PASSWORD:-changeme}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    networks:
+      - llm_internal
+
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_DB=smartfreight
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    # Host port 5433 matches application.yaml (avoids conflict with a local PostgreSQL on 5432).
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "smartfreight"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - llm_internal
+
+  ollama:
+    image: ollama/ollama:0.3.14
+    container_name: ollama
+    entrypoint: ["/bin/bash", "/scripts/entrypoint.sh"]
+    volumes:
+      - ollama_models:/root/.ollama
+      - ./scripts/entrypoint.sh:/scripts/entrypoint.sh:ro
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - MODEL_NAME=qwen2.5:7b
+      - ADDITIONAL_MODEL=llama3.1:8b
+      - OLLAMA_MAX_LOADED_MODELS=2
+      # RTX 5080 16GB: обе модели занимают ~10GB, остаётся 6GB — хватает на 2 параллельных вывода
+      - OLLAMA_NUM_PARALLEL=2
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 24G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - llm_internal
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - llm_internal
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=changeme
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - llm_internal
+
+volumes:
+  postgres_data:
+  ollama_models:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  llm_internal:
+    driver: bridge
