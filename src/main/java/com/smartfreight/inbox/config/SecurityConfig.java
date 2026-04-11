@@ -1,8 +1,10 @@
 package com.smartfreight.inbox.config;
 
 import com.smartfreight.inbox.security.JwtAuthenticationFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -38,18 +40,33 @@ public class SecurityConfig {
 
             // Правила авторизации — кто имеет доступ к чему
             .authorizeHttpRequests(auth -> auth
-                // /api/auth/login — публичный эндпоинт (нужен чтобы получить JWT токен)
+                // REST API login — публичный эндпоинт (нужен чтобы получить JWT токен)
                 .requestMatchers("/api/auth/**").permitAll()
                 // /actuator/health — публичный (для мониторинга и Docker health check)
                 .requestMatchers("/actuator/**").permitAll()
+                // Страница логина Thymeleaf UI — доступна без авторизации
+                .requestMatchers(HttpMethod.GET, "/", "/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/login").permitAll()
                 // Всё остальное — только для аутентифицированных пользователей с JWT
                 .anyRequest().authenticated()
             )
 
             // STATELESS — сервер не хранит сессии.
-            // Каждый запрос самодостаточен: клиент каждый раз отправляет JWT в заголовке.
-            // Это делает API масштабируемым — можно запустить много копий без общих сессий.
+            // Каждый запрос самодостаточен: JWT передаётся в заголовке или cookie.
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+            // Для браузерных запросов без JWT — редирект на /login вместо ответа 401.
+            // Для API запросов (Accept: application/json) — стандартный 401.
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint((request, response, authException) -> {
+                    String accept = request.getHeader("Accept");
+                    if (accept != null && accept.contains("text/html")) {
+                        response.sendRedirect("/login");
+                    } else {
+                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
+                    }
+                })
+            )
 
             // Регистрируем JWT-фильтр ПЕРЕД стандартным фильтром Spring Security.
             // Порядок важен: сначала проверяется JWT, потом стандартная аутентификация.

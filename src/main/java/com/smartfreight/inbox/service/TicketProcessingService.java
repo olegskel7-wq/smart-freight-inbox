@@ -8,7 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,7 +16,7 @@ import java.util.Optional;
 
 // Оркестратор AI-конвейера обработки тикетов.
 // Координирует три шага: извлечение номера (Qwen) → поиск в БД → черновик ответа (Llama).
-// Запускается асинхронно из отдельного потока (@Async), не блокируя основной поток.
+// Выполняется синхронно в потоке вызывающего (EmailIngestionService / RetryScheduler).
 @Service
 public class TicketProcessingService {
 
@@ -41,15 +40,11 @@ public class TicketProcessingService {
         this.aiDraftingService = aiDraftingService;
     }
 
-    // @Async("llmTaskExecutor") — выполняется в отдельном потоке пула LLM.
-    // Вызывающий поток не ждёт завершения (IMAP поток освобождается мгновенно).
-    @Async("llmTaskExecutor")
-
     // @Transactional — каждая итерация retry — своя транзакция.
     @Transactional
     public void process(Long ticketId) {
         MDC.put("ticketId", String.valueOf(ticketId));
-        log.info("Starting async AI processing");
+        log.info("Starting AI processing");
 
         // Цикл retry на случай оптимистической блокировки (конфликт версий в БД)
         for (int attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {

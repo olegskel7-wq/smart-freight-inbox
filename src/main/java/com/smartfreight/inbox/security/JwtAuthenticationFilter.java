@@ -2,6 +2,7 @@ package com.smartfreight.inbox.security;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -39,20 +40,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain       // оставшиеся фильтры в цепочке
     ) throws ServletException, IOException {
 
-        // Читаем заголовок "Authorization" из запроса.
-        // Клиент обязан передавать: Authorization: Bearer eyJhbGci...
+        // Пробуем получить JWT: сначала из заголовка Authorization: Bearer,
+        // затем из HttpOnly cookie "jwt" (для браузерного Thymeleaf UI).
+        String jwt = null;
         final String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            jwt = authHeader.substring(7);
+        } else if (request.getCookies() != null) {
+            for (Cookie cookie : request.getCookies()) {
+                if ("jwt".equals(cookie.getName())) {
+                    jwt = cookie.getValue();
+                    break;
+                }
+            }
+        }
 
-        // Если заголовка нет или он не начинается с "Bearer " —
-        // пропускаем запрос дальше (Security сам решит — 401 или нет)
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        if (jwt == null) {
             filterChain.doFilter(request, response);
             return;
         }
-
-        // Извлекаем сам токен: отрезаем "Bearer " (7 символов) в начале
-        // "Bearer eyJhbGci..." → "eyJhbGci..."
-        final String jwt = authHeader.substring(7);
 
         try {
             // Извлекаем email пользователя из payload'а JWT

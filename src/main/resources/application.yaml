@@ -39,11 +39,6 @@ spring:
           ssl:
             enable: true
 
-  task:
-    scheduling:
-      pool:
-        size: 10
-
 jwt:
   secret: ${JWT_SECRET:defaultSecretKeyWhichIsAtLeast32BytesLong12345!}
 

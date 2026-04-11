@@ -22,6 +22,19 @@ public class JwtService {
     // Время жизни JWT токена: 24 часа в миллисекундах
     private static final long JWT_EXPIRATION = 86400000;
 
+    // Создать JWT токен для пользователя с указанным email.
+    // Используется в AuthService после успешной проверки пароля.
+    public String generateToken(String email) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + JWT_EXPIRATION);
+        return Jwts.builder()
+                .subject(email)
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(getSigningKey())
+                .compact();
+    }
+
     // Извлечь email пользователя из JWT токена
     // Это делается путём парсинга payload'а (тела) токена
     public String extractUsername(String token) {
