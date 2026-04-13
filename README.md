@@ -35,6 +35,14 @@ Or in PowerShell:
 
 The app starts on **http://localhost:8080**
 
+### Real IMAP (Mailtrap / Outlook) for LLM tests
+
+Configure `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` in your IntelliJ Run Configuration (no code changes). Full steps: [docs/IMAP_REAL_MAIL_SETUP.md](docs/IMAP_REAL_MAIL_SETUP.md). Optional pre-check:
+
+```powershell
+.\scripts\verify-imap-ready.ps1
+```
+
 ---
 
 ## Demo Access
