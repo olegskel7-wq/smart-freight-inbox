@@ -44,6 +44,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()
                 // /actuator/health — публичный (для мониторинга и Docker health check)
                 .requestMatchers("/actuator/**").permitAll()
+                // /admin/** — доступно только с localhost (фильтрация внутри AdminController)
+                .requestMatchers("/admin/**").permitAll()
                 // Страница логина Thymeleaf UI — доступна без авторизации
                 .requestMatchers(HttpMethod.GET, "/", "/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/login").permitAll()

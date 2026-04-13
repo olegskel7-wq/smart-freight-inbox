@@ -1,5 +1,10 @@
 # Real IMAP for LLM testing (no code changes)
 
+> **Security note:** Never commit credentials to git.
+> The files `.run/InboxApplication.run.xml` and `run-gmail.ps1` may contain IMAP passwords —
+> both are listed in `.gitignore` and must not be added with `git add -f`.
+> Store secrets only in OS environment variables or a local `.env` (also gitignored).
+
 This guide matches the project plan: enable IMAP by environment variables only. Code paths: [`application.yaml`](../src/main/resources/application.yaml) and [`ImapConfig.java`](../src/main/java/com/smartfreight/inbox/config/ImapConfig.java).
 
 ## Provider choice (recommended: Mailtrap)

@@ -57,8 +57,12 @@ public class ImapConfig {
         }
 
         // Собираем URL подключения IMAPS: imaps://пользователь:пароль@хост:порт/INBOX
-        // IMAPS = IMAP + SSL/TLS (зашифрованное соединение)
-        String url = String.format("imaps://%s:%s@%s:%d/INBOX", username, password, host, port);
+        // Логин и пароль URL-кодируются: '@' в email-адресе иначе ломает парсинг URL
+        String encodedUser = java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        String encodedPassword = java.net.URLEncoder.encode(password, java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        String url = String.format("imaps://%s:%s@%s:%d/INBOX", encodedUser, encodedPassword, host, port);
 
         // Строим конвейер данных через DSL (Domain Specific Language)
         return IntegrationFlow
@@ -68,14 +72,21 @@ public class ImapConfig {
                 .from(Mail.imapIdleAdapter(url)
                         // Свойства JavaMail для IMAP-соединения
                         .javaMailProperties(p -> {
-                            // Таймаут установки соединения: 10 секунд
-                            p.put("mail.imap.connectiontimeout", "10000");
-                            // Таймаут чтения: 60 секунд
-                            p.put("mail.imap.timeout", "60000");
-                            // Интервал keepalive: 60 секунд (предотвращает разрыв неактивных соединений)
-                            p.put("mail.imap.keepalive.interval", "60000");
-                            // Включаем SSL/TLS (обязательно для порта 993)
-                            p.put("mail.imap.ssl.enable", "true");
+                            p.put("mail.store.protocol", "imaps");
+                            // Явно передаём учётные данные — Jakarta Mail не извлекает их из imaps:// URL
+                            p.put("mail.imaps.user", username);
+                            p.put("mail.imaps.password", password);
+                            p.put("mail.imaps.auth", "true");
+                            p.put("mail.imaps.connectiontimeout", "10000");
+                            p.put("mail.imaps.timeout", "60000");
+                            p.put("mail.imaps.keepalive.interval", "60000");
+                            p.put("mail.imaps.ssl.enable", "true");
+                            // Доверяем только конкретному IMAP-хосту, не всем сертификатам
+                            p.put("mail.imaps.ssl.trust", host);
+                            // Отключаем частичную загрузку: без этого тело письма читается лениво
+                            // и при переключении из IDLE-режима возникает FolderClosedException
+                            p.put("mail.imaps.partialfetch", "false");
+                            p.put("mail.imaps.fetchsize", "1048576");
                         })
                         // Помечаем письма как "Прочитанные" на сервере после получения
                         .shouldMarkMessagesAsRead(true)

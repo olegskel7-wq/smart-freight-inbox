@@ -15,6 +15,8 @@ import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 // Точка входа для входящих писем: получает MimeMessage из IMAP IDLE канала,
@@ -42,6 +44,22 @@ public class EmailIngestionService {
     @Transactional
     public void processIncomingEmail(MimeMessage mimeMessage) {
         try {
+            // Сразу копируем всё письмо в память — IMAP доставляет MimeMessage как ссылку на сервер,
+            // и при попытке читать тело позже соединение уже закрыто (FolderClosedException).
+            final int MAX_EMAIL_BYTES = 10 * 1024 * 1024; // 10 MB
+            int reportedSize = mimeMessage.getSize();
+            if (reportedSize > MAX_EMAIL_BYTES) {
+                log.warn("Email too large ({} bytes), skipping to protect heap memory", reportedSize);
+                return;
+            }
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            mimeMessage.writeTo(baos);
+            if (baos.size() > MAX_EMAIL_BYTES) {
+                log.warn("Email serialized size {} bytes exceeds 10 MB limit, skipping", baos.size());
+                return;
+            }
+            mimeMessage = new MimeMessage(null, new ByteArrayInputStream(baos.toByteArray()));
+
             // Читаем уникальный идентификатор письма из заголовка Message-ID (стандарт RFC 2822)
             String[] messageIds = mimeMessage.getHeader("Message-ID");
 

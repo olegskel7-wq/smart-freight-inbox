@@ -1,5 +1,9 @@
 HELP.md
 .env
+# IntelliJ run configs with secrets (IMAP passwords)
+.run/
+# Local launch script with secrets
+run-gmail.ps1
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
