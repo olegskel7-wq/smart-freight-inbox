@@ -23,6 +23,10 @@ public class WebClientConfig {
     @Value("${ollama.base-url:http://localhost:11434}")
     private String ollamaBaseUrl;
 
+    // URL внешнего сервиса портовых статусов
+    @Value("${port.service.url:http://localhost:9000}")
+    private String portServiceUrl;
+
     // WebClient bean для HTTP запросов к Ollama
     // Используется в AiExtractionService и AiDraftingService (Phase 2)
     @Bean
@@ -60,6 +64,22 @@ public class WebClientConfig {
         // Собираем WebClient
         return WebClient.builder()
                 .baseUrl(ollamaBaseUrl)
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .build();
+    }
+
+    // WebClient для запросов к port-service (быстрый, короткие таймауты — это не LLM)
+    @Bean
+    public WebClient portServiceWebClient() {
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5_000)
+                .doOnConnected(conn -> conn
+                        .addHandlerLast(new ReadTimeoutHandler(10, TimeUnit.SECONDS))
+                        .addHandlerLast(new WriteTimeoutHandler(5, TimeUnit.SECONDS))
+                );
+
+        return WebClient.builder()
+                .baseUrl(portServiceUrl)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }

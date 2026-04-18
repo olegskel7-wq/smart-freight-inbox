@@ -47,6 +47,10 @@ ollama:
   extraction-model: qwen2.5:7b
   drafting-model: llama3.1:8b
 
+port:
+  service:
+    url: ${PORT_SERVICE_URL:http://localhost:9000}
+
 management:
   endpoints:
     web:

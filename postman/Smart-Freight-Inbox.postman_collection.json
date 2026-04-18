@@ -1,0 +1,356 @@
+{
+  "info": {
+    "_postman_id": "smart-freight-inbox-v1",
+    "name": "Smart Freight Inbox — API Collection",
+    "description": "Complete API test collection for Smart Freight Inbox v1 demo. Includes auth, tickets (REST), admin endpoints, and health checks.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (API)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.set('auth_token', pm.response.json().token || 'demo123');",
+                  "    console.log('✓ Login successful');",
+                  "} else {",
+                  "    console.log('✗ Login failed: ' + pm.response.status);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"operator@smartfreight.com\",\n  \"password\": \"demo123\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/auth/login",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tickets (REST API)",
+      "item": [
+        {
+          "name": "List all tickets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/tickets",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "tickets"]
+            }
+          }
+        },
+        {
+          "name": "Get ticket by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/tickets/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "tickets", "1"]
+            }
+          }
+        },
+        {
+          "name": "Approve ticket (mark CLOSED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/tickets/1/approve",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "tickets", "1", "approve"]
+            }
+          }
+        },
+        {
+          "name": "Reject ticket (mark RETRY_LATER)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/tickets/1/reject",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "tickets", "1", "reject"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Thymeleaf UI (Form)",
+      "item": [
+        {
+          "name": "Login page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/login",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["login"]
+            }
+          }
+        },
+        {
+          "name": "Login form (POST)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Проверяем редирект на /tickets",
+                  "if (pm.response.history.length > 0) {",
+                  "    console.log('✓ Login redirected to ' + pm.response.history[0].url);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "email",
+                  "value": "operator@smartfreight.com"
+                },
+                {
+                  "key": "password",
+                  "value": "demo123"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:8080/login",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["login"]
+            }
+          }
+        },
+        {
+          "name": "List tickets (HTML)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/tickets",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["tickets"]
+            }
+          }
+        },
+        {
+          "name": "Ticket detail (HTML)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/tickets/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["tickets", "1"]
+            }
+          }
+        },
+        {
+          "name": "Update draft & close",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "draftReply",
+                  "value": "Updated draft response by operator"
+                },
+                {
+                  "key": "action",
+                  "value": "close"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:8080/tickets/1/draft",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["tickets", "1", "draft"]
+            }
+          }
+        },
+        {
+          "name": "Close ticket",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": []
+            },
+            "url": {
+              "raw": "http://localhost:8080/tickets/1/close",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["tickets", "1", "close"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": []
+            },
+            "url": {
+              "raw": "http://localhost:8080/logout",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Reprocess tickets (localhost only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/admin/reprocess",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["admin", "reprocess"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Observability",
+      "item": [
+        {
+          "name": "Health check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const health = pm.response.json();",
+                  "console.log('Status: ' + health.status);",
+                  "console.log('Ollama: ' + (health.components?.ollama?.status || 'unknown'));",
+                  "console.log('DB: ' + (health.components?.db?.status || 'unknown'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/actuator/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["actuator", "health"]
+            }
+          }
+        },
+        {
+          "name": "Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/actuator/prometheus",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["actuator", "prometheus"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
