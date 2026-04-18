@@ -25,7 +25,7 @@ class TicketProcessingServiceTest {
     private EmailTicketRepository emailTicketRepository;
 
     @Test
-    void testContainerExtraction_andDraftGeneration() throws InterruptedException {
+    void testContainerExtraction_andDraftGeneration() {
 
         // ── Подготовка: создаём тикет с текстом, содержащим номер контейнера ──────
         // Номер MSCU1234567 совпадает с записью из V2__seed_demo_containers.sql —
@@ -44,11 +44,7 @@ class TicketProcessingServiceTest {
         // ── Запуск: передаём только ID (паттерн Pass ID, not entity) ─────────────
         ticketProcessingService.process(saved.getId());
 
-        // ── Ожидание: Ollama может отвечать до 30 сек, ждём с запасом ────────────
-        System.out.println("[TEST] Waiting for async processing (up to 30 sec)...");
-        Thread.sleep(30_000);
-
-        // ── Результат: перечитываем тикет из БД ──────────────────────────────────
+        // ── Результат: перечитываем тикет из БД (process() синхронный до завершения LLM) ──
         EmailTicket result = emailTicketRepository.findById(saved.getId()).orElseThrow();
 
         System.out.println("\n========================================");
@@ -69,7 +65,7 @@ class TicketProcessingServiceTest {
         assertNotEquals(TicketStatus.NEW, result.getStatus(),
                 "Processing should have started");
         assertNotEquals(TicketStatus.PROCESSING, result.getStatus(),
-                "Processing should have completed within 30 seconds");
+                "Processing should have completed before process() returned");
 
         // Если Ollama работает — проверяем полный успех
         if (result.getStatus() == TicketStatus.DRAFT_READY) {

@@ -2,6 +2,9 @@ spring:
   application:
     name: smart-freight-inbox
 
+  thymeleaf:
+    cache: false
+
   datasource:
     url: jdbc:postgresql://localhost:5433/smartfreight
     username: postgres
@@ -38,9 +41,6 @@ spring:
           timeout: 60000
           ssl:
             enable: true
-
-jwt:
-  secret: ${JWT_SECRET:defaultSecretKeyWhichIsAtLeast32BytesLong12345!}
 
 ollama:
   base-url: ${OLLAMA_URL:http://localhost:11434}

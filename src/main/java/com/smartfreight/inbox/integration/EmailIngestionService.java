@@ -14,6 +14,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -100,10 +102,15 @@ public class EmailIngestionService {
                 log.info("Email ingested: ticket ID={}, subject='{}'",
                         saved.getId(), saved.getSubject());
 
-                // Запускаем AI-конвейер асинхронно (не блокируем IMAP поток).
-                // process() помечен @Async — возвращает управление немедленно.
-                // Передаём только ID (не объект) — паттерн "Pass ID, not entity".
-                ticketProcessingService.process(saved.getId());
+                // AI-конвейер в том же потоке, но после commit транзакции приёма письма:
+                // не держим соединение с БД открытым на время вызовов Ollama.
+                final Long ticketId = saved.getId();
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        ticketProcessingService.process(ticketId);
+                    }
+                });
 
             } catch (DataIntegrityViolationException e) {
                 // Race condition: два потока одновременно прошли проверку findByMessageId

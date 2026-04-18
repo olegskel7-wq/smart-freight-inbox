@@ -12,7 +12,7 @@
 <nav class="navbar navbar-dark bg-dark">
     <div class="container-fluid">
         <a class="navbar-brand fw-bold" href="/tickets">← Smart Freight Inbox</a>
-        <form method="post" action="/logout">
+        <form method="post" th:action="@{/logout}">
             <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
         </form>
     </div>
@@ -76,21 +76,47 @@
         </div>
     </div>
 
-    <!-- AI Draft Reply -->
-    <div class="card mb-4 shadow-sm" th:if="${ticket.draftReply != null}">
+    <!-- AI Draft Reply (editable) -->
+    <div class="card mb-4 shadow-sm" th:if="${ticket.status.name() != 'CLOSED'}">
         <div class="card-header fw-semibold d-flex align-items-center gap-2">
             AI Draft Reply
-            <span class="badge bg-success small">Ready to send</span>
+            <span th:if="${ticket.draftReply != null}" class="badge bg-success small">Ready to send</span>
+            <span th:if="${ticket.draftReply == null}" class="badge bg-warning text-dark small">Not generated yet</span>
+            <span class="ms-auto text-muted small">Editable — adjust before closing</span>
         </div>
-        <div class="card-body bg-light">
-            <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.875rem;"
-                 th:text="${ticket.draftReply}">—</pre>
+        <div class="card-body">
+            <form method="post" th:action="@{/tickets/{id}/draft(id=${ticket.id})}">
+                <textarea class="form-control mb-3"
+                          name="draftReply"
+                          rows="12"
+                          style="font-family: monospace; font-size: 0.875rem;"
+                          th:text="${ticket.draftReply ?: ''}"
+                          placeholder="Type or paste a reply here…"></textarea>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" name="action" value="save"
+                            class="btn btn-primary">
+                        Save draft
+                    </button>
+                    <button type="submit" name="action" value="close"
+                            class="btn btn-success"
+                            onclick="return confirm('Save and close ticket #[[${ticket.id}]]?')">
+                        Save &amp; Close
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <div class="card mb-4 shadow-sm border-warning" th:if="${ticket.draftReply == null and ticket.status.name() != 'CLOSED'}">
-        <div class="card-body text-warning-emphasis bg-warning-subtle">
-            Draft reply not yet generated. Status: <strong th:text="${ticket.status}">NEW</strong>
+    <!-- Read-only view for closed tickets -->
+    <div class="card mb-4 shadow-sm" th:if="${ticket.status.name() == 'CLOSED'}">
+        <div class="card-header fw-semibold d-flex align-items-center gap-2">
+            Final Reply
+            <span class="badge bg-secondary small">Closed</span>
+        </div>
+        <div class="card-body bg-light">
+            <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.875rem;"
+                 th:text="${ticket.draftReply ?: '(no reply was saved)'}">—</pre>
         </div>
     </div>
 
@@ -101,9 +127,9 @@
         <form th:if="${ticket.status.name() != 'CLOSED'}"
               method="post"
               th:action="@{/tickets/{id}/close(id=${ticket.id})}">
-            <button type="submit" class="btn btn-secondary"
-                    onclick="return confirm('Mark ticket #[[${ticket.id}]] as closed?')">
-                Mark as Closed
+            <button type="submit" class="btn btn-outline-secondary"
+                    onclick="return confirm('Close ticket #[[${ticket.id}]] without changes to the draft?')">
+                Close without changes
             </button>
         </form>
     </div>

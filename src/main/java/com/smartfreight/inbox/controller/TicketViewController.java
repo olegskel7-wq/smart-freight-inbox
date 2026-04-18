@@ -3,9 +3,6 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.service.AuthService;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,19 +14,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 // Thymeleaf UI контроллер — обслуживает браузерный интерфейс оператора.
-// Использует JWT cookie для аутентификации (устанавливается при POST /login).
-// REST API (/api/**) остаётся нетронутым для программного доступа.
+// Аутентификация через стандартный Spring Security form login (сессия в cookie).
 @Controller
 public class TicketViewController {
 
-    private final AuthService authService;
     private final EmailTicketRepository emailTicketRepository;
 
-    public TicketViewController(AuthService authService,
-                                EmailTicketRepository emailTicketRepository) {
-        this.authService = authService;
+    public TicketViewController(EmailTicketRepository emailTicketRepository) {
         this.emailTicketRepository = emailTicketRepository;
     }
 
@@ -45,44 +39,54 @@ public class TicketViewController {
         return "login";
     }
 
-    // POST /login — проверить учётные данные, установить JWT cookie, перейти к тикетам
-    @PostMapping("/login")
-    public String doLogin(@RequestParam String email,
-                          @RequestParam String password,
-                          HttpServletResponse response,
-                          Model model) {
-        try {
-            String token = authService.login(email, password);
-            Cookie jwtCookie = new Cookie("jwt", token);
-            jwtCookie.setHttpOnly(true);
-            jwtCookie.setPath("/");
-            jwtCookie.setMaxAge(86400); // 24 часа
-            response.addCookie(jwtCookie);
-            return "redirect:/tickets";
-        } catch (IllegalArgumentException e) {
-            model.addAttribute("error", "Неверный email или пароль");
-            return "login";
-        }
-    }
+    // Колонки, по которым разрешена сортировка (whitelist).
+    // Любое другое значение sort игнорируется и заменяется на createdAt — защита от
+    // случайного передачи имени поля, которого нет в JPA-сущности (PropertyReferenceException).
+    private static final Set<String> SORTABLE_COLUMNS = Set.of(
+            "id", "senderEmail", "subject", "extractedContainerNumber",
+            "status", "createdAt", "updatedAt"
+    );
+    private static final String DEFAULT_SORT = "createdAt";
 
-    // POST /logout — удалить JWT cookie, перейти на логин
-    @PostMapping("/logout")
-    public String doLogout(HttpServletResponse response) {
-        Cookie jwtCookie = new Cookie("jwt", "");
-        jwtCookie.setHttpOnly(true);
-        jwtCookie.setPath("/");
-        jwtCookie.setMaxAge(0);
-        response.addCookie(jwtCookie);
-        return "redirect:/login";
-    }
-
-    // GET /tickets — список всех тикетов, отсортированных по дате (новые сверху)
+    // GET /tickets — список тикетов с серверной сортировкой и фильтром по статусу.
+    //   ?sort=<column>     — какая колонка сортируется (whitelist выше)
+    //   ?dir=asc|desc      — направление (по умолчанию desc — свежие сверху)
+    //   ?status=DRAFT_READY — опциональный фильтр по статусу
     @GetMapping("/tickets")
-    public String listTickets(Model model) {
-        List<EmailTicket> tickets = emailTicketRepository
-                .findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
+    public String listTickets(@RequestParam(name = "sort", defaultValue = DEFAULT_SORT) String sort,
+                              @RequestParam(name = "dir", defaultValue = "desc") String dir,
+                              @RequestParam(name = "status", required = false) String status,
+                              Model model) {
+
+        String safeSort = SORTABLE_COLUMNS.contains(sort) ? sort : DEFAULT_SORT;
+        Sort.Direction direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        Sort sortSpec = Sort.by(direction, safeSort);
+
+        List<EmailTicket> tickets;
+        TicketStatus statusFilter = parseStatusOrNull(status);
+        if (statusFilter != null) {
+            tickets = emailTicketRepository.findByStatus(statusFilter, sortSpec);
+        } else {
+            tickets = emailTicketRepository.findAll(sortSpec);
+        }
+
         model.addAttribute("tickets", tickets);
+        model.addAttribute("sort", safeSort);
+        model.addAttribute("dir", direction.name().toLowerCase());
+        model.addAttribute("statusFilter", statusFilter == null ? "" : statusFilter.name());
+        model.addAttribute("allStatuses", TicketStatus.values());
         return "tickets";
+    }
+
+    private TicketStatus parseStatusOrNull(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return TicketStatus.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     // GET /tickets/{id} — детали тикета: письмо, контейнер, черновик ответа
@@ -104,5 +108,37 @@ public class TicketViewController {
             emailTicketRepository.save(ticket);
         });
         return "redirect:/tickets";
+    }
+
+    // POST /tickets/{id}/draft — оператор отредактировал черновик ответа.
+    // Параметр action: "save"  — только сохранить и вернуться к деталям;
+    //                  "close" — сохранить отредактированный текст и сразу закрыть тикет.
+    // Закрытые тикеты редактировать нельзя — возврат на список без изменений.
+    @Transactional
+    @PostMapping("/tickets/{id}/draft")
+    public String updateDraft(@PathVariable Long id,
+                              @RequestParam("draftReply") String draftReply,
+                              @RequestParam(name = "action", defaultValue = "save") String action) {
+        EmailTicket ticket = emailTicketRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + id));
+
+        if (ticket.getStatus() == TicketStatus.CLOSED) {
+            return "redirect:/tickets/" + id;
+        }
+
+        ticket.setDraftReply(draftReply);
+        if ("close".equalsIgnoreCase(action)) {
+            ticket.setStatus(TicketStatus.CLOSED);
+        } else if (ticket.getStatus() != TicketStatus.DRAFT_READY) {
+            // Если оператор сам впечатал ответ для тикета без сгенерированного черновика —
+            // считаем, что черновик готов (статус NEW/PROCESSING/RETRY_LATER/FAILED → DRAFT_READY).
+            ticket.setStatus(TicketStatus.DRAFT_READY);
+        }
+        ticket.setUpdatedAt(LocalDateTime.now());
+        emailTicketRepository.save(ticket);
+
+        return "close".equalsIgnoreCase(action)
+                ? "redirect:/tickets"
+                : "redirect:/tickets/" + id;
     }
 }

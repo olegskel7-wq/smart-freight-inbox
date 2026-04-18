@@ -57,7 +57,7 @@ Incoming email
  Save as EmailTicket (status: NEW)
       │
       ▼
- Async AI pipeline (@Async thread pool)
+ Synchronous AI pipeline (same thread, after commit)
       │
       ├─► Qwen 2.5 (Ollama): extract container number
       │         │
@@ -71,7 +71,7 @@ Incoming email
          Save draft (status: DRAFT_READY)
                 │
                 ▼
-         Operator reviews via Angular UI
+         Operator reviews via Thymeleaf UI
                 │
          ┌──────┴──────┐
          ▼             ▼
@@ -97,9 +97,9 @@ This is intentional: LLMs can make mistakes, and in logistics, a wrong reply abo
 ### Resilient Processing
 
 - If Ollama is temporarily unavailable, regex-based fallback extracts the container number directly from the email body
-- Failed tickets are automatically retried via `RetryScheduler`
+- Tickets rejected by the operator are retried via `RetryScheduler`
 - Each ticket tracks its retry count and processing status
-- Optimistic locking prevents race conditions when multiple async workers touch the same ticket
+- Optimistic locking protects the ticket row in case of concurrent updates
 
 ### Deduplication
 
@@ -129,8 +129,9 @@ IMAP can redeliver the same email after a reconnect. The system deduplicates by 
 - **Testcontainers** — integration tests with real PostgreSQL
 
 ### Frontend (v1)
-- **Angular 17** — operator dashboard (standalone components)
-- Login, ticket list with status filter, draft review, approve/reject actions
+- **Thymeleaf + Bootstrap 5** — server-side rendered operator UI
+- Login (JWT stored in httpOnly cookie), ticket list, ticket detail, close action
+- REST API (`/api/tickets`, `/api/auth/login`) available in parallel for external clients
 
 ---
 
@@ -149,12 +150,12 @@ Smart Freight Inbox combines **local AI**, **human oversight**, and **structured
 
 | Version | Status | Description |
 |---------|--------|-------------|
-| **v1 (MVP)** | In development | Monolith: IMAP + async AI pipeline + PostgreSQL + Angular UI |
+| **v1 (MVP)** | Feature-complete for demo | Monolith: IMAP IDLE + synchronous AI pipeline + PostgreSQL + Thymeleaf UI + REST API |
 | **v2** | Planned | Scale-out: RabbitMQ + Redis + Microsoft Graph API + multi-tenant |
 
 **v1** is a university capstone project demonstrating real-world applicability of local LLMs in enterprise workflows.
 
-**v2** extends the architecture toward production-readiness: replacing in-process async with message queues, adding multi-tenancy so multiple freight companies can use the same deployment, and replacing IMAP with Microsoft Graph API for better reliability and Office 365 integration.
+**v2** extends the architecture toward production-readiness: replacing in-process synchronous handling with RabbitMQ-backed workers, adding multi-tenancy so multiple freight companies can use the same deployment, and replacing IMAP with Microsoft Graph API for better reliability and Office 365 integration.
 
 ---
 

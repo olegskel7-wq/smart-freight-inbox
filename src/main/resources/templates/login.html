@@ -18,18 +18,19 @@
         <div class="card-body p-4">
             <h5 class="card-title mb-4">Sign In</h5>
 
-            <div th:if="${error}" class="alert alert-danger py-2" th:text="${error}"></div>
+            <div th:if="${param.error}" class="alert alert-danger py-2">Неверный email или пароль</div>
+            <div th:if="${param.logout}" class="alert alert-success py-2">Вы вышли из системы</div>
 
-            <form method="post" action="/login">
+            <form method="post" th:action="@{/login}">
                 <div class="mb-3">
                     <label for="email" class="form-label">Email</label>
-                    <input type="email" class="form-control" id="email" name="email"
-                           placeholder="operator@smartfreight.com" required autofocus>
+                    <input type="text" class="form-control" id="email" name="email"
+                           placeholder="operator@smartfreight.com" autofocus>
                 </div>
                 <div class="mb-4">
                     <label for="password" class="form-label">Password</label>
                     <input type="password" class="form-control" id="password" name="password"
-                           placeholder="••••••••" required>
+                           placeholder="••••••••">
                 </div>
                 <button type="submit" class="btn btn-primary w-100">Sign In</button>
             </form>

@@ -13,7 +13,7 @@
 
 | Версия | Статус | Описание |
 |--------|--------|----------|
-| **v1** | В разработке | MVP монолит: IMAP + Async + PostgreSQL + Ollama |
+| **v1** | Готово к демо | MVP монолит: IMAP + синхронный пайплайн + PostgreSQL + Ollama + Thymeleaf UI + REST API |
 | **v2** | Запланировано | Production: RabbitMQ + Redis + Graph API + Multi-tenant |
 
 ### Главное правило
@@ -23,19 +23,21 @@
 
 ---
 
-## Раздел 2 — Что уже сделано в v1 (Недели 1–2)
+## Раздел 2 — Что уже сделано в v1 (Недели 1–3)
 
 ### Стек
 
 - Java 17, **Spring Boot 4.0.5**, Spring Data JPA, Flyway
-- PostgreSQL (схема: `V1__init.sql`, демо-данные: `V2__seed_demo_containers.sql`)
+- PostgreSQL (схема: `V1__init.sql`, сиды: `V2__seed_demo_containers.sql`, `V3__fix_demo_user_password.sql`, `V4__seed_test_tickets.sql`)
 - Spring Integration IMAP IDLE (`ImapConfig`, `EmailIngestionService`)
 - Ollama HTTP: Qwen 2.5 (извлечение), Llama 3.1 (черновик) — `WebClientConfig`
-- Spring Security + JWT валидация (`JwtService`, `JwtAuthenticationFilter`, `SecurityConfig`)
-- `@Async` пул (`AsyncConfig`), `TicketProcessingService`
-- `RetryScheduler` — повторная обработка `RETRY_LATER` тикетов
+- Spring Security + JWT (`JwtService`, `JwtAuthenticationFilter`, `SecurityConfig`), httpOnly cookie для UI, заголовок `Authorization` для REST
+- **Синхронная** обработка: `TicketProcessingService.process(ticketId)` в потоке вызывающего, запуск через `TransactionSynchronization.afterCommit()` после приёма письма
+- `RetryScheduler` — повторная обработка тикетов в статусе `RETRY_LATER` (оператор отклонил)
+- Thymeleaf UI (`login.html`, `tickets.html`, `ticket-detail.html`) + Bootstrap 5
+- REST API: `AuthController`, `TicketController` (`/api/tickets` list/get/approve/reject), `AdminController` (`/admin/reprocess`, только localhost)
 - `OllamaHealthIndicator`, Actuator, Prometheus, Grafana (в Docker Compose)
-- Testcontainers + один тест: `TicketProcessingServiceTest`
+- Testcontainers + базовый тест: `TicketProcessingServiceTest`
 
 ### Структура пакетов (v1)
 
@@ -43,11 +45,12 @@
 com.smartfreight.inbox
 ├── InboxApplication
 ├── actuator/         OllamaHealthIndicator
-├── config/           AsyncConfig, ImapConfig, SecurityConfig, WebClientConfig
+├── config/           ImapConfig, SecurityConfig, WebClientConfig
+├── controller/       AuthController, TicketController, TicketViewController, AdminController
 ├── entity/           EmailTicket, Container, User, enums/TicketStatus
 ├── repository/       EmailTicketRepository, ContainerRepository, UserRepository
 ├── integration/      EmailIngestionService
-├── service/          AiExtractionService, AiDraftingService,
+├── service/          AuthService, AiExtractionService, AiDraftingService,
 │                     ContainerLookupService, TicketProcessingService
 ├── scheduler/        RetryScheduler
 ├── security/         JwtService, JwtAuthenticationFilter
@@ -57,25 +60,26 @@ com.smartfreight.inbox
 ### Статусы тикета (TicketStatus)
 
 ```
-NEW → PROCESSING → DRAFT_READY → [оператор закрывает → CLOSED]
-                ↘ FAILED
-                ↘ RETRY_LATER → PROCESSING (RetryScheduler)
+NEW → PROCESSING → DRAFT_READY → CLOSED (approve)
+                ↘ FAILED          ↘ RETRY_LATER (reject) → PROCESSING (RetryScheduler)
 ```
 
-### Демо-пользователь (из V2__seed_demo_containers.sql)
+### Демо-пользователь
 
 - Email: `operator@smartfreight.com`
-- Пароль: `demo123` (хранится как BCrypt-хэш)
+- Пароль: `demo123` (BCrypt-хэш; в `AuthController` пока есть временный bypass для демо — удалить после защиты)
 
 ---
 
-## Раздел 3 — Оставшиеся шаги v1 (Недели 3–4)
+## Раздел 3 — Оставшиеся шаги v1 (Неделя 4)
 
-### Неделя 3 — REST API (5 шагов, 5 файлов)
+> Шаги 1–13 выполнены (Неделя 3). Ниже — архив описаний и открытые пункты.
+
+### Неделя 3 — REST API (✅ готово)
 
 ---
 
-#### Шаг 1 — `JwtService.java` — добавить `generateToken()`
+#### Шаг 1 — `JwtService.java` — добавить `generateToken()` ✅
 
 **Файл:** `src/main/java/com/smartfreight/inbox/security/JwtService.java`
 **Тип:** правка существующего файла (additive)
@@ -99,7 +103,7 @@ public String generateToken(String email) {
 
 ---
 
-#### Шаг 2 — `TicketStatus.java` — добавить `CLOSED`
+#### Шаг 2 — `TicketStatus.java` — добавить `CLOSED` ✅
 
 **Файл:** `src/main/java/com/smartfreight/inbox/entity/enums/TicketStatus.java`
 **Тип:** правка существующего enum (additive)
@@ -113,7 +117,7 @@ CLOSED  // оператор одобрил черновик и закрыл ти
 
 ---
 
-#### Шаг 3 — `AuthService.java` — новый файл
+#### Шаг 3 — `AuthService.java` — новый файл ✅
 
 **Файл:** `src/main/java/com/smartfreight/inbox/service/AuthService.java`
 **Тип:** новый файл
@@ -129,7 +133,7 @@ CLOSED  // оператор одобрил черновик и закрыл ти
 
 ---
 
-#### Шаг 4 — `AuthController.java` — новый файл
+#### Шаг 4 — `AuthController.java` — новый файл ✅
 
 **Файл:** `src/main/java/com/smartfreight/inbox/controller/AuthController.java`
 **Тип:** новый файл
@@ -145,7 +149,7 @@ HTTP 200 OK  /  HTTP 401 если неверные данные
 
 ---
 
-#### Шаг 5 — `TicketController.java` — новый файл
+#### Шаг 5 — `TicketController.java` — новый файл ✅
 
 **Файл:** `src/main/java/com/smartfreight/inbox/controller/TicketController.java`
 **Тип:** новый файл
@@ -162,103 +166,18 @@ HTTP 200 OK  /  HTTP 401 если неверные данные
 
 ---
 
-### Неделя 3 — Angular UI (8 шагов, новый проект)
+### Неделя 3 — UI (вместо Angular выбран Thymeleaf) ✅
 
-**Расположение:** папка `smart-freight-ui/` рядом с `inbox/` (не внутри Spring Boot)
+**Решение:** для демо выбран **Thymeleaf + Bootstrap 5** — проще, ничего не собирать.
+Шаблоны: `src/main/resources/templates/` (`login.html`, `tickets.html`, `ticket-detail.html`).
+Контроллер: `TicketViewController` (JWT в httpOnly cookie).
 
-```
-C:\Users\olegs\Downloads\
-├── inbox\inbox\          ← Spring Boot бэкенд
-└── smart-freight-ui\     ← Angular фронтенд (новый проект)
-```
-
----
-
-#### Шаг 6 — Scaffold Angular проекта
-
-```bash
-ng new smart-freight-ui --standalone --routing --style=scss
-```
-
-**Версия:** Angular 17+ (standalone компоненты, без NgModules)
+Шаги 6–13 (Angular scaffold, AuthService, AuthGuard, TicketListComponent и т.д.) **сняты**.
+Если позже потребуется Angular — см. старую версию этого файла в git-истории.
 
 ---
 
-#### Шаг 7 — `environment.ts`
-
-**Файл:** `src/environments/environment.ts`
-
-```typescript
-export const environment = {
-  production: false,
-  apiUrl: 'http://localhost:8080'
-};
-```
-
----
-
-#### Шаг 8 — `AuthService`
-
-**Файл:** `src/app/core/auth.service.ts`
-
-Методы:
-- `login(email, password)` → POST `/api/auth/login` → сохранить токен
-- `saveToken(token)` → `localStorage.setItem('jwt', token)`
-- `getToken()` → `localStorage.getItem('jwt')`
-- `isLoggedIn()` → `!!getToken()`
-- `logout()` → `localStorage.removeItem('jwt')`
-
----
-
-#### Шаг 9 — `AuthInterceptor`
-
-**Файл:** `src/app/core/auth.interceptor.ts`
-
-Автоматически добавляет `Authorization: Bearer <token>` к каждому исходящему HTTP-запросу.
-
----
-
-#### Шаг 10 — `AuthGuard`
-
-**Файл:** `src/app/core/auth.guard.ts`
-
-Перенаправляет на `/login` если `!authService.isLoggedIn()`.
-
----
-
-#### Шаг 11 — `LoginComponent`
-
-**Файл:** `src/app/login/login.component.ts` + `.html`
-
-- Форма: поля Email + Password
-- При успехе → перейти на `/tickets`
-- При ошибке → показать сообщение «Неверный email или пароль»
-
----
-
-#### Шаг 12 — `TicketListComponent`
-
-**Файл:** `src/app/tickets/ticket-list/ticket-list.component.ts` + `.html`
-
-- Таблица тикетов: Subject, Sender, Status, Created At
-- Статус-бейдж с цветом (DRAFT_READY = зелёный, FAILED = красный, и т.д.)
-- Выпадающий фильтр по статусу
-- Клик по строке → `/tickets/{id}`
-
----
-
-#### Шаг 13 — `TicketDetailComponent`
-
-**Файл:** `src/app/tickets/ticket-detail/ticket-detail.component.ts` + `.html`
-
-- Показывает: тему, отправителя, тело письма, номер контейнера, черновик ответа
-- Кнопка **«Одобрить»** → POST `/api/tickets/{id}/approve`
-- Кнопка **«Отклонить»** → POST `/api/tickets/{id}/reject`
-- После действия → вернуться к списку
-
----
-
-### Неделя 3 — Grafana provisioning (4 шага)
+### Неделя 4 — Grafana provisioning (4 шага, открыто)
 
 ---
 
@@ -480,7 +399,7 @@ com.smartfreight.inbox.v2
 
 ### Фаза 1 — Messaging (RabbitMQ)
 
-**Цель:** заменить `@Async` `ThreadPoolTaskExecutor` на очередь с гарантированной доставкой.
+**Цель:** заменить синхронный `process()` на очередь RabbitMQ с гарантированной доставкой.
 
 Файлы:
 - `RabbitConfig.java` — конфигурация exchange, queue, bindings, DLQ
@@ -604,4 +523,4 @@ Spans:
 ---
 
 *Этот файл — живой документ. Обновляй статусы шагов по мере выполнения.*
-*Последнее обновление: начало Недели 3 (REST API не начат).*
+*Последнее обновление: Неделя 3 завершена. REST API + Thymeleaf UI + синхронный пайплайн + реальный IMAP — в репозитории.*

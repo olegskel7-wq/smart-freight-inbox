@@ -19,8 +19,8 @@ flowchart TB
     DUP -->|нет| SAVE[Сохранить EmailTicket\nstatus = NEW]
   end
 
-  subgraph PROC ["2 — AI обработка (async)"]
-    TPS[TicketProcessingService\n@Async llmTaskExecutor]
+  subgraph PROC ["2 — AI обработка (синхронно, после commit)"]
+    TPS[TicketProcessingService\n(в том же потоке IMAP)]
     ST1[Статус → PROCESSING]
     QW[Qwen 2.5 / Ollama\nизвлечь номер контейнера]
     CL[Поиск контейнера\nPostgreSQL]
@@ -38,15 +38,15 @@ flowchart TB
   end
 
   subgraph OPS ["4 — Оператор"]
-    UI[Angular UI\nПросмотр / Одобрить / Отклонить]
+    UI[Thymeleaf UI / REST API\nПросмотр / Одобрить / Отклонить]
     ST2 --> UI
   end
 
   subgraph RES ["Устойчивость"]
     RL[RETRY_LATER\nRetryScheduler]
     FL[FAILED\nручная обработка]
-    TPS -.-> RL
     TPS -.-> FL
+    UI -.->|reject| RL
   end
 ```
 
@@ -61,8 +61,8 @@ stateDiagram-v2
   RETRY_LATER --> PROCESSING : RetryScheduler
   PROCESSING --> DRAFT_READY : успех
   PROCESSING --> FAILED : неустранимая ошибка
-  PROCESSING --> RETRY_LATER : временная ошибка / очередь полна
-  DRAFT_READY --> CLOSED : оператор одобрил
+  DRAFT_READY --> DRAFT_READY : оператор отредактировал черновик
+  DRAFT_READY --> CLOSED : оператор одобрил / save & close
   DRAFT_READY --> RETRY_LATER : оператор отклонил
   FAILED --> [*] : ручное решение
   CLOSED --> [*]
@@ -75,16 +75,17 @@ stateDiagram-v2
 ```mermaid
 flowchart TB
   subgraph L4 ["Слой 4 — Потребители"]
-    UI[Operator Angular UI]
+    UI[Thymeleaf UI + REST клиенты]
   end
   subgraph L3 ["Слой 3 — API и безопасность"]
     AC[AuthController\nPOST /api/auth/login]
     TC[TicketController\nGET/POST /api/tickets]
+    TV[TicketViewController\nThymeleaf страницы]
     SEC[JWT Filter + SecurityConfig]
   end
   subgraph L2 ["Слой 2 — Домен и интеграции"]
     ING[EmailIngestionService\nIMAP IDLE]
-    TPS[TicketProcessingService\n@Async]
+    TPS[TicketProcessingService\nсинхронно]
     AI[AiExtractionService\nAiDraftingService]
   end
   subgraph L1 ["Слой 1 — Данные и инфраструктура"]
@@ -96,8 +97,10 @@ flowchart TB
 
   UI --> AC
   UI --> TC
+  UI --> TV
   AC --> SEC
   TC --> SEC
+  TV --> SEC
   SEC --> ING
   SEC --> TPS
   ING --> PG
@@ -120,7 +123,6 @@ mindmap
     actuator
       OllamaHealthIndicator
     config
-      AsyncConfig
       ImapConfig
       SecurityConfig
       WebClientConfig
@@ -149,6 +151,10 @@ mindmap
     controller
       AuthController
       TicketController
+      TicketViewController
+      AdminController
+    service
+      AuthService
     exception
       GlobalExceptionHandler
       ContainerNotFoundException
@@ -160,7 +166,7 @@ mindmap
 
 ```mermaid
 sequenceDiagram
-  participant UI as Angular UI
+  participant UI as REST Client / Browser
   participant AC as AuthController
   participant AS as AuthService
   participant UR as UserRepository
@@ -190,24 +196,27 @@ sequenceDiagram
 
 ---
 
-## 6. Навигация Angular UI
+## 6. Навигация Thymeleaf UI
 
 ```mermaid
 flowchart LR
-  START([Браузер]) --> GUARD{AuthGuard\nесть токен?}
-  GUARD -->|нет| LOGIN["/login\nLoginComponent"]
-  GUARD -->|да| LIST["/tickets\nTicketListComponent"]
+  START([Браузер]) --> GUARD{JWT cookie\nесть?}
+  GUARD -->|нет| LOGIN["GET /login\n(Thymeleaf: login.html)"]
+  GUARD -->|да| LIST["GET /tickets\n(tickets.html)"]
 
-  LOGIN -->|успех| LIST
+  LOGIN -->|POST /login\nуспех| LIST
   LOGIN -->|ошибка| LOGIN
 
-  LIST -->|выбрать тикет| DETAIL["/tickets/:id\nTicketDetailComponent"]
+  LIST -->|выбрать тикет| DETAIL["GET /tickets/{id}\n(ticket-detail.html)"]
 
-  DETAIL -->|Одобрить| APPROVE["POST /api/tickets/:id/approve\n→ CLOSED"]
-  DETAIL -->|Отклонить| REJECT["POST /api/tickets/:id/reject\n→ RETRY_LATER"]
+  DETAIL -->|Закрыть| CLOSE["POST /tickets/{id}/close\n→ CLOSED"]
+  CLOSE --> LIST
 
-  APPROVE --> LIST
-  REJECT --> LIST
+  %% Параллельно — REST API для внешних клиентов:
+  subgraph REST [REST API]
+    A1[POST /api/tickets/:id/approve\n→ CLOSED]
+    R1[POST /api/tickets/:id/reject\n→ RETRY_LATER]
+  end
 ```
 
 ---
@@ -263,17 +272,18 @@ timeline
   section Неделя 1 (ГОТОВО)
     Фундамент : pom.xml, Docker Compose
     Сущности : EmailTicket, Container, User
-    Конфиги : Async, IMAP, Security, WebClient
+    Конфиги : IMAP, Security, WebClient
   section Неделя 2 (ГОТОВО)
     Email pipeline : IMAP IDLE, EmailIngestionService
     AI pipeline : AiExtractionService, AiDraftingService
     Устойчивость : RetryScheduler, TicketStatus
-    БД : Flyway V1+V2, seed данные
-  section Неделя 3 (СЕЙЧАС)
+    БД : Flyway V1..V4, seed данные
+  section Неделя 3 (ГОТОВО)
     REST API : JwtService, AuthService, AuthController, TicketController
-    Angular UI : LoginComponent, TicketListComponent, TicketDetailComponent
-    Grafana : provisioning, dashboard JSON
+    UI : Thymeleaf (login, tickets, ticket-detail)
+    Реальный IMAP : Gmail/Mailtrap конфиг
   section Неделя 4
+    Grafana : provisioning, dashboard JSON
     Тесты : WireMock, Cucumber
     Финал : README, git v1.0
 ```
@@ -286,7 +296,7 @@ timeline
 flowchart LR
   subgraph V1 ["v1 сегодня"]
     IMAP[IMAP IDLE]
-    ASYNC[Async ThreadPool]
+    SYNC[Синхронная обработка]
     SINGL[Один инстанс]
     SJWT[JWT без tenant]
   end
@@ -300,7 +310,7 @@ flowchart LR
   end
 
   IMAP -.->|заменить| GRAPH
-  ASYNC -.->|заменить| RMQ
+  SYNC -.->|заменить| RMQ
   RMQ -.-> REDIS
   GRAPH -.-> RMQ
   SINGL -.->|масштабировать| R4J
@@ -448,44 +458,45 @@ mindmap
     pom.xml
     docker-compose.yml
     docs
+      PROJECT_OVERVIEW.md
+      DEMO_TECHNICAL_SPEC.md
       MASTER_ROADMAP.md
       MASTER_ROADMAP_LT.md
       MERMAID_DIAGRAMS.md
       V2_ARCHITECTURE_AND_PLAN.md
       AGENT_HANDOFF_V1_V2.md
       PRESENTATION_TREE_MAP.md
+      SESSION_SUMMARY_2026-04-13.md
+      IMAP_REAL_MAIL_SETUP.md
+      TESTING_LLM_EMAIL_WORKFLOW.md
     monitoring
       prometheus.yml
-      grafana
-        provisioning
-          datasources
-          dashboards
-        dashboards
-          smartfreight.json
     scripts
       entrypoint.sh
       github-push.ps1
+      verify-imap-ready.ps1
     src
       main
         java
           com.smartfreight.inbox
+            controller
+            service
+            integration
+            security
         resources
           application.yaml
+          templates (Thymeleaf)
+            login.html
+            tickets.html
+            ticket-detail.html
           db/migration
             V1__init.sql
             V2__seed_demo_containers.sql
+            V3__fix_demo_user_password.sql
+            V4__seed_test_tickets.sql
       test
         java
-          cucumber
           service
-        resources
-          features
-    smart-freight-ui
-      src/app
-        core
-        login
-        tickets
-      environments
 ```
 
 ---

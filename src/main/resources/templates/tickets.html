@@ -12,7 +12,7 @@
 <nav class="navbar navbar-dark bg-dark">
     <div class="container-fluid">
         <span class="navbar-brand fw-bold">Smart Freight Inbox</span>
-        <form method="post" action="/logout">
+        <form method="post" th:action="@{/logout}">
             <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
         </form>
     </div>
@@ -20,22 +20,127 @@
 
 <!-- Content -->
 <div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+
+    <!--
+        Каждый кликабельный заголовок строит ссылку на тот же /tickets с обновлённым
+        sort/dir, но обязательно сохраняет текущий status-фильтр (statusFilter).
+        При клике на уже активную колонку направление переворачивается (asc ⇄ desc),
+        иначе подставляется direction по умолчанию (desc для дат, asc для текста).
+    -->
+
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h5 class="mb-0">Email Tickets</h5>
-        <span class="badge bg-secondary" th:text="${tickets.size()} + ' total'">0 total</span>
+
+        <div class="d-flex align-items-center gap-2">
+            <!-- Status filter -->
+            <form method="get" action="/tickets" class="d-flex align-items-center gap-2">
+                <input type="hidden" name="sort" th:value="${sort}">
+                <input type="hidden" name="dir" th:value="${dir}">
+
+                <label for="statusFilter" class="mb-0 small fw-semibold text-dark text-nowrap">Filter by status:</label>
+                <select id="statusFilter"
+                        name="status"
+                        class="form-select form-select-sm"
+                        style="width: auto;"
+                        onchange="this.form.submit()">
+                    <option value="" th:selected="${statusFilter == ''}">All statuses</option>
+                    <option th:each="s : ${allStatuses}"
+                            th:value="${s.name()}"
+                            th:text="${s.name()}"
+                            th:selected="${statusFilter == s.name()}">NEW</option>
+                </select>
+
+                <a th:if="${statusFilter != '' or sort != 'createdAt' or dir != 'desc'}"
+                   href="/tickets" class="btn btn-sm btn-outline-secondary"
+                   title="Clear filter and reset sorting to default (Created ▼)">Reset</a>
+            </form>
+
+            <span class="badge bg-secondary" th:text="${tickets.size()} + ' shown'">0 shown</span>
+        </div>
     </div>
 
     <div class="card shadow-sm">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0 align-middle">
                 <thead class="table-dark">
                     <tr>
-                        <th>#</th>
-                        <th>From</th>
-                        <th>Subject</th>
-                        <th>Container</th>
-                        <th>Status</th>
-                        <th>Created</th>
+                        <th th:with="col='id', label='#', defDir='asc',
+                                     active=${sort == col},
+                                     nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
+                            <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
+                               class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
+                                <span th:text="${label}">#</span>
+                                <span th:if="${active}" class="small"
+                                      th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
+                                <span th:unless="${active}" class="small text-white-50">⇅</span>
+                            </a>
+                        </th>
+                        <th th:with="col='senderEmail', label='From', defDir='asc',
+                                     active=${sort == col},
+                                     nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
+                            <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
+                               class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
+                                <span th:text="${label}">From</span>
+                                <span th:if="${active}" class="small"
+                                      th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
+                                <span th:unless="${active}" class="small text-white-50">⇅</span>
+                            </a>
+                        </th>
+                        <th th:with="col='subject', label='Subject', defDir='asc',
+                                     active=${sort == col},
+                                     nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
+                            <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
+                               class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
+                                <span th:text="${label}">Subject</span>
+                                <span th:if="${active}" class="small"
+                                      th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
+                                <span th:unless="${active}" class="small text-white-50">⇅</span>
+                            </a>
+                        </th>
+                        <th th:with="col='extractedContainerNumber', label='Container', defDir='asc',
+                                     active=${sort == col},
+                                     nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
+                            <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
+                               class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
+                                <span th:text="${label}">Container</span>
+                                <span th:if="${active}" class="small"
+                                      th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
+                                <span th:unless="${active}" class="small text-white-50">⇅</span>
+                            </a>
+                        </th>
+                        <th th:with="col='status', label='Status', defDir='asc',
+                                     active=${sort == col},
+                                     nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
+                            <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
+                               class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
+                                <span th:text="${label}">Status</span>
+                                <span th:if="${active}" class="small"
+                                      th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
+                                <span th:unless="${active}" class="small text-white-50">⇅</span>
+                            </a>
+                        </th>
+                        <th th:with="col='createdAt', label='Created', defDir='desc',
+                                     active=${sort == col},
+                                     nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
+                            <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
+                               class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
+                                <span th:text="${label}">Created</span>
+                                <span th:if="${active}" class="small"
+                                      th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
+                                <span th:unless="${active}" class="small text-white-50">⇅</span>
+                            </a>
+                        </th>
+                        <th th:with="col='updatedAt', label='Updated', defDir='desc',
+                                     active=${sort == col},
+                                     nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
+                            <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
+                               class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
+                                <span th:text="${label}">Updated</span>
+                                <span th:if="${active}" class="small"
+                                      th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
+                                <span th:unless="${active}" class="small text-white-50">⇅</span>
+                            </a>
+                        </th>
                         <th></th>
                     </tr>
                 </thead>
@@ -64,14 +169,18 @@
                             th:text="${#temporals.format(ticket.createdAt, 'dd.MM.yyyy HH:mm')}">
                             01.01.2025 12:00
                         </td>
+                        <td class="small text-muted"
+                            th:text="${ticket.updatedAt != null ? #temporals.format(ticket.updatedAt, 'dd.MM.yyyy HH:mm') : '—'}">
+                            01.01.2025 12:00
+                        </td>
                         <td>
                             <a th:href="@{/tickets/{id}(id=${ticket.id})}"
                                class="btn btn-sm btn-outline-secondary">View</a>
                         </td>
                     </tr>
                     <tr th:if="${#lists.isEmpty(tickets)}">
-                        <td colspan="7" class="text-center text-muted py-5">
-                            No tickets yet — waiting for emails via IMAP IDLE&hellip;
+                        <td colspan="8" class="text-center text-muted py-5">
+                            No tickets match the current filter.
                         </td>
                     </tr>
                 </tbody>

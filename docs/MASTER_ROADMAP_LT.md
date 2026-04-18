@@ -13,7 +13,7 @@ gauna laišką → ištraukia konteinerio numerį per DI (LLM) → ieško kontei
 
 | Versija | Statusas | Aprašymas |
 |---------|----------|-----------|
-| **v1** | Kuriama | MVP monolitas: IMAP + Async + PostgreSQL + Ollama |
+| **v1** | Paruošta demo | MVP monolitas: IMAP + sinchroninis konvejeris + PostgreSQL + Ollama + Thymeleaf UI + REST API |
 | **v2** | Suplanuota | Gamybinė: RabbitMQ + Redis + Graph API + Kelių nuomininkų |
 
 ### Pagrindinė taisyklė
@@ -35,7 +35,7 @@ flowchart LR
   end
 
   subgraph processing [DI apdorojimas]
-    SAVE --> TPS[TicketProcessingService\n@Async]
+    SAVE -->|afterCommit| TPS[TicketProcessingService\nsinchroniškai]
     TPS --> QW[Qwen 2.5\nKonteinerio nr. ištraukimas]
     QW --> CL[Konteinerio paieška\nPostgreSQL]
     CL --> LL[Llama 3.1\nJuodraščio generavimas]
@@ -43,7 +43,7 @@ flowchart LR
   end
 
   subgraph operator [Operatorius]
-    DR --> UI[Angular UI\nPatvirtinti / Atmesti]
+    DR --> UI[Thymeleaf UI + REST API\nPatvirtinti / Atmesti]
   end
 
   subgraph infra [Infrastruktūra]
@@ -60,19 +60,21 @@ flowchart LR
 
 ---
 
-## Skyrius 2 — Kas jau padaryta v1 (1–2 savaitės)
+## Skyrius 2 — Kas jau padaryta v1 (1–3 savaitės)
 
 ### Technologijų rinkinys
 
 - Java 17, **Spring Boot 4.0.5**, Spring Data JPA, Flyway
-- PostgreSQL (schema: `V1__init.sql`, demo duomenys: `V2__seed_demo_containers.sql`)
+- PostgreSQL (schema: `V1__init.sql`, sėklos: `V2..V4`)
 - Spring Integration IMAP IDLE (`ImapConfig`, `EmailIngestionService`)
 - Ollama HTTP: Qwen 2.5 (ištraukimas), Llama 3.1 (juodraštis) — `WebClientConfig`
-- Spring Security + JWT validacija (`JwtService`, `JwtAuthenticationFilter`, `SecurityConfig`)
-- `@Async` gijų fondas (`AsyncConfig`), `TicketProcessingService`
-- `RetryScheduler` — pakartotinis `RETRY_LATER` bilietų apdorojimas
+- Spring Security + JWT (`JwtService`, `JwtAuthenticationFilter`, `SecurityConfig`), httpOnly slapukas UI, `Authorization` antraštė REST
+- **Sinchroninis** apdorojimas: `TicketProcessingService.process()` vykdomas tame pačiame IMAP gijoje per `TransactionSynchronization.afterCommit()`
+- `RetryScheduler` — pakartotinis `RETRY_LATER` bilietų apdorojimas (po operatoriaus atmetimo)
+- Thymeleaf UI (`login.html`, `tickets.html`, `ticket-detail.html`) + Bootstrap 5
+- REST API: `AuthController`, `TicketController` (`/api/tickets` list/get/approve/reject), `AdminController` (`/admin/reprocess`, tik localhost)
 - `OllamaHealthIndicator`, Actuator, Prometheus, Grafana (Docker Compose)
-- Testcontainers + vienas testas: `TicketProcessingServiceTest`
+- Testcontainers + bazinis testas: `TicketProcessingServiceTest`
 
 ### Paketų struktūra (v1)
 
@@ -81,7 +83,6 @@ flowchart TB
   subgraph root [com.smartfreight.inbox]
     APP[InboxApplication]
     subgraph config [config/]
-      AC[AsyncConfig]
       IC[ImapConfig]
       SC[SecurityConfig]
       WC[WebClientConfig]
@@ -147,11 +148,12 @@ timeline
   section 1–2 savaitė (ATLIKTA)
     Pamatai : Objektai, konfigūracijos, Docker
     DI konvejeris : IMAP, Qwen, Llama, RetryScheduler
-  section 3 savaitė (DABAR)
+  section 3 savaitė (GATAVA)
     REST API : JwtService, AuthService, AuthController, TicketController
-    Angular UI : Prisijungimas, bilietų sąrašas, detalės
-    Grafana : Provisioning, dashboard JSON
+    Thymeleaf UI : login.html, tickets.html, ticket-detail.html
+    Realus IMAP : Gmail/Mailtrap konfigūracija
   section 4 savaitė
+    Grafana : provisioning, dashboard JSON
     Testai : WireMock, Cucumber
     Gynimas : README, git v1.0 žymė
 ```
@@ -253,7 +255,7 @@ HTTP 200 OK  /  HTTP 401 jei neteisingi duomenys
 
 ```mermaid
 sequenceDiagram
-  participant UI as Angular UI
+  participant UI as REST klientas / Naršyklė
   participant AC as AuthController
   participant AS as AuthService
   participant UR as UserRepository
@@ -278,121 +280,18 @@ sequenceDiagram
 
 ---
 
-### 3 savaitė — Angular UI (8 žingsniai, naujas projektas)
+### 3 savaitė — UI (vietoj Angular pasirinktas Thymeleaf) ✅
 
-**Vieta:** aplankas `smart-freight-ui/` šalia `inbox/` (ne viduje Spring Boot)
+**Sprendimas:** demo buvo pasirinktas **Thymeleaf + Bootstrap 5** — paprasčiau, nereikia atskiros JS-projekto kompiliacijos.
+Šablonai: `src/main/resources/templates/` (`login.html`, `tickets.html`, `ticket-detail.html`).
+Kontroleris: `TicketViewController` (JWT saugomas httpOnly slapuke).
 
-```
-C:\Users\olegs\Downloads\
-├── inbox\inbox\          ← Spring Boot backend
-└── smart-freight-ui\     ← Angular frontend (naujas projektas)
-```
-
-#### Angular UI navigacijos srautas
-
-```mermaid
-flowchart LR
-  START([Naršyklė]) --> GUARD{Ar prisijungęs?}
-  GUARD -->|Ne| LOGIN[/login\nLoginComponent]
-  GUARD -->|Taip| LIST[/tickets\nTicketListComponent]
-
-  LOGIN -->|Sėkmė| LIST
-  LIST -->|Pasirinkti bilietą| DETAIL[/tickets/:id\nTicketDetailComponent]
-
-  DETAIL -->|Patvirtinti| API_APP[POST /api/tickets/:id/approve]
-  DETAIL -->|Atmesti| API_REJ[POST /api/tickets/:id/reject]
-
-  API_APP --> LIST
-  API_REJ --> LIST
-```
+6–13 žingsniai (Angular scaffold, AuthService, AuthGuard, TicketListComponent ir pan.) **atšaukti**.
+Jei ateityje prireiks Angular — žr. senąją šio failo versiją git istorijoje.
 
 ---
 
-#### 6 žingsnis — Angular projekto kūrimas
-
-```bash
-ng new smart-freight-ui --standalone --routing --style=scss
-```
-
-**Versija:** Angular 17+ (autonominiai komponentai, be NgModules)
-
----
-
-#### 7 žingsnis — `environment.ts`
-
-**Failas:** `src/environments/environment.ts`
-
-```typescript
-export const environment = {
-  production: false,
-  apiUrl: 'http://localhost:8080'
-};
-```
-
----
-
-#### 8 žingsnis — `AuthService`
-
-**Failas:** `src/app/core/auth.service.ts`
-
-Metodai:
-- `login(email, password)` → POST `/api/auth/login` → išsaugoti žetoną
-- `saveToken(token)` → `localStorage.setItem('jwt', token)`
-- `getToken()` → `localStorage.getItem('jwt')`
-- `isLoggedIn()` → `!!getToken()`
-- `logout()` → `localStorage.removeItem('jwt')`
-
----
-
-#### 9 žingsnis — `AuthInterceptor`
-
-**Failas:** `src/app/core/auth.interceptor.ts`
-
-Automatiškai prideda `Authorization: Bearer <token>` prie kiekvienos išeinančios HTTP užklausos.
-
----
-
-#### 10 žingsnis — `AuthGuard`
-
-**Failas:** `src/app/core/auth.guard.ts`
-
-Nukreipia į `/login` jei `!authService.isLoggedIn()`.
-
----
-
-#### 11 žingsnis — `LoginComponent`
-
-**Failas:** `src/app/login/login.component.ts` + `.html`
-
-- Forma: el. pašto + slaptažodžio laukai
-- Sėkmės atveju → eiti į `/tickets`
-- Klaidos atveju → rodyti pranešimą „Neteisingas el. paštas arba slaptažodis"
-
----
-
-#### 12 žingsnis — `TicketListComponent`
-
-**Failas:** `src/app/tickets/ticket-list/ticket-list.component.ts` + `.html`
-
-- Bilietų lentelė: Tema, Siuntėjas, Būsena, Sukurta
-- Būsenos ženklelis su spalva (DRAFT_READY = žalias, FAILED = raudonas ir t.t.)
-- Išskleidžiamas filtras pagal būseną
-- Paspaudus eilutę → `/tickets/{id}`
-
----
-
-#### 13 žingsnis — `TicketDetailComponent`
-
-**Failas:** `src/app/tickets/ticket-detail/ticket-detail.component.ts` + `.html`
-
-- Rodo: temą, siuntėją, laiško turinį, konteinerio numerį, atsakymo juodraštį
-- Mygtukas **„Patvirtinti"** → POST `/api/tickets/{id}/approve`
-- Mygtukas **„Atmesti"** → POST `/api/tickets/{id}/reject`
-- Po veiksmo → grįžti į sąrašą
-
----
-
-### 3 savaitė — Grafana provisioning (4 žingsniai)
+### 4 savaitė — Grafana provisioning (4 žingsniai, atviras)
 
 ```mermaid
 flowchart LR
@@ -574,11 +473,11 @@ JUnit 5 paleidėjas Cucumber testams vykdyti per Maven (`mvn test`).
 
 Turinys:
 - Projekto aprašymas (1 pastraipa)
-- Išankstiniai reikalavimai: Docker, Java 17, Node.js 20+, Angular CLI
+- Išankstiniai reikalavimai: Docker, Java 17 (Thymeleaf UI — be atskiro Node.js)
 - Paleidimas: `docker compose up --build`
 - Pirmas prisijungimas: `operator@smartfreight.com` / `demo123`
 - API: pagrindiniai curl pavyzdžiai (prisijungimas, bilietų sąrašas, patvirtinimas)
-- Angular: `cd smart-freight-ui && npm install && ng serve`
+- UI: Thymeleaf šablonai aptarnaujami to paties `:8080` (atskiro frontendo nereikia)
 - Nuorodos: Grafana (`:3000`), Prometheus (`:9090`), Actuator (`:8080/actuator/health`)
 
 ---
@@ -694,7 +593,7 @@ flowchart TB
 
 ### Fazė 1 — Pranešimų eilė (RabbitMQ)
 
-**Tikslas:** pakeisti `@Async` `ThreadPoolTaskExecutor` eilute su garantuotu pristatymu.
+**Tikslas:** pakeisti sinchroninį `process()` RabbitMQ eile su garantuotu pristatymu.
 
 ```mermaid
 flowchart LR
@@ -875,7 +774,7 @@ Paslaugos:
 | Servisas | URL | Prisijungimas |
 |----------|-----|---------------|
 | Spring Boot API | http://localhost:8080 | JWT žetonas |
-| Angular UI | http://localhost:4200 | operator@smartfreight.com / demo123 |
+| Thymeleaf UI | http://localhost:8080/login | operator@smartfreight.com / demo123 |
 | PostgreSQL | localhost:5433 | postgres / postgres |
 | Ollama | http://localhost:11434 | — |
 | Prometheus | http://localhost:9090 | — |
@@ -916,5 +815,5 @@ flowchart TB
 ---
 
 *Šis failas — gyvas dokumentas. Atnaujink žingsnių statusus vykdant.*
-*Paskutinis atnaujinimas: 3 savaitės pradžia (REST API nepradėta).*
+*Paskutinis atnaujinimas: 3 savaitė užbaigta. REST API + Thymeleaf UI + sinchroninis konvejeris + realus IMAP — repozitorijuje.*
 *Originalus dokumentas rusų kalba: `docs/MASTER_ROADMAP.md`*

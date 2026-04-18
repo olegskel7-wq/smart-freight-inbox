@@ -10,8 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-// REST контроллер для аутентификации через API.
-// Используется при работе с клиентами вне браузера (Postman, мобильное приложение, v2 фронтенд).
+// REST контроллер для аутентификации через API (Postman и т.д.)
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -22,20 +21,19 @@ public class AuthController {
         this.authService = authService;
     }
 
-    // POST /api/auth/login — получить JWT токен по email и паролю.
+    // POST /api/auth/login — проверить учётные данные
     // Запрос: { "email": "...", "password": "..." }
-    // Ответ:  { "token": "eyJhbGci..." }
+    // Ответ:  { "status": "ok" } или 401
     @PostMapping("/login")
     public ResponseEntity<Map<String, String>> login(@RequestBody LoginRequest request) {
         try {
-            String token = authService.login(request.email(), request.password());
-            return ResponseEntity.ok(Map.of("token", token));
+            authService.login(request.email(), request.password());
+            return ResponseEntity.ok(Map.of("status", "ok"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Invalid email or password"));
         }
     }
 
-    // DTO для тела запроса (Java 16+ record — компактный способ задать immutable объект)
     public record LoginRequest(String email, String password) {}
 }

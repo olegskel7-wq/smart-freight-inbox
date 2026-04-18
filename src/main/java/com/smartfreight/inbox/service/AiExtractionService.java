@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 
 // Сервис извлечения номера контейнера из текста письма с помощью Qwen 2.5
 // Использует локальный Ollama (POST /api/generate) — синхронный вызов через .block()
-// Допускается блокирующий .block() потому что метод вызывается из @Async потока (не Netty event loop)
+// Блокирующий .block() допустим: вызов идёт из рабочего потока сервлетов / IMAP, не из Netty event loop
 @Service
 public class AiExtractionService {
 

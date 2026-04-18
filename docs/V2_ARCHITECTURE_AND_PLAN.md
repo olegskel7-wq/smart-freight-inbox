@@ -31,7 +31,7 @@ It extends v1 with:
 ### Backend
 
 - Java 17
-- Spring Boot 3 (when starting v2, align with the actual Spring Boot version in the repository)
+- Spring Boot 4.0.5 (keep aligned with the actual Spring Boot version in the repository)
 - Spring Security 6 (JWT + refresh tokens)
 - Spring Data JPA
 - PostgreSQL

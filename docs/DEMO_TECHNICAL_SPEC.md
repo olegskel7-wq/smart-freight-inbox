@@ -111,7 +111,7 @@ EmailIngestionService.processIncomingEmail(MimeMessage)
       ├─► Extract sender email from From: header
       ├─► EmailTicketRepository.save(ticket) → status = NEW
       │
-      │  SYNCHRONOUS call (no @Async after simplification)
+      │  SYNCHRONOUS call, scheduled via TransactionSynchronization.afterCommit()
       ▼
 TicketProcessingService.process(ticketId)
       │
@@ -325,9 +325,10 @@ inbox/
     │   │   └── WebClientConfig.java
     │   │   # AsyncConfig.java DELETED
     │   ├── controller/
-    │   │   ├── AuthController.java          (new — REST API login)
-    │   │   ├── TicketController.java        (new — REST API tickets)
-    │   │   └── TicketViewController.java   (new — Thymeleaf UI)
+    │   │   ├── AuthController.java          (REST API login)
+    │   │   ├── TicketController.java        (REST API tickets)
+    │   │   ├── TicketViewController.java    (Thymeleaf UI)
+    │   │   └── AdminController.java         (POST /admin/reprocess, localhost-only)
     │   ├── entity/
     │   │   ├── EmailTicket.java
     │   │   ├── Container.java
@@ -360,7 +361,9 @@ inbox/
         │   └── layout.html
         └── db/migration/
             ├── V1__init.sql
-            └── V2__seed_demo_containers.sql
+            ├── V2__seed_demo_containers.sql
+            ├── V3__fix_demo_user_password.sql
+            └── V4__seed_test_tickets.sql
 ```
 
 ---

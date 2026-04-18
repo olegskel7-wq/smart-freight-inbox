@@ -12,10 +12,10 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 // Планировщик повторной обработки тикетов со статусом RETRY_LATER.
-// Периодически ищет «застрявшие» тикеты и снова ставит их в очередь.
+// Периодически ищет «застрявшие» тикеты и снова запускает конвейер в том же потоке планировщика.
 // Сценарии появления RETRY_LATER:
-//   - очередь llmTaskExecutor была переполнена (rejected execution)
-//   - Ollama была временно недоступна
+//   - оператор отклонил черновик (reject)
+//   - временная ошибка пайплайна (при расширении логики)
 @Component
 public class RetryScheduler {
 
@@ -50,7 +50,7 @@ public class RetryScheduler {
         log.info("RetryScheduler: found {} ticket(s) to retry", toRetry.size());
 
         for (EmailTicket ticket : toRetry) {
-            // Увеличиваем счётчик попыток и сохраняем — до запуска async обработки
+            // Увеличиваем счётчик попыток и сохраняем — до синхронного process()
             ticket.setRetryCount(ticket.getRetryCount() + 1);
             // Сбрасываем статус на NEW чтобы TicketProcessingService принял тикет
             ticket.setStatus(TicketStatus.NEW);
@@ -59,7 +59,6 @@ public class RetryScheduler {
             log.info("Retrying ticket ID={} (attempt {} of {})",
                     ticket.getId(), ticket.getRetryCount(), MAX_RETRIES);
 
-            // Запускаем обработку асинхронно — каждый тикет в своём потоке LLM-пула
             ticketProcessingService.process(ticket.getId());
         }
     }

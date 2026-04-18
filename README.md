@@ -132,6 +132,22 @@ Response: `{ "token": "eyJhbGci..." }`
 
 Use the token as `Authorization: Bearer <token>` header for subsequent requests.
 
+### Tickets
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/tickets` | List tickets (optional `?status=DRAFT_READY`) |
+| `GET` | `/api/tickets/{id}` | Get ticket by id |
+| `PATCH` | `/api/tickets/{id}/draft` | Operator edits the LLM draft. Body: `{ "draftReply": "...", "close": false }`. Pass `"close": true` to save and close in one call |
+| `POST` | `/api/tickets/{id}/approve` | Mark ticket as `CLOSED` |
+| `POST` | `/api/tickets/{id}/reject` | Send ticket back to `RETRY_LATER` |
+
+### Admin (localhost only)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/admin/reprocess` | Re-run the pipeline synchronously for tickets in `NEW` / `RETRY_LATER` |
+
 ---
 
 ## Demo Containers (pre-seeded)

@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,14 +23,11 @@ public class AdminController {
 
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
-    private final ThreadPoolTaskExecutor adminTaskExecutor;
 
     public AdminController(EmailTicketRepository emailTicketRepository,
-                           TicketProcessingService ticketProcessingService,
-                           ThreadPoolTaskExecutor adminTaskExecutor) {
+                           TicketProcessingService ticketProcessingService) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
-        this.adminTaskExecutor = adminTaskExecutor;
     }
 
     @PostMapping("/reprocess")
@@ -65,15 +61,11 @@ public class AdminController {
         List<Long> ids = pending.stream().map(EmailTicket::getId).toList();
         int count = ids.size();
 
-        // Fix 2: fire-and-forget — return immediately, process in background
-        adminTaskExecutor.execute(() -> {
-            log.info("Background reprocessing started for {} tickets", count);
-            ids.forEach(ticketProcessingService::process);
-            log.info("Background reprocessing finished for {} tickets", count);
-        });
+        log.info("Synchronous reprocessing started for {} tickets", count);
+        ids.forEach(ticketProcessingService::process);
+        log.info("Synchronous reprocessing finished for {} tickets", count);
 
-        return ResponseEntity.accepted()
-                .body("Accepted: reprocessing " + count + " tickets in the background.");
+        return ResponseEntity.ok("Reprocessed " + count + " tickets.");
     }
 
     private boolean isLocalhost(HttpServletRequest request) {

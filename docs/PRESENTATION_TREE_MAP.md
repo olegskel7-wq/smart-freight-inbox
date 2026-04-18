@@ -11,7 +11,7 @@ You can add a university logo and a “risks / metrics” slide next to the Obse
 
 ### A. End-to-end pipeline (v1 MVP)
 
-Mail intake, persistence, async LLM processing, operator handoff.
+Mail intake, persistence, synchronous LLM processing (after commit), operator handoff.
 
 ```mermaid
 flowchart TB
@@ -26,9 +26,9 @@ flowchart TB
     DUP -->|no| SAVE[Save EmailTicket<br/>status NEW]
   end
 
-  subgraph PROC["2 — AI processing (async thread pool)"]
+  subgraph PROC["2 — AI processing (synchronous, same thread)"]
     direction TB
-    TPS[TicketProcessingService<br/>@Async llmTaskExecutor]
+    TPS[TicketProcessingService<br/>called in afterCommit]
     ST1[Set status PROCESSING]
     QW[Qwen 2.5 via Ollama<br/>extract container number]
     CL[Container lookup<br/>PostgreSQL]
@@ -49,15 +49,15 @@ flowchart TB
   end
 
   subgraph OPS["4 — Human-in-the-loop"]
-    UI[Operator UI / API<br/>future]
+    UI[Thymeleaf UI + REST API<br/>/tickets, /api/tickets]
     ST2 --> UI
   end
 
   subgraph RES["Resilience"]
-    RL[RETRY_LATER on queue full]
+    RL[RETRY_LATER on operator reject]
     FL[FAILED on errors]
-    TPS -.-> RL
     TPS -.-> FL
+    UI -.-> RL
   end
 ```
 
@@ -68,7 +68,7 @@ flowchart LR
   A[(IMAP mailbox)] --> B[IMAP IDLE]
   B --> C[Ingestion + dedup]
   C --> D[(PostgreSQL)]
-  D --> E[Async LLM pipeline]
+  D --> E[Synchronous LLM pipeline]
   E --> F[Qwen extract]
   F --> G[DB lookup]
   G --> H[Llama draft]
@@ -85,8 +85,10 @@ stateDiagram-v2
   RETRY_LATER --> PROCESSING : scheduler retry
   PROCESSING --> DRAFT_READY : success
   PROCESSING --> FAILED : unrecoverable error
-  PROCESSING --> RETRY_LATER : transient / queue full
-  DRAFT_READY --> [*] : operator handled
+  DRAFT_READY --> DRAFT_READY : operator edits draft
+  DRAFT_READY --> CLOSED : operator approve / save & close
+  DRAFT_READY --> RETRY_LATER : operator reject
+  CLOSED --> [*]
   FAILED --> [*] : manual resolution
 ```
 
@@ -119,7 +121,7 @@ flowchart TB
 flowchart LR
   subgraph V1["v1 today"]
     IMAP[IMAP IDLE]
-    ASYNC[Async ThreadPoolTaskExecutor]
+    SYNC[Synchronous pipeline]
   end
   subgraph V2["v2 target"]
     GRA[Microsoft Graph]
@@ -128,7 +130,7 @@ flowchart LR
     MT[Multi-tenant]
   end
   IMAP -.->|replace| GRA
-  ASYNC -.->|replace| RMQ
+  SYNC -.->|replace| RMQ
   RMQ -.-> RD
   GRA -.-> RMQ
 ```
@@ -149,7 +151,7 @@ mindmap
       Graph API v2
     Processing
       Message-ID deduplication
-      Async v1 / queue v2
+      Synchronous v1 / queue v2
       Ticket statuses
     Local AI
       Qwen extraction
@@ -214,7 +216,7 @@ flowchart LR
   M[IMAP mail] --> IDLE[IMAP IDLE]
   IDLE --> SVC[EmailIngestionService]
   SVC --> DB[(EmailTicket)]
-  DB --> POOL[Async LLM pool]
+  DB --> POOL[Synchronous LLM pipeline]
   POOL --> Q[Qwen extraction]
   Q --> C[Container lookup]
   C --> L[Llama draft]
@@ -232,10 +234,14 @@ smartfreight.inbox
 ├── actuator
 │   └── OllamaHealthIndicator
 ├── config
-│   ├── AsyncConfig          ← LLM pool, MDC, rejection → RETRY_LATER
 │   ├── ImapConfig           ← Spring Integration, mailChannel
-│   ├── SecurityConfig
+│   ├── SecurityConfig       ← JWT filter + session/cookie for UI
 │   └── WebClientConfig      ← Ollama timeouts, connection pool
+├── controller
+│   ├── AuthController       ← POST /api/auth/login
+│   ├── TicketController     ← REST /api/tickets (list/get/approve/reject)
+│   ├── TicketViewController ← Thymeleaf UI
+│   └── AdminController      ← POST /admin/reprocess (localhost only)
 ├── entity
 │   ├── EmailTicket
 │   ├── Container
@@ -246,9 +252,15 @@ smartfreight.inbox
 │   ├── ContainerRepository
 │   └── UserRepository
 ├── integration
-│   └── EmailIngestionService
+│   └── EmailIngestionService  ← schedules process() via afterCommit
 ├── service
-│   └── TicketProcessingService
+│   ├── AuthService
+│   ├── AiExtractionService
+│   ├── AiDraftingService
+│   ├── ContainerLookupService
+│   └── TicketProcessingService  ← synchronous
+├── scheduler
+│   └── RetryScheduler
 ├── security
 │   ├── JwtService
 │   └── JwtAuthenticationFilter
@@ -265,18 +277,20 @@ smartfreight.inbox
 inbox/
 ├── pom.xml
 ├── docker-compose.yml       ← backend, postgres, ollama, prometheus, grafana
-├── docs/
-│   ├── V2_ARCHITECTURE_AND_PLAN.md
-│   └── PRESENTATION_TREE_MAP.md   ← this file
+├── README.md
+├── docs/                    ← project documentation (this file et al.)
 ├── monitoring/
 │   └── prometheus.yml
 ├── scripts/
-│   └── entrypoint.sh
+│   ├── entrypoint.sh
+│   ├── github-push.ps1
+│   └── verify-imap-ready.ps1
 └── src/main/
     ├── java/.../com/smartfreight/inbox/...
     └── resources/
         ├── application.yaml
-        └── db/migration/V1__init.sql
+        ├── templates/       ← Thymeleaf (login, tickets, ticket-detail)
+        └── db/migration/    ← V1..V4
 ```
 
 ---
