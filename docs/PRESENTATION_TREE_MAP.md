@@ -161,8 +161,9 @@ mindmap
       PostgreSQL
       Flyway migrations
     Security
-      JWT
+      Session cookie (form login)
       Spring Security 6
+      InMemoryUserDetailsManager (demo)
     Observability
       Actuator
       Prometheus / Grafana
@@ -182,7 +183,7 @@ flowchart TB
     end
     subgraph L3["Layer 3 — API & security"]
       API[REST API]
-      SEC[JWT + Security]
+      SEC[Form login + Session]
     end
     subgraph L2["Layer 2 — Domain & integrations"]
       ING[Email ingestion]
@@ -235,7 +236,7 @@ smartfreight.inbox
 │   └── OllamaHealthIndicator
 ├── config
 │   ├── ImapConfig           ← Spring Integration, mailChannel
-│   ├── SecurityConfig       ← JWT filter + session/cookie for UI
+│   ├── SecurityConfig       ← form login + InMemoryUserDetailsManager
 │   └── WebClientConfig      ← Ollama timeouts, connection pool
 ├── controller
 │   ├── AuthController       ← POST /api/auth/login
@@ -261,9 +262,6 @@ smartfreight.inbox
 │   └── TicketProcessingService  ← synchronous
 ├── scheduler
 │   └── RetryScheduler
-├── security
-│   ├── JwtService
-│   └── JwtAuthenticationFilter
 └── exception
     ├── GlobalExceptionHandler
     └── ContainerNotFoundException
@@ -271,7 +269,66 @@ smartfreight.inbox
 
 ---
 
-## 6. Repository root (top-level files)
+## 6. Database schema (ER diagram)
+
+Three tables, created by Flyway V1. `email_ticket` is the core entity; `container` is the reference catalogue; `app_user` holds operator credentials.
+
+```mermaid
+erDiagram
+  email_ticket {
+    bigserial   id                         PK
+    varchar     message_id                 "UNIQUE, RFC-2822"
+    varchar     sender_email
+    varchar     subject
+    text        body
+    varchar     extracted_container_number FK
+    varchar     status                     "NEW|PROCESSING|DRAFT_READY|RETRY_LATER|FAILED|CLOSED"
+    text        draft_reply
+    integer     retry_count                "default 0"
+    boolean     deleted                    "soft-delete, default false"
+    integer     version                    "optimistic lock"
+    timestamp   created_at
+    timestamp   updated_at
+  }
+
+  container {
+    bigserial   id               PK
+    varchar     container_number "UNIQUE, ISO 6346"
+    varchar     status
+    timestamp   eta
+    varchar     location
+  }
+
+  app_user {
+    bigserial   id       PK
+    varchar     email    "UNIQUE"
+    varchar     password "BCrypt"
+    varchar     role
+  }
+
+  email_ticket ||--o| container : "extracted_container_number → container_number"
+```
+
+### Flyway migration history
+
+| Version | File | Purpose |
+|---------|------|---------|
+| V1 | `V1__init.sql` | Create all tables + indexes |
+| V2 | `V2__seed_demo_containers.sql` | Seed test containers (OOLU, MSCU…) |
+| V3 | `V3__fix_demo_user_password.sql` | Fix BCrypt hash for demo operator |
+| V4 | `V4__seed_test_tickets.sql` | Seed sample tickets for demo |
+
+### Indexes
+
+| Index | Table | Column | Condition |
+|-------|-------|--------|-----------|
+| `idx_email_ticket_message_id` | email_ticket | message_id | — |
+| `idx_email_ticket_status` | email_ticket | status | `WHERE deleted = false` |
+| `idx_container_number` | container | container_number | — |
+
+---
+
+## 7. Repository root (top-level files)
 
 ```
 inbox/
@@ -295,7 +352,7 @@ inbox/
 
 ---
 
-## 7. Roadmap v1 → v2 (timeline slide)
+## 8. Roadmap v1 → v2 (timeline slide)
 
 ```mermaid
 timeline
