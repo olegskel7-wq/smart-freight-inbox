@@ -3,6 +3,9 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.service.EmailReplyService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,10 +25,15 @@ import java.util.Set;
 @Controller
 public class TicketViewController {
 
-    private final EmailTicketRepository emailTicketRepository;
+    private static final Logger log = LoggerFactory.getLogger(TicketViewController.class);
 
-    public TicketViewController(EmailTicketRepository emailTicketRepository) {
+    private final EmailTicketRepository emailTicketRepository;
+    private final EmailReplyService emailReplyService;
+
+    public TicketViewController(EmailTicketRepository emailTicketRepository,
+                                EmailReplyService emailReplyService) {
         this.emailTicketRepository = emailTicketRepository;
+        this.emailReplyService = emailReplyService;
     }
 
     // GET / — редирект на страницу логина
@@ -111,14 +120,17 @@ public class TicketViewController {
     }
 
     // POST /tickets/{id}/draft — оператор отредактировал черновик ответа.
-    // Параметр action: "save"  — только сохранить и вернуться к деталям;
-    //                  "close" — сохранить отредактированный текст и сразу закрыть тикет.
+    // Параметр action:
+    //   "save"  — только сохранить и вернуться к деталям
+    //   "close" — сохранить текст и закрыть тикет (без отправки письма)
+    //   "send"  — сохранить текст, отправить письмо на адрес отправителя, закрыть тикет
     // Закрытые тикеты редактировать нельзя — возврат на список без изменений.
     @Transactional
     @PostMapping("/tickets/{id}/draft")
     public String updateDraft(@PathVariable Long id,
                               @RequestParam("draftReply") String draftReply,
-                              @RequestParam(name = "action", defaultValue = "save") String action) {
+                              @RequestParam(name = "action", defaultValue = "save") String action,
+                              RedirectAttributes redirectAttributes) {
         EmailTicket ticket = emailTicketRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + id));
 
@@ -127,7 +139,21 @@ public class TicketViewController {
         }
 
         ticket.setDraftReply(draftReply);
-        if ("close".equalsIgnoreCase(action)) {
+
+        if ("send".equalsIgnoreCase(action)) {
+            try {
+                emailReplyService.sendReply(ticket);
+                ticket.setStatus(TicketStatus.CLOSED);
+                log.info("Ticket {} draft sent to {} and closed", id, ticket.getSenderEmail());
+                redirectAttributes.addFlashAttribute("successMessage",
+                        "Reply sent to " + ticket.getSenderEmail());
+            } catch (Exception e) {
+                log.error("Ticket {} send failed: {}", id, e.getMessage(), e);
+                redirectAttributes.addFlashAttribute("errorMessage",
+                        "Failed to send email: " + e.getMessage());
+                return "redirect:/tickets/" + id;
+            }
+        } else if ("close".equalsIgnoreCase(action)) {
             ticket.setStatus(TicketStatus.CLOSED);
         } else if (ticket.getStatus() != TicketStatus.DRAFT_READY) {
             // Если оператор сам впечатал ответ для тикета без сгенерированного черновика —
@@ -137,8 +163,9 @@ public class TicketViewController {
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
 
-        return "close".equalsIgnoreCase(action)
-                ? "redirect:/tickets"
-                : "redirect:/tickets/" + id;
+        if ("send".equalsIgnoreCase(action) || "close".equalsIgnoreCase(action)) {
+            return "redirect:/tickets";
+        }
+        return "redirect:/tickets/" + id;
     }
 }

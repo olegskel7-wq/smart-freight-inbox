@@ -21,6 +21,18 @@
 <!-- Content -->
 <div class="container mt-4" style="max-width: 860px;">
 
+    <!-- Flash message after successful send -->
+    <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <strong>&#10003;</strong> <span th:text="${successMessage}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <!-- Flash message on send error -->
+    <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <strong>Send failed:</strong> <span th:text="${errorMessage}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
     <!-- Title row -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h5 class="mb-0" th:text="'Ticket #' + ${ticket.id}">Ticket #1</h5>
@@ -93,15 +105,21 @@
                           th:text="${ticket.draftReply ?: ''}"
                           placeholder="Type or paste a reply here…"></textarea>
 
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 flex-wrap">
                     <button type="submit" name="action" value="save"
                             class="btn btn-primary">
                         Save draft
                     </button>
                     <button type="submit" name="action" value="close"
-                            class="btn btn-success"
-                            onclick="return confirm('Save and close ticket #[[${ticket.id}]]?')">
+                            class="btn btn-outline-success"
+                            onclick="return confirm('Save and close ticket #[[${ticket.id}]] (without sending)?')">
                         Save &amp; Close
+                    </button>
+                    <button type="submit" name="action" value="send"
+                            class="btn btn-success"
+                            th:disabled="${ticket.draftReply == null or ticket.senderEmail == null}"
+                            onclick="return confirm('Send reply to [[${ticket.senderEmail}]] and close ticket #[[${ticket.id}]]?')">
+                        &#9993; Send Reply
                     </button>
                 </div>
             </form>
@@ -135,5 +153,6 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

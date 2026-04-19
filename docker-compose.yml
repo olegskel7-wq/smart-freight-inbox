@@ -11,6 +11,10 @@ services:
       - IMAP_HOST=${IMAP_HOST:-imap.example.com}
       - IMAP_USER=${IMAP_USER:-inbox@example.com}
       - IMAP_PASSWORD=${IMAP_PASSWORD:-changeme}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-${IMAP_USER:-inbox@example.com}}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-${IMAP_PASSWORD:-changeme}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,7 +51,7 @@ services:
     container_name: ollama
     entrypoint: ["/bin/bash", "/scripts/entrypoint.sh"]
     volumes:
-      - ollama_models:/root/.ollama
+      - ollama:/root/.ollama
       - ./scripts/entrypoint.sh:/scripts/entrypoint.sh:ro
     environment:
       - OLLAMA_HOST=0.0.0.0
@@ -66,6 +70,8 @@ services:
               capabilities: [gpu]
         limits:
           memory: 24G
+    ports:
+      - "11434:11434"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
@@ -142,7 +148,8 @@ services:
 
 volumes:
   postgres_data:
-  ollama_models:
+  ollama:
+    external: true
   prometheus_data:
   grafana_data:
   port_db_data:

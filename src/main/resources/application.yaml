@@ -39,6 +39,12 @@ spring:
           ssl:
             enable: true
 
+smtp:
+  host: ${SMTP_HOST:smtp.gmail.com}
+  port: ${SMTP_PORT:587}
+  username: ${SMTP_USER:inbox@example.com}
+  password: ${SMTP_PASSWORD:changeme}
+
 ollama:
   base-url: ${OLLAMA_URL:http://localhost:11434}
   extraction-model: qwen2.5:7b
