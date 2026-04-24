@@ -25,8 +25,28 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-// Чистый unit тест контроллера через standaloneSetup — Spring контекст не поднимается.
-// Репозиторий мокается через Mockito. Проверяет HTTP-статусы и JSON-ответы.
+/**
+ * Unit тесты REST API контроллера тикетов (TicketController).
+ * 
+ * Используется MockMvc для имитации HTTP запросов БЕЗ поднятия полного Spring контекста:
+ * - Только контроллер и его зависимости мокируются
+ * - Тесты выполняются быстро
+ * - Независимы от конфигурации Spring Security
+ * 
+ * MockMvcBuilders.standaloneSetup() — минимальная конфигурация для testing single controller.
+ * 
+ * Покрывает все REST endpoints:
+ * - GET /api/tickets (список всех тикетов)
+ * - GET /api/tickets/{id} (один тикет)
+ * - POST /api/tickets/{id}/approve (одобрить черновик)
+ * - POST /api/tickets/{id}/reject (отклонить черновик)
+ * - PATCH /api/tickets/{id}/draft (обновить черновик)
+ * 
+ * Проверяет:
+ * - HTTP статусы (200 OK, 404 Not Found, 409 Conflict, 400 Bad Request)
+ * - JSON структуру ответов
+ * - Обработку ошибок
+ */
 @ExtendWith(MockitoExtension.class)
 class TicketControllerTest {
 
@@ -38,11 +58,19 @@ class TicketControllerTest {
 
     @BeforeEach
     void setUp() {
+        // Создаём контроллер и настраиваем MockMvc (БЕЗ полного Spring контекста)
         TicketController controller = new TicketController(emailTicketRepository);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
-        objectMapper = new ObjectMapper();
+        objectMapper = new ObjectMapper(); // Для сериализации JSON
     }
 
+    /**
+     * Helper метод для создания тестовых тикетов.
+     * 
+     * @param id ID тикета
+     * @param status статус жизненного цикла
+     * @return заполненный тикет
+     */
     private EmailTicket buildTicket(Long id, TicketStatus status) {
         EmailTicket t = new EmailTicket();
         t.setId(id);
@@ -58,7 +86,14 @@ class TicketControllerTest {
         return t;
     }
 
-    // GET /api/tickets — возвращает список всех тикетов
+    /**
+     * Тест: GET /api/tickets — получить список всех тикетов.
+     * 
+     * Проверяет:
+     * - HTTP 200 OK
+     * - JSON массив с 2 тикетами
+     * - Поля status у каждого тикета
+     */
     @Test
     void listTickets_returnsAllTickets() throws Exception {
         when(emailTicketRepository.findAll(any(Sort.class)))
@@ -74,7 +109,13 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$[1].status").value("NEW"));
     }
 
-    // GET /api/tickets/{id} — возвращает конкретный тикет
+    /**
+     * Тест: GET /api/tickets/{id} — получить один тикет.
+     * 
+     * Проверяет:
+     * - HTTP 200 OK
+     * - Верные значения полей в JSON
+     */
     @Test
     void getTicket_existingId_returnsTicket() throws Exception {
         when(emailTicketRepository.findById(1L))
@@ -87,7 +128,12 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.senderEmail").value("customer@example.com"));
     }
 
-    // GET /api/tickets/{id} — несуществующий id → 404 Not Found
+    /**
+     * Тест: GET /api/tickets/{id} с несуществующим ID.
+     * 
+     * Проверяет:
+     * - HTTP 404 Not Found (ResourceNotFoundException обработана)
+     */
     @Test
     void getTicket_nonExistingId_returns404() throws Exception {
         when(emailTicketRepository.findById(99L)).thenReturn(Optional.empty());
@@ -96,7 +142,14 @@ class TicketControllerTest {
                 .andExpect(status().isNotFound());
     }
 
-    // POST /api/tickets/{id}/approve → статус меняется на CLOSED
+    /**
+     * Тест: POST /api/tickets/{id}/approve — одобрить черновик.
+     * 
+     * Проверяет:
+     * - HTTP 200 OK
+     * - Статус изменился на CLOSED
+     * - JSON ответ содержит новый статус
+     */
     @Test
     void approveTicket_draftReadyTicket_returnsClosed() throws Exception {
         EmailTicket ticket = buildTicket(1L, TicketStatus.DRAFT_READY);
@@ -108,7 +161,14 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.status").value("CLOSED"));
     }
 
-    // POST /api/tickets/{id}/reject → статус меняется на RETRY_LATER
+    /**
+     * Тест: POST /api/tickets/{id}/reject — отклонить черновик.
+     * 
+     * Проверяет:
+     * - HTTP 200 OK
+     * - Статус изменился на RETRY_LATER
+     * - RetryScheduler позже подберёт этот тикет для переобработки
+     */
     @Test
     void rejectTicket_draftReadyTicket_returnsRetryLater() throws Exception {
         EmailTicket ticket = buildTicket(1L, TicketStatus.DRAFT_READY);
@@ -120,7 +180,14 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.status").value("RETRY_LATER"));
     }
 
-    // PATCH /api/tickets/{id}/draft — обновляет черновик
+    /**
+     * Тест: PATCH /api/tickets/{id}/draft — обновить черновик оператором.
+     * 
+     * Проверяет:
+     * - HTTP 200 OK
+     * - Текст черновика обновлён в JSON ответе
+     * - Статус остаётся DRAFT_READY (т.к. close=false)
+     */
     @Test
     void updateDraft_validRequest_updatesReply() throws Exception {
         EmailTicket ticket = buildTicket(1L, TicketStatus.DRAFT_READY);
@@ -137,7 +204,13 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.draftReply").value("Updated reply text"));
     }
 
-    // PATCH /api/tickets/{id}/draft — редактировать закрытый тикет → 409 Conflict
+    /**
+     * Тест: попытка отредактировать закрытый тикет (статус CLOSED).
+     * 
+     * Проверяет:
+     * - HTTP 409 Conflict (логический конфликт — тикет закрыт)
+     * - Сообщение об ошибке в теле ответа
+     */
     @Test
     void updateDraft_closedTicket_returns409Conflict() throws Exception {
         when(emailTicketRepository.findById(1L))
@@ -152,7 +225,13 @@ class TicketControllerTest {
                 .andExpect(status().isConflict());
     }
 
-    // PATCH /api/tickets/{id}/draft — body без поля draftReply → 400 Bad Request
+    /**
+     * Тест: отправка PATCH запроса без обязательного поля draftReply.
+     * 
+     * Проверяет:
+     * - HTTP 400 Bad Request (валидация входных данных)
+     * - Контроллер проверяет что request.draftReply() не null
+     */
     @Test
     void updateDraft_missingDraftReply_returns400() throws Exception {
         String body = objectMapper.writeValueAsString(Map.of("close", false));

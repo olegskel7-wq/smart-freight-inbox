@@ -4,6 +4,9 @@ import com.smartfreight.inbox.entity.Container;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -30,15 +33,30 @@ public class TicketProcessingService {
     private final AiExtractionService aiExtractionService;
     private final ContainerLookupService containerLookupService;
     private final AiDraftingService aiDraftingService;
+    private final Timer processingTimer;
+    private final Counter draftReadyCounter;
+    private final Counter failedCounter;
 
     public TicketProcessingService(EmailTicketRepository emailTicketRepository,
                                    AiExtractionService aiExtractionService,
                                    ContainerLookupService containerLookupService,
-                                   AiDraftingService aiDraftingService) {
+                                   AiDraftingService aiDraftingService,
+                                   MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.aiExtractionService = aiExtractionService;
         this.containerLookupService = containerLookupService;
         this.aiDraftingService = aiDraftingService;
+        this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
+                .description("Время обработки тикета AI-конвейером")
+                .register(meterRegistry);
+        this.draftReadyCounter = Counter.builder("smartfreight_tickets_status_total")
+                .tag("status", "DRAFT_READY")
+                .description("Количество тикетов по статусу")
+                .register(meterRegistry);
+        this.failedCounter = Counter.builder("smartfreight_tickets_status_total")
+                .tag("status", "FAILED")
+                .description("Количество тикетов по статусу")
+                .register(meterRegistry);
     }
 
     // @Transactional(propagation = REQUIRES_NEW) — создаёт новую транзакцию для каждого вызова.
@@ -46,6 +64,7 @@ public class TicketProcessingService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void process(Long ticketId) {
         MDC.put("ticketId", String.valueOf(ticketId));
+        long startTime = System.nanoTime();
         try {
             log.info("Starting AI processing");
 
@@ -102,6 +121,8 @@ public class TicketProcessingService {
                     ticket.setUpdatedAt(LocalDateTime.now());
                     emailTicketRepository.save(ticket);
 
+                    draftReadyCounter.increment();
+                    processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
                     log.info("Ticket processing completed: DRAFT_READY");
                     return; // Успех — выходим из цикла retry
 
@@ -131,6 +152,7 @@ public class TicketProcessingService {
             t.setStatus(TicketStatus.FAILED);
             t.setUpdatedAt(LocalDateTime.now());
             emailTicketRepository.save(t);
+            failedCounter.increment();
         });
     }
 }

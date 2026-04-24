@@ -9,9 +9,10 @@ You can add a university logo and a “risks / metrics” slide next to the Obse
 
 ## 1. Flow diagrams (recommended for slides)
 
-### A. End-to-end pipeline (v1 MVP)
+### A. End-to-end pipeline (v1 MVP — two-service architecture)
 
-Mail intake, persistence, synchronous LLM processing (after commit), operator handoff.
+Mail intake, persistence, synchronous LLM processing (after commit), operator handoff.  
+Container data is fetched from **port-service** microservice via HTTP, not from inbox DB.
 
 ```mermaid
 flowchart TB
@@ -31,18 +32,25 @@ flowchart TB
     TPS[TicketProcessingService<br/>called in afterCommit]
     ST1[Set status PROCESSING]
     QW[Qwen 2.5 via Ollama<br/>extract container number]
-    CL[Container lookup<br/>PostgreSQL]
+    CL[ContainerLookupService<br/>HTTP GET → port-service]
     LL[Llama 3.1 via Ollama<br/>draft reply]
     ST2[Set status DRAFT_READY]
     SAVE --> TPS
     TPS --> ST1 --> QW --> CL --> LL --> ST2
   end
 
-  subgraph DATA["3 — Data store"]
-    PG[(PostgreSQL<br/>EmailTicket, Container, User)]
+  subgraph PS["port-service :9000"]
+    PSC[ContainerController<br/>GET /api/containers/{number}]
+    PSDB[(port_system DB<br/>container table<br/>20 containers, 5 UK ports)]
+    PSS[StatusUpdateScheduler<br/>every 5 min]
+    PSC --> PSDB
+    PSS --> PSDB
+  end
+
+  subgraph DATA["3 — inbox data store"]
+    PG[(smartfreight DB<br/>EmailTicket, User)]
     ST1 -.-> PG
     QW -.-> PG
-    CL --> PG
     LL -.-> PG
     ST2 --> PG
     SAVE --> PG
@@ -50,7 +58,9 @@ flowchart TB
 
   subgraph OPS["4 — Human-in-the-loop"]
     UI[Thymeleaf UI + REST API<br/>/tickets, /api/tickets]
+    SMTP[EmailReplyService<br/>SMTP outgoing reply]
     ST2 --> UI
+    UI --> SMTP
   end
 
   subgraph RES["Resilience"]
@@ -59,6 +69,8 @@ flowchart TB
     TPS -.-> FL
     UI -.-> RL
   end
+
+  CL -->|HTTP GET| PSC
 ```
 
 ### B. Simplified linear flow (single slide)
@@ -67,13 +79,15 @@ flowchart TB
 flowchart LR
   A[(IMAP mailbox)] --> B[IMAP IDLE]
   B --> C[Ingestion + dedup]
-  C --> D[(PostgreSQL)]
+  C --> D[(smartfreight DB)]
   D --> E[Synchronous LLM pipeline]
   E --> F[Qwen extract]
-  F --> G[DB lookup]
-  G --> H[Llama draft]
+  F --> G[HTTP → port-service]
+  G --> PS[(port_system DB)]
+  PS --> H[Llama draft]
   H --> D
   D --> I[Operator review]
+  I --> SMTP[SMTP reply]
 ```
 
 ### C. EmailTicket state machine
@@ -96,19 +110,23 @@ stateDiagram-v2
 
 ```mermaid
 flowchart TB
-  subgraph APP["Application"]
-    SB[Spring Boot backend :8080]
+  subgraph APP["Applications"]
+    SB[inbox :8080]
+    PS[port-service :9000]
+    SB -->|HTTP GET /api/containers/{n}| PS
   end
   subgraph DATA["Data & AI"]
-    PG[(PostgreSQL)]
-    OL[Ollama + GPU<br/>Qwen / Llama]
+    PG1[(smartfreight DB<br/>app_user, email_ticket)]
+    PG2[(port_system DB<br/>container)]
+    OL[Ollama + GPU<br/>Qwen 2.5 / Llama 3.1]
   end
   subgraph OBS["Observability"]
     PR[Prometheus]
     GF[Grafana]
-    AC[Actuator /health]
+    AC[Actuator /health<br/>/prometheus]
   end
-  SB --> PG
+  SB --> PG1
+  PS --> PG2
   SB --> OL
   SB --> AC
   AC --> PR
@@ -216,18 +234,22 @@ flowchart TB
 flowchart LR
   M[IMAP mail] --> IDLE[IMAP IDLE]
   IDLE --> SVC[EmailIngestionService]
-  SVC --> DB[(EmailTicket)]
+  SVC --> DB[(smartfreight DB)]
   DB --> POOL[Synchronous LLM pipeline]
   POOL --> Q[Qwen extraction]
-  Q --> C[Container lookup]
-  C --> L[Llama draft]
+  Q --> C[ContainerLookupService]
+  C -->|HTTP GET| PS[(port_system DB<br/>via port-service)]
+  PS --> L[Llama draft]
   L --> DB
   DB --> OP[Operator]
+  OP --> SMTP[SMTP reply]
 ```
 
 ---
 
 ## 5. Java package tree (v1 repository)
+
+### inbox (port 8080)
 
 ```
 smartfreight.inbox
@@ -237,29 +259,30 @@ smartfreight.inbox
 ├── config
 │   ├── ImapConfig           ← Spring Integration, mailChannel
 │   ├── SecurityConfig       ← form login + InMemoryUserDetailsManager
-│   └── WebClientConfig      ← Ollama timeouts, connection pool
+│   ├── SmtpConfig           ← JavaMailSender for outgoing replies
+│   └── WebClientConfig      ← Ollama + port-service WebClients
 ├── controller
 │   ├── AuthController       ← POST /api/auth/login
-│   ├── TicketController     ← REST /api/tickets (list/get/approve/reject)
-│   ├── TicketViewController ← Thymeleaf UI
+│   ├── TicketController     ← REST /api/tickets (list/get/approve/reject/send)
+│   ├── TicketViewController ← Thymeleaf UI (tickets, ticket-detail, login)
 │   └── AdminController      ← POST /admin/reprocess (localhost only)
 ├── entity
-│   ├── EmailTicket
-│   ├── Container
-│   ├── User
+│   ├── EmailTicket          ← @Entity → email_ticket table
+│   ├── Container            ← plain POJO (no @Entity), deserialized from port-service HTTP response
+│   ├── User                 ← @Entity → app_user table
 │   └── enums / TicketStatus
 ├── repository
 │   ├── EmailTicketRepository
-│   ├── ContainerRepository
 │   └── UserRepository
 ├── integration
-│   └── EmailIngestionService  ← schedules process() via afterCommit
+│   └── EmailIngestionService  ← IMAP IDLE, schedules process() via afterCommit
 ├── service
 │   ├── AuthService
-│   ├── AiExtractionService
-│   ├── AiDraftingService
-│   ├── ContainerLookupService
-│   └── TicketProcessingService  ← synchronous
+│   ├── AiExtractionService    ← Qwen 2.5 via Ollama
+│   ├── AiDraftingService      ← Llama 3.1 via Ollama
+│   ├── ContainerLookupService ← HTTP GET → port-service:9000
+│   ├── EmailReplyService      ← sends reply via SMTP
+│   └── TicketProcessingService  ← synchronous pipeline orchestration
 ├── scheduler
 │   └── RetryScheduler
 └── exception
@@ -267,11 +290,35 @@ smartfreight.inbox
     └── ContainerNotFoundException
 ```
 
+### port-service (port 9000)
+
+```
+smartfreight.port_service
+├── PortServiceApplication
+├── controller
+│   └── ContainerController  ← GET /api/containers/{number}
+├── dto
+│   └── ContainerResponse    ← REST response record (no internal fields)
+├── entity
+│   └── Container            ← @Entity → container table
+├── repository
+│   └── ContainerRepository
+├── service
+│   └── ContainerService     ← lookup + Entity→DTO mapping
+└── scheduler
+    └── StatusUpdateScheduler ← simulates container status changes every 5 min
+```
+
 ---
 
 ## 6. Database schema (ER diagram)
 
-Three tables, created by Flyway V1. `email_ticket` is the core entity; `container` is the reference catalogue; `app_user` holds operator credentials.
+The system uses **two separate PostgreSQL databases** across two services.
+
+### 6a. inbox DB — `smartfreight` (port 5433)
+
+Two tables: `email_ticket` is the core entity; `app_user` holds operator credentials.  
+The `container` table was present in V1 but **dropped in V5** — container data now lives in port-service's own DB and is fetched via HTTP.
 
 ```mermaid
 erDiagram
@@ -281,7 +328,7 @@ erDiagram
     varchar     sender_email
     varchar     subject
     text        body
-    varchar     extracted_container_number FK
+    varchar     extracted_container_number "references port-service via HTTP"
     varchar     status                     "NEW|PROCESSING|DRAFT_READY|RETRY_LATER|FAILED|CLOSED"
     text        draft_reply
     integer     retry_count                "default 0"
@@ -291,53 +338,82 @@ erDiagram
     timestamp   updated_at
   }
 
-  container {
-    bigserial   id               PK
-    varchar     container_number "UNIQUE, ISO 6346"
-    varchar     status
-    timestamp   eta
-    varchar     location
-  }
-
   app_user {
     bigserial   id       PK
     varchar     email    "UNIQUE"
     varchar     password "BCrypt"
     varchar     role
   }
-
-  email_ticket ||--o| container : "extracted_container_number → container_number"
 ```
 
-### Flyway migration history
+### Flyway migration history — inbox
 
 | Version | File | Purpose |
 |---------|------|---------|
-| V1 | `V1__init.sql` | Create all tables + indexes |
-| V2 | `V2__seed_demo_containers.sql` | Seed test containers (OOLU, MSCU…) |
+| V1 | `V1__init.sql` | Create app_user, container, email_ticket + indexes |
+| V2 | `V2__seed_demo_containers.sql` | Seed 7 demo containers |
 | V3 | `V3__fix_demo_user_password.sql` | Fix BCrypt hash for demo operator |
 | V4 | `V4__seed_test_tickets.sql` | Seed sample tickets for demo |
+| V5 | `V5__drop_container_table.sql` | **DROP container** — moved to port-service |
 
-### Indexes
+### Indexes — inbox
 
 | Index | Table | Column | Condition |
 |-------|-------|--------|-----------|
 | `idx_email_ticket_message_id` | email_ticket | message_id | — |
 | `idx_email_ticket_status` | email_ticket | status | `WHERE deleted = false` |
+
+---
+
+### 6b. port-service DB — `port_system` (port 5433)
+
+Single table. Represents the port's Terminal Operating System (TOS) container catalogue.  
+20 containers across UK ports (Felixstowe, Southampton, Tilbury, Liverpool, Bristol).
+
+```mermaid
+erDiagram
+  container {
+    bigserial   id               PK
+    varchar     container_number "UNIQUE, ISO 6346 (XXXX1234567)"
+    varchar     status           "IN_TRANSIT|AT_PORT|CUSTOMS|RELEASED|DELIVERED"
+    timestamp   eta
+    varchar     location         "e.g. Felixstowe Terminal 2, Row D"
+    timestamp   updated_at       "refreshed by StatusUpdateScheduler"
+  }
+```
+
+### Flyway migration history — port-service
+
+| Version | File | Purpose |
+|---------|------|---------|
+| V1 | `V1__init_port_db.sql` | Create container table + index |
+| V2 | `V2__seed_containers.sql` | Seed 7 initial demo containers |
+| V3 | `V3__expand_containers.sql` | Expand to 20 containers across 5 UK ports |
+
+### Indexes — port-service
+
+| Index | Table | Column | Condition |
+|-------|-------|--------|-----------|
 | `idx_container_number` | container | container_number | — |
 
 ---
 
 ## 7. Repository root (top-level files)
 
+### inbox/
+
 ```
 inbox/
 ├── pom.xml
 ├── docker-compose.yml       ← backend, postgres, ollama, prometheus, grafana
+├── Dockerfile
 ├── README.md
 ├── docs/                    ← project documentation (this file et al.)
 ├── monitoring/
-│   └── prometheus.yml
+│   ├── prometheus.yml
+│   └── grafana/             ← dashboards + datasource provisioning
+├── postman/
+│   └── Smart-Freight-Inbox.postman_collection.json
 ├── scripts/
 │   ├── entrypoint.sh
 │   ├── github-push.ps1
@@ -347,7 +423,20 @@ inbox/
     └── resources/
         ├── application.yaml
         ├── templates/       ← Thymeleaf (login, tickets, ticket-detail)
-        └── db/migration/    ← V1..V4
+        └── db/migration/    ← V1..V5
+```
+
+### port-service/
+
+```
+port-service/
+├── pom.xml
+├── Dockerfile
+└── src/main/
+    ├── java/.../com/smartfreight/port_service/...
+    └── resources/
+        ├── application.yaml  ← port 9000, port_system DB
+        └── db/migration/     ← V1..V3 (container table + 20 seed rows)
 ```
 
 ---
