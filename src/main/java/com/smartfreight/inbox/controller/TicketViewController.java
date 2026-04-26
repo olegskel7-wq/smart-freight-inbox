@@ -15,10 +15,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 // Thymeleaf UI контроллер — обслуживает браузерный интерфейс оператора.
 // Аутентификация через стандартный Spring Security form login (сессия в cookie).
@@ -98,11 +101,17 @@ public class TicketViewController {
         }
     }
 
-    // GET /tickets/{id} — детали тикета: письмо, контейнер, черновик ответа
+    // GET /tickets/{id} — детали тикета: письмо, контейнер, черновик ответа.
+    //
+    // При несуществующем id бросается ResponseStatusException(404), а не IllegalArgumentException.
+    // Это позволяет Spring Boot:
+    //   1) выставить корректный HTTP-статус 404 (не whitelabel 500);
+    //   2) передать управление BasicErrorController, который отрендерит templates/error.html.
+    // GlobalExceptionHandler сюда не вмешивается — он ограничен @RestController-классами.
     @GetMapping("/tickets/{id}")
     public String ticketDetail(@PathVariable Long id, Model model) {
         EmailTicket ticket = emailTicketRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + id));
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Ticket not found: " + id));
         model.addAttribute("ticket", ticket);
         return "ticket-detail";
     }
@@ -132,7 +141,7 @@ public class TicketViewController {
                               @RequestParam(name = "action", defaultValue = "save") String action,
                               RedirectAttributes redirectAttributes) {
         EmailTicket ticket = emailTicketRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + id));
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Ticket not found: " + id));
 
         if (ticket.getStatus() == TicketStatus.CLOSED) {
             return "redirect:/tickets/" + id;

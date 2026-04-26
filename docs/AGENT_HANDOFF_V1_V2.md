@@ -18,7 +18,7 @@
 - PostgreSQL (schema `V1__init.sql`, seeds `V2__seed_demo_containers.sql`, `V3__fix_demo_user_password.sql`, `V4__seed_test_tickets.sql`)
 - Spring Integration **IMAP IDLE** for mail (`ImapConfig`, `EmailIngestionService`)
 - **Ollama** over HTTP: Qwen (extraction), Llama (drafting) — `WebClientConfig`, `AiExtractionService`, `AiDraftingService`
-- Spring Security + JWT (`JwtService`, `JwtAuthenticationFilter`, `SecurityConfig`) — stateless, JWT in `Authorization` header (REST) or httpOnly cookie (UI)
+- Spring Security + form login (`SecurityConfig`, `DbUserDetailsService`) — session cookie for UI; JWT layer (`JwtService`, `JwtAuthenticationFilter`) present for REST but auth is unified through `AuthenticationManager` backed by `DbUserDetailsService` (reads `app_user` table)
 - **Synchronous** processing: `TicketProcessingService.process(ticketId)` runs in the caller's thread. `EmailIngestionService` schedules it via `TransactionSynchronization.afterCommit()` so the DB transaction for email intake is committed before the long LLM calls start.
 - Retries: `RetryScheduler` periodically picks up tickets in `RETRY_LATER` (operator reject)
 - UI: Thymeleaf + Bootstrap 5 (`templates/login.html`, `tickets.html`, `ticket-detail.html`)
@@ -37,8 +37,9 @@
 **Known notes for agents:**
 
 - No message broker: scaling is a single instance. An incoming IMAP message blocks the integration thread until Ollama finishes. Acceptable for the demo; replaced by RabbitMQ in v2.
-- No SMTP send-out yet: operator closes the ticket; outbound reply is a planned extension.
-- `AuthController` contains a temporary demo-bypass for `operator@smartfreight.com` / `demo123` (BCrypt mismatch workaround) — remove before any non-demo use.
+- SMTP send-out is implemented: `EmailReplyService` sends outbound replies via `JavaMailSender` (configured in `SmtpConfig`).
+- Auth unified: the temporary `AuthController` demo-bypass for `operator@smartfreight.com / demo123` **has been removed**. `AuthService` now delegates to Spring Security `AuthenticationManager`, which uses `DbUserDetailsService` → `UserRepository` → `app_user` table. Single source of truth for credentials.
+- `AdminController.reprocessAll` does NOT hold a long `@Transactional` context anymore. FAILED tickets are bulk-reset in a short transaction (`TicketProcessingService.prepareForRetry()`), then ticket IDs are fetched as a projection (`EmailTicketRepository.findIdsByStatusIn()`), and each `process(id)` runs in its own `REQUIRES_NEW` transaction.
 
 **Canonical package root:** `com.smartfreight.inbox` (no `v2` subpackage in v1).
 
@@ -61,8 +62,10 @@ inbox/   (project root)
     │   │   ├── InboxApplication.java
     │   │   ├── actuator/OllamaHealthIndicator.java
     │   │   ├── config/
+    │   │   │   ├── DbUserDetailsService.java   (loads users from app_user table)
     │   │   │   ├── ImapConfig.java
     │   │   │   ├── SecurityConfig.java
+    │   │   │   ├── SmtpConfig.java
     │   │   │   └── WebClientConfig.java
     │   │   ├── controller/
     │   │   │   ├── AdminController.java        (POST /admin/reprocess, localhost-only)
@@ -97,6 +100,7 @@ inbox/   (project root)
     │   └── resources/
     │       ├── application.yaml
     │       ├── templates/
+    │       │   ├── error.html
     │       │   ├── login.html
     │       │   ├── tickets.html
     │       │   └── ticket-detail.html
@@ -243,4 +247,4 @@ flowchart LR
 
 ---
 
-*Last updated for agent handoff. Regenerate the file trees if the repository layout changes materially.*
+*Last updated: 2026-04-26 — auth refactor (DbUserDetailsService, AuthenticationManager), AdminController transaction fix (bulk-reset + ID projection), Thymeleaf error page (error.html, GlobalExceptionHandler scoped to @RestController). Regenerate file trees if layout changes further.*

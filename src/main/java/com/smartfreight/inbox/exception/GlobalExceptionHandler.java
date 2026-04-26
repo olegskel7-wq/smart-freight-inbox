@@ -3,14 +3,26 @@ package com.smartfreight.inbox.exception;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.HashMap;
 import java.util.Map;
 
-// @RestControllerAdvice — глобальный обработчик исключений для всех @RestController
-// Spring автоматически вызывает методы этого класса когда в контроллерах выбрасываются исключения
-@RestControllerAdvice
+// @RestControllerAdvice — глобальный обработчик исключений для REST-контроллеров.
+//
+// Параметр annotations = RestController.class явно ограничивает scope:
+// этот advice применяется ТОЛЬКО к классам, помеченным @RestController
+// (TicketController, AuthController, AdminController), и НЕ применяется к
+// Thymeleaf-контроллерам, помеченным @Controller (TicketViewController).
+//
+// Зачем это нужно:
+//   - REST-клиенты должны получать JSON: { "error": "...", "message": "..." }
+//   - UI-пользователи должны получать HTML-страницу ошибки (templates/error.html),
+//     которую за нас рендерит Spring Boot BasicErrorController.
+// Если бы advice был "глобальным" без scope — UI-пользователь увидел бы JSON
+// в браузере при выбросе IllegalArgumentException, что нежелательно.
+@RestControllerAdvice(annotations = RestController.class)
 public class GlobalExceptionHandler {
 
     // Обработчик для контейнера не найдена

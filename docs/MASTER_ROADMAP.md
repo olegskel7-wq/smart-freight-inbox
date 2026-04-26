@@ -45,13 +45,13 @@
 com.smartfreight.inbox
 ├── InboxApplication
 ├── actuator/         OllamaHealthIndicator
-├── config/           ImapConfig, SecurityConfig, WebClientConfig
+├── config/           ImapConfig, SecurityConfig, DbUserDetailsService, SmtpConfig, WebClientConfig
 ├── controller/       AuthController, TicketController, TicketViewController, AdminController
 ├── entity/           EmailTicket, Container, User, enums/TicketStatus
 ├── repository/       EmailTicketRepository, ContainerRepository, UserRepository
 ├── integration/      EmailIngestionService
 ├── service/          AuthService, AiExtractionService, AiDraftingService,
-│                     ContainerLookupService, TicketProcessingService
+│                     ContainerLookupService, TicketProcessingService, EmailReplyService
 ├── scheduler/        RetryScheduler
 ├── security/         JwtService, JwtAuthenticationFilter
 └── exception/        GlobalExceptionHandler, ContainerNotFoundException
@@ -67,7 +67,9 @@ NEW → PROCESSING → DRAFT_READY → CLOSED (approve)
 ### Демо-пользователь
 
 - Email: `operator@smartfreight.com`
-- Пароль: `demo123` (BCrypt-хэш; в `AuthController` пока есть временный bypass для демо — удалить после защиты)
+- Пароль: `demo123` (BCrypt-хэш в таблице `app_user`, Flyway-миграция `V3__fix_demo_user_password.sql`)
+- Временный bypass удалён: `AuthService` теперь делегирует проверку Spring Security `AuthenticationManager`
+  → единый источник учётных данных — БД через `DbUserDetailsService`
 
 ---
 
@@ -523,4 +525,4 @@ Spans:
 ---
 
 *Этот файл — живой документ. Обновляй статусы шагов по мере выполнения.*
-*Последнее обновление: Неделя 3 завершена. REST API + Thymeleaf UI + синхронный пайплайн + реальный IMAP — в репозитории.*
+*Последнее обновление: Неделя 3 завершена + рефакторинг аутентификации, транзакций AdminController и обработки UI-ошибок (26-04-2026). REST API + Thymeleaf UI + синхронный пайплайн + реальный IMAP + DbUserDetailsService — в репозитории.*

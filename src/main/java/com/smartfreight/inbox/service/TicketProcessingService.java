@@ -155,4 +155,30 @@ public class TicketProcessingService {
             failedCounter.increment();
         });
     }
+
+    /**
+     * Подготавливает тикеты к массовой переобработке — bulk-сброс FAILED → NEW.
+     *
+     * Используется AdminController.reprocessAll. Вынесено в отдельный
+     * @Transactional-метод сервиса по двум причинам:
+     *   1. Транзакция короткая (одна UPDATE-операция, мгновенный commit).
+     *      Соединение HikariCP сразу возвращается в пул, после чего
+     *      контроллер может спокойно крутить долгий цикл process() без
+     *      "жирной" объемлющей транзакции.
+     *   2. Bulk-update требует @Transactional + @Modifying на JPA-уровне,
+     *      иначе Hibernate бросит TransactionRequiredException.
+     *
+     * Возвращает количество тикетов, переведённых из FAILED в NEW
+     * (для логирования и человекочитаемого ответа админу).
+     *
+     * @return количество затронутых строк
+     */
+    @Transactional
+    public int prepareForRetry() {
+        int reset = emailTicketRepository.resetFailedToNew();
+        if (reset > 0) {
+            log.info("prepareForRetry: reset {} FAILED ticket(s) to NEW", reset);
+        }
+        return reset;
+    }
 }

@@ -123,8 +123,10 @@ mindmap
     actuator
       OllamaHealthIndicator
     config
+      DbUserDetailsService
       ImapConfig
       SecurityConfig
+      SmtpConfig
       WebClientConfig
     entity
       EmailTicket
@@ -169,29 +171,29 @@ sequenceDiagram
   participant UI as REST Client / Browser
   participant AC as AuthController
   participant AS as AuthService
+  participant AM as AuthenticationManager
+  participant DU as DbUserDetailsService
   participant UR as UserRepository
-  participant JS as JwtService
 
   UI->>AC: POST /api/auth/login\n{email, password}
   AC->>AS: login(email, password)
-  AS->>UR: findByEmail(email)
-  UR-->>AS: User (BCrypt hash)
-  AS->>AS: passwordEncoder.matches()
+  AS->>AM: authenticate(UsernamePasswordAuthenticationToken)
+  AM->>DU: loadUserByUsername(email)
+  DU->>UR: findByEmail(email)
+  UR-->>DU: User entity (BCrypt hash)
+  DU-->>AM: UserDetails
+  AM->>AM: BCryptPasswordEncoder.matches()
   alt пароль верный
-    AS->>JS: generateToken(email)
-    JS-->>AS: JWT (24h)
-    AS-->>AC: token
-    AC-->>UI: 200 OK {token}
-  else пароль неверный
-    AS-->>AC: ResponseStatusException 401
+    AM-->>AS: Authentication (authenticated)
+    AS-->>AC: Authentication object
+    AC-->>UI: 200 OK {status: "ok"}
+  else пароль неверный / пользователь не найден
+    AM-->>AS: throws AuthenticationException
+    AS-->>AC: throws IllegalArgumentException("Invalid credentials")
     AC-->>UI: 401 Unauthorized
   end
 
-  Note over UI: localStorage.setItem('jwt', token)
-
-  UI->>AC: GET /api/tickets\nAuthorization: Bearer eyJ...
-  Note over AC: JwtAuthenticationFilter\nвалидирует подпись + срок
-  AC-->>UI: 200 OK [tickets]
+  Note over UI: Для UI — form login через POST /login\n(Spring Security обрабатывает сессию в cookie)
 ```
 
 ---
@@ -486,6 +488,7 @@ mindmap
         resources
           application.yaml
           templates (Thymeleaf)
+            error.html
             login.html
             tickets.html
             ticket-detail.html
@@ -503,3 +506,4 @@ mindmap
 
 *Все диаграммы работают на [mermaid.live](https://mermaid.live), в GitHub README, Notion и Obsidian.*
 *Файл: `docs/MERMAID_DIAGRAMS.md`*
+*Последнее обновление: 2026-04-26 — диаграмма 4 (mindmap), диаграмма 5 (auth), диаграмма 16 (file tree) обновлены под DbUserDetailsService, AuthenticationManager, error.html.*

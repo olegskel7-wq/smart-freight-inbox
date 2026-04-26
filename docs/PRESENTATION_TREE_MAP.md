@@ -181,7 +181,7 @@ mindmap
     Security
       Session cookie (form login)
       Spring Security 6
-      InMemoryUserDetailsManager (demo)
+      DbUserDetailsService (DB-backed, app_user table)
     Observability
       Actuator
       Prometheus / Grafana
@@ -257,8 +257,9 @@ smartfreight.inbox
 ├── actuator
 │   └── OllamaHealthIndicator
 ├── config
+│   ├── DbUserDetailsService ← UserDetailsService backed by app_user table (replaces InMemoryUserDetailsManager)
 │   ├── ImapConfig           ← Spring Integration, mailChannel
-│   ├── SecurityConfig       ← form login + InMemoryUserDetailsManager
+│   ├── SecurityConfig       ← form login + AuthenticationManager bean (uses DbUserDetailsService)
 │   ├── SmtpConfig           ← JavaMailSender for outgoing replies
 │   └── WebClientConfig      ← Ollama + port-service WebClients
 ├── controller
@@ -422,7 +423,7 @@ inbox/
     ├── java/.../com/smartfreight/inbox/...
     └── resources/
         ├── application.yaml
-        ├── templates/       ← Thymeleaf (login, tickets, ticket-detail)
+        ├── templates/       ← Thymeleaf (error, login, tickets, ticket-detail)
         └── db/migration/    ← V1..V5
 ```
 
