@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
  *
  * Naudojama paskutiniame darbo eigos žingsnyje:
  * 1. Operatorius peržiūri AI sugeneruotą juodraštį
- * 2. Operatorius spaudžia "Siųsti" UI
+ * 2. Operatorius spaudžia "Send" in the UI
  * 3. {@link #sendReply} išsiunčia laišką per SMTP į siuntėjo adresą
  * 4. Laiške nustatomi In-Reply-To/References antraštės teisingam sriegimui
  *

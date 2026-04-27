@@ -52,7 +52,7 @@ public class RetryScheduler {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.retryCounter = Counter.builder("smartfreight_tickets_retry_count_total")
-                .description("Bendras pakartotinių biletų apdorojimo bandymų skaičius")
+                .description("Total number of retry processing attempts for tickets")
                 .register(meterRegistry);
     }
 

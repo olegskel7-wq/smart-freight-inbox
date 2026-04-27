@@ -58,15 +58,15 @@ public class TicketProcessingService {
         this.containerLookupService = containerLookupService;
         this.aiDraftingService = aiDraftingService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
-                .description("Bilieto apdorojimo trukmė AI konvejeriu")
+                .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
         this.draftReadyCounter = Counter.builder("smartfreight_tickets_status_total")
                 .tag("status", "DRAFT_READY")
-                .description("Biletų skaičius pagal būseną")
+                .description("Ticket count by status")
                 .register(meterRegistry);
         this.failedCounter = Counter.builder("smartfreight_tickets_status_total")
                 .tag("status", "FAILED")
-                .description("Biletų skaičius pagal būseną")
+                .description("Ticket count by status")
                 .register(meterRegistry);
     }
 
