@@ -9,23 +9,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.util.HashMap;
 import java.util.Map;
 
-// @RestControllerAdvice — глобальный обработчик исключений для REST-контроллеров.
-//
-// Параметр annotations = RestController.class явно ограничивает scope:
-// этот advice применяется ТОЛЬКО к классам, помеченным @RestController
-// (TicketController, AuthController, AdminController), и НЕ применяется к
-// Thymeleaf-контроллерам, помеченным @Controller (TicketViewController).
-//
-// Зачем это нужно:
-//   - REST-клиенты должны получать JSON: { "error": "...", "message": "..." }
-//   - UI-пользователи должны получать HTML-страницу ошибки (templates/error.html),
-//     которую за нас рендерит Spring Boot BasicErrorController.
-// Если бы advice был "глобальным" без scope — UI-пользователь увидел бы JSON
-// в браузере при выбросе IllegalArgumentException, что нежелательно.
+/**
+ * Globalus išimčių tvarkytojas REST valdikliams.
+ *
+ * Taikomas tik {@code @RestController} klasėms (AdminController) –
+ * Thymeleaf valdikliui ({@code @Controller}) čia neveikia,
+ * jis gauna HTML klaidos puslapį per Spring Boot BasicErrorController.
+ */
 @RestControllerAdvice(annotations = RestController.class)
 public class GlobalExceptionHandler {
 
-    // Обработчик для контейнера не найдена
+    /**
+     * Konteineris nerastas port-service sistemoje → 404 Not Found.
+     */
     @ExceptionHandler(ContainerNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleContainerNotFound(ContainerNotFoundException ex) {
         Map<String, String> response = new HashMap<>();
@@ -34,7 +30,9 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
-    // Обработчик для ошибок валидации (неправильные параметры)
+    /**
+     * Netinkamas įvesties parametras → 400 Bad Request.
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
         Map<String, String> response = new HashMap<>();
@@ -43,7 +41,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
-    // Обработчик для всех остальных исключений
+    /**
+     * Visos kitos nenumatytos išimtys → 500 Internal Server Error.
+     * Klientas gauna generalizuotą pranešimą – vidinės detalės nepateikiamos.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleGenericException(Exception ex) {
         Map<String, String> response = new HashMap<>();

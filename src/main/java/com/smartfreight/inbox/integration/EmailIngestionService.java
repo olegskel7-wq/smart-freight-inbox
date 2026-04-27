@@ -21,8 +21,20 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
-// Точка входа для входящих писем: получает MimeMessage из IMAP IDLE канала,
-// выполняет дедупликацию, сохраняет тикет и запускает AI-конвейер.
+/**
+ * Gaunamų el. laiškų priėmimo paslauga.
+ *
+ * Yra IMAP IDLE kanalo (mailChannel) gavėjas – Spring Integration
+ * automatiškai iškviečia {@link #processIncomingEmail} gavus naują laišką.
+ *
+ * Vykdomas konvejeris:
+ * 1. Laiškas nukopijuojamas į atmintį (apsauga nuo FolderClosedException).
+ * 2. Tikrinama Message-ID antraštė – be jos laiškas ignoruojamas.
+ * 3. Dublikatų tikrinimas pagal Message-ID – IMAP gali pristatyti tą patį laišką du kartus.
+ * 4. Ištraukiamas laiško turinys (paprastas tekstas arba multipart).
+ * 5. Sukuriamas ir išsaugomas bilietas.
+ * 6. Po transakcijos įvykdymo (afterCommit) paleidžiamas AI konvejeris.
+ */
 @Service
 public class EmailIngestionService {
 
@@ -37,18 +49,25 @@ public class EmailIngestionService {
         this.ticketProcessingService = ticketProcessingService;
     }
 
-    // @ServiceActivator — Spring Integration вызывает этот метод автоматически
-    // при появлении нового письма в канале "mailChannel"
+    /**
+     * Apdoroja gautą el. laišką: tikrina, išsaugo biletą, paleidžia AI konvejerį.
+     *
+     * @ServiceActivator – Spring Integration automatiškai iškviečia šį metodą
+     * gavus naują laišką mailChannel kanale.
+     *
+     * @Transactional – bilieto išsaugojimas ir AI paleidimas yra atomiškas.
+     * Jei save() meta išimtį – bilietas nesukuriamas ir apdorojimas nepradedamas.
+     *
+     * @param mimeMessage gautas Jakarta Mail laiško objektas
+     */
     @ServiceActivator(inputChannel = "mailChannel")
-
-    // @Transactional — сохранение тикета и запуск обработки атомарны.
-    // Если save() бросит исключение — тикет не создастся и обработка не запустится.
     @Transactional
     public void processIncomingEmail(MimeMessage mimeMessage) {
         try {
-            // Сразу копируем всё письмо в память — IMAP доставляет MimeMessage как ссылку на сервер,
-            // и при попытке читать тело позже соединение уже закрыто (FolderClosedException).
-            final int MAX_EMAIL_BYTES = 10 * 1024 * 1024; // 10 MB
+            // Iš karto nukopijuojame visą laišką į atmintį – IMAP pristato MimeMessage
+            // kaip nuorodą į serverį, ir vėliau bandant skaityti turinį ryšys jau uždarytas
+            // (FolderClosedException). 10 MB limitas apsaugo heap atmintį.
+            final int MAX_EMAIL_BYTES = 10 * 1024 * 1024;
             int reportedSize = mimeMessage.getSize();
             if (reportedSize > MAX_EMAIL_BYTES) {
                 log.warn("Email too large ({} bytes), skipping to protect heap memory", reportedSize);
@@ -62,9 +81,8 @@ public class EmailIngestionService {
             }
             mimeMessage = new MimeMessage(null, new ByteArrayInputStream(baos.toByteArray()));
 
-            // Читаем уникальный идентификатор письма из заголовка Message-ID (стандарт RFC 2822)
+            // RFC 2822 Message-ID antraštė – privaloma unikaliam identifikavimui
             String[] messageIds = mimeMessage.getHeader("Message-ID");
-
             if (messageIds == null || messageIds.length == 0) {
                 log.warn("Incoming email has no Message-ID header, skipping");
                 return;
@@ -73,22 +91,21 @@ public class EmailIngestionService {
             String messageId = messageIds[0];
             MDC.put("messageId", messageId);
 
-            // Дедупликация: одно письмо IMAP может доставить дважды после переподключения
+            // Dublikatų tikrinimas: IMAP gali pristatyti tą patį laišką du kartus
+            // po persijungimo – unikalus indeksas DB tai apsaugo, bet geriau aptikti anksčiau
             if (emailTicketRepository.findByMessageId(messageId).isPresent()) {
                 log.info("Duplicate email ignored: {}", messageId);
                 return;
             }
 
-            // Извлекаем тело письма (поддерживаем plain text и multipart)
             String body = extractBody(mimeMessage);
 
-            // Извлекаем отправителя (берём первый адрес из From)
             String senderEmail = "";
             if (mimeMessage.getFrom() != null && mimeMessage.getFrom().length > 0) {
                 senderEmail = mimeMessage.getFrom()[0].toString();
             }
 
-            // Создаём тикет через Builder — поля по умолчанию: status=NEW, retryCount=0
+            // Builder numatytosios reikšmės: status=NEW, retryCount=0
             EmailTicket ticket = EmailTicket.builder()
                     .messageId(messageId)
                     .subject(mimeMessage.getSubject())
@@ -99,11 +116,11 @@ public class EmailIngestionService {
             try {
                 EmailTicket saved = emailTicketRepository.save(ticket);
                 MDC.put("ticketId", String.valueOf(saved.getId()));
-                log.info("Email ingested: ticket ID={}, subject='{}'",
-                        saved.getId(), saved.getSubject());
+                log.info("Email ingested: ticket ID={}, subject='{}'", saved.getId(), saved.getSubject());
 
-                // AI-конвейер в том же потоке, но после commit транзакции приёма письма:
-                // не держим соединение с БД открытым на время вызовов Ollama.
+                // AI konvejeris paleidžiamas TIK PO transakcijos įvykdymo (afterCommit):
+                // process() turi matyti išsaugotą biletą DB savo transakcijoje.
+                // Laikant DB ryšį atvirą Ollama laukimo metu (150 s) blokuotų HikariCP baseiną.
                 final Long ticketId = saved.getId();
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
@@ -113,8 +130,8 @@ public class EmailIngestionService {
                 });
 
             } catch (DataIntegrityViolationException e) {
-                // Race condition: два потока одновременно прошли проверку findByMessageId
-                // и оба попытались сохранить. Уникальный индекс отклонил второй — ок.
+                // Lenktynės: du srautai vienu metu praėjo findByMessageId tikrinimą
+                // ir abu bandė išsaugoti. Unikalus indeksas atmetė antrą – tai normalu.
                 log.info("Duplicate email on concurrent save, skipping: {}", messageId);
             }
 
@@ -126,25 +143,29 @@ public class EmailIngestionService {
         }
     }
 
-    // Извлекает текстовое тело письма.
-    // Обрабатывает три случая:
-    //   1. Простое текстовое письмо (String)
-    //   2. Multipart письмо — берём первую text/plain часть
-    //   3. Остальное — возвращаем пустую строку
+    /**
+     * Ištraukia tekstinį laiško turinį.
+     *
+     * Apdoroja tris atvejus:
+     * 1. Paprastas tekstinis laiškas (String turinys)
+     * 2. Multipart laiškas – imama pirmoji text/plain dalis
+     * 3. Kita – grąžinama tuščia eilutė
+     *
+     * @param message laiško objektas
+     * @return ištrauktas tekstas arba tuščia eilutė
+     */
     private String extractBody(MimeMessage message) throws MessagingException, IOException {
         Object content = message.getContent();
 
-        // Случай 1: тело уже является строкой (plain text письмо)
         if (content instanceof String text) {
             return text;
         }
 
-        // Случай 2: multipart (например text/plain + text/html + вложения)
         if (content instanceof Multipart multipart) {
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < multipart.getCount(); i++) {
                 BodyPart part = multipart.getBodyPart(i);
-                // Берём только text/plain части, пропускаем HTML и вложения
+                // Imame tik text/plain dalis – HTML ir priedai ignoruojami
                 if (part.isMimeType("text/plain")) {
                     sb.append(part.getContent());
                     sb.append("\n");
@@ -153,7 +174,7 @@ public class EmailIngestionService {
             if (!sb.isEmpty()) {
                 return sb.toString();
             }
-            // Если text/plain не нашли — пробуем взять хотя бы первую часть
+            // Jei text/plain nerasta – bandome imti bent pirmą dalį
             if (multipart.getCount() > 0) {
                 Object firstPart = multipart.getBodyPart(0).getContent();
                 if (firstPart instanceof String s) {

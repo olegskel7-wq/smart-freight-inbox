@@ -14,28 +14,32 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Планировщик повторной обработки застрявших тикетов.
- * 
- * Запускается периодически (каждые 2 минуты) для поиска тикетов со статусом RETRY_LATER.
- * Используется для:
- * - Автоматического повтора при временных ошибках Ollama
- * - Обработки тикетов, отклонённых оператором (RETRY_LATER статус)
- * 
- * Поток:
- * 1. Ищем все тикеты RETRY_LATER с retryCount < MAX_RETRIES (5)
- * 2. Для каждого: увеличиваем retryCount, сбрасываем статус в NEW
- * 3. Запускаем TicketProcessingService.process() синхронно
- * 4. Если успех → DRAFT_READY, если ошибка → снова RETRY_LATER или FAILED
- * 
- * Защита: MAX_RETRIES предотвращает бесконечные циклы "сломанных" тикетов.
+ * Įstrigusių biletų pakartotinio apdorojimo planuotojas.
+ *
+ * Periodiškai (kas 2 minutes) ieško biletų su RETRY_LATER būsena
+ * ir automatiškai paleidžia AI konvejerį iš naujo.
+ *
+ * Naudojimo atvejai:
+ * – Automatinis pakartojimas esant laikinoms Ollama klaidoms
+ * – Operatoriaus atmestų juodraščių persvarstymas (RETRY_LATER būsena)
+ *
+ * Konvejeris:
+ * 1. Ieškome RETRY_LATER biletų su retryCount &lt; MAX_RETRIES (5)
+ * 2. Kiekvienam: padidinamas retryCount, būsena atstatoma į NEW
+ * 3. Paleidžiamas TicketProcessingService.process() sinchroniškai
+ * 4. Sėkmė → DRAFT_READY, klaida → vėl RETRY_LATER arba FAILED
+ *
+ * MAX_RETRIES apsaugo nuo begalinių ciklų su "sugedusiais" biletais.
  */
 @Component
 public class RetryScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(RetryScheduler.class);
 
-    // Максимум попыток обработки одного тикета — после этого оставляем его навсегда в RETRY_LATER
-    // (оператор должен вручную разобраться — есть ли проблема в логике или данных письма)
+    /**
+     * Maksimalus apdorojimo bandymų skaičius vienam biletui.
+     * Po to bilietas lieka RETRY_LATER – operatorius turi spręsti rankiniu būdu.
+     */
     private static final int MAX_RETRIES = 5;
 
     private final EmailTicketRepository emailTicketRepository;
@@ -48,42 +52,41 @@ public class RetryScheduler {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.retryCounter = Counter.builder("smartfreight_tickets_retry_count_total")
-                .description("Общее количество повторных попыток обработки тикетов")
+                .description("Bendras pakartotinių biletų apdorojimo bandymų skaičius")
                 .register(meterRegistry);
     }
 
     /**
-     * Периодическая задача переобработки застрявших тикетов.
-     * 
-     * Расписание:
-     * - fixedDelay = 120_000 ms (2 минуты) — пауза МЕЖДУ окончанием одного запуска и началом следующего
-     * - initialDelay = 60_000 ms (1 минута) — пауза перед ПЕРВЫМ запуском (даёт приложению время инициализироваться)
-     * 
-     * Используем fixedDelay вместо fixedRate чтобы не накапливать параллельные запуски:
-     * - fixedRate: запуск каждые 2 минуты, независимо от длительности метода
-     * - fixedDelay: если метод выполнился за 5 минут, следующий запуск будет через 2 минуты после конца
-     * 
-     * На практике TicketProcessingService вызывает Ollama (150сек таймаут),
-     * поэтому fixedDelay лучше подходит для предотвращения гонок.
+     * Periodiškai vykdoma užduotis įstrigusiems biletams persvarstyti.
+     *
+     * Grafikas:
+     * – {@code fixedDelay = 120_000 ms} (2 minutės) – pauzė TARP vieno vykdymo pabaigos ir kito pradžios
+     * – {@code initialDelay = 60_000 ms} (1 minutė) – pauzė prieš PIRMĄ paleidimą
+     *   (duoda laikui programai inicializuotis po paleidimo)
+     *
+     * Naudojamas fixedDelay vietoj fixedRate, kad nekauptųsi lygiagrečiai vykdymai:
+     * – fixedRate: paleidžia kas 2 minutes, nepriklausomai nuo metodo trukmės
+     * – fixedDelay: jei metodas vykdėsi 5 minutes, kitas paleidimas bus po 2 minučių nuo pabaigos
+     *
+     * Ollama gali laukti 150 s vienam biletui, todėl fixedDelay tinkamesnis.
      */
     @Scheduled(fixedDelay = 120_000, initialDelay = 60_000)
     public void retryFailedTickets() {
-        // Ищем тикеты со статусом RETRY_LATER которые не превысили лимит попыток
         List<EmailTicket> toRetry = emailTicketRepository
                 .findByStatusAndRetryCountLessThan(TicketStatus.RETRY_LATER, MAX_RETRIES);
 
         if (toRetry.isEmpty()) {
-            // Нет работы — выходим тихо (не логируем каждый цикл)
+            // Nėra darbo – tyliai išeiname (nereikia loginti kiekvieną tuščią ciklą)
             return;
         }
 
         log.info("RetryScheduler: found {} ticket(s) to retry", toRetry.size());
 
         for (EmailTicket ticket : toRetry) {
-            // Увеличиваем счётчик попыток перед запуском (для логирования и защиты от зацикливания)
+            // retryCount didinamas PRIEŠ paleidimą – jei process() lūžtų,
+            // kitą kartą skaitiklis jau bus padidintas (apsauga nuo begalinių ciklų)
             ticket.setRetryCount(ticket.getRetryCount() + 1);
-            // Сбрасываем статус на NEW чтобы TicketProcessingService принял тикет
-            // (логика в TicketProcessingService.process() требует NEW или RETRY_LATER)
+            // Atstatome į NEW – TicketProcessingService.process() priima tik NEW arba RETRY_LATER
             ticket.setStatus(TicketStatus.NEW);
             emailTicketRepository.save(ticket);
 
@@ -91,8 +94,7 @@ public class RetryScheduler {
                     ticket.getId(), ticket.getRetryCount(), MAX_RETRIES);
 
             retryCounter.increment();
-            // Синхронно запускаем процесс (в текущем потоке, не в отдельном потоке)
-            // @Transactional в process() создаёт новую транзакцию
+            // Sinchroninis paleidimas esamame sraute – @Transactional process() sukuria naują transakciją
             ticketProcessingService.process(ticket.getId());
         }
     }

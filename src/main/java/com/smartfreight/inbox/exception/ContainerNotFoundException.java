@@ -1,14 +1,24 @@
 package com.smartfreight.inbox.exception;
 
-// Пользовательское исключение: выбрасывается когда контейнер не найден в БД
+/**
+ * Išimtis, metama kai konteineris nerastas port-service sistemoje.
+ *
+ * {@link com.smartfreight.inbox.exception.GlobalExceptionHandler} ją paverčia
+ * į HTTP 404 Not Found su JSON atsaku {@code {"error":"CONTAINER_NOT_FOUND"}}.
+ */
 public class ContainerNotFoundException extends RuntimeException {
 
-    // Конструктор с сообщением об ошибке
+    /**
+     * @param message pranešimas su konteinerio numeriu, pvz.: "Container MSCU1234567 not found"
+     */
     public ContainerNotFoundException(String message) {
         super(message);
     }
 
-    // Конструктор с сообщением и причиной (другим исключением)
+    /**
+     * @param message pranešimas su konteinerio numeriu
+     * @param cause   pradinė išimtis (HTTP klaida, DB klaida ir pan.)
+     */
     public ContainerNotFoundException(String message, Throwable cause) {
         super(message, cause);
     }

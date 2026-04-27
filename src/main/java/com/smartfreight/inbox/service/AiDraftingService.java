@@ -12,18 +12,25 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
-// Сервис генерации черновика ответа с помощью Llama 3.1
-// Получает тело письма + данные контейнера → возвращает готовый черновик для оператора
+/**
+ * Atsakymo juodraščio generavimo paslauga naudojant Llama 3.1.
+ *
+ * Gauna laiško turinį ir konteinerio duomenis →
+ * grąžina paruoštą juodraštį operatoriui.
+ *
+ * Jei Ollama nepasiekiamas arba grąžina tuščią atsakymą –
+ * naudojamas statinis atsarginis juodraštis su duomenimis iš DB.
+ */
 @Service
 public class AiDraftingService {
 
     private static final Logger log = LoggerFactory.getLogger(AiDraftingService.class);
 
-    // Формат для вывода ETA (например: "15 Apr 2025, 14:30")
+    /** ETA datos formatavimas išvedimui (pvz.: "15 Apr 2025, 14:30"). */
     private static final DateTimeFormatter ETA_FORMATTER =
             DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm");
 
-    // Имя модели для генерации черновика — читается из application.yaml
+    /** Juodraščio generavimo modelės pavadinimas – skaitomas iš application.yaml. */
     @Value("${ollama.drafting-model:llama3.1:8b}")
     private String draftingModel;
 
@@ -33,16 +40,23 @@ public class AiDraftingService {
         this.ollamaWebClient = ollamaWebClient;
     }
 
-    // Генерирует черновик ответа на письмо клиента.
-    // Параметры:
-    //   emailBody  — оригинальный текст письма (запрос клиента)
-    //   container  — данные найденного контейнера (может быть null если не найден)
-    // Возвращает строку с черновиком ответа.
+    /**
+     * Generuoja profesionalų atsakymo juodraštį kliento laišką.
+     *
+     * Vykdo POST /api/generate į Ollama su promtu, kuriame:
+     * – laiško tekstas (iki 2000 simbolių)
+     * – konteinerio duomenys (jei rasti)
+     *
+     * Modelė instrukuojama atsakyti ta pačia kalba kaip klientas
+     * ir nenaudoti informacijos, kurios nėra konteinerio duomenyse.
+     *
+     * @param emailBody  kliento laiško tekstas
+     * @param container  konteinerio duomenys (gali būti null jei nerastas)
+     * @return sugeneruotas arba atsarginis juodraštis
+     */
     public String generateDraft(String emailBody, Container container) {
-        // Формируем контекстный блок с данными контейнера
         String containerContext = buildContainerContext(container);
 
-        // Промпт для Llama: просим профессиональный, краткий ответ на письмо
         String prompt = """
                 You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
                 Write a concise, professional email reply to the customer's inquiry below.
@@ -82,7 +96,6 @@ public class AiDraftingService {
             }
 
             String draft = String.valueOf(response.getOrDefault("response", "")).trim();
-
             if (draft.isEmpty()) {
                 log.warn("Ollama returned empty draft");
                 return buildFallbackDraft(container);
@@ -97,7 +110,12 @@ public class AiDraftingService {
         }
     }
 
-    // Формирует текстовый блок с данными контейнера для вставки в промпт
+    /**
+     * Sukuria tekstinį konteinerio duomenų bloką įterpimui į promptą.
+     *
+     * @param container konteinerio duomenys arba null
+     * @return suformatuotas tekstas su konteinerio informacija
+     */
     private String buildContainerContext(Container container) {
         if (container == null) {
             return "Container not found in our system.";
@@ -117,8 +135,13 @@ public class AiDraftingService {
         return sb.toString();
     }
 
-    // Резервный черновик — возвращается если Ollama недоступен.
-    // Содержит базовую информацию из БД без AI-генерации.
+    /**
+     * Atsarginis juodraštis – naudojamas kai Ollama nepasiekiamas.
+     * Pateikia bazinę informaciją iš DB be AI generavimo.
+     *
+     * @param container konteinerio duomenys arba null
+     * @return statinis juodraštis su turimais duomenimis
+     */
     private String buildFallbackDraft(Container container) {
         if (container == null) {
             return """

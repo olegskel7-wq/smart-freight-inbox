@@ -9,26 +9,23 @@ import org.springframework.mail.javamail.JavaMailSenderImpl;
 import java.util.Properties;
 
 /**
- * Конфигурация SMTP отправителя для отправки ответов по email.
- * 
- * Отдельная конфигурация от IMAP: используются параметры smtp.* из application.yaml,
- * не spring.mail.* (которые зарезервированы для входящей почты через ImapConfig).
- * 
- * Spring Boot автоматически отключает стандартную JavaMailSender когда обнаруживает
- * этот bean с @Configuration — позволяет нам полностью контролировать SMTP.
+ * SMTP siunčiamo pašto konfigūracija.
+ *
+ * Atskira konfigūracija nuo IMAP: naudojami {@code smtp.*} parametrai iš application.yaml,
+ * ne {@code spring.mail.*} (kurie rezervuoti gaunamiems laiškams per ImapConfig).
+ *
+ * Sukonfigūruoja STARTTLS šifravimą, jungimosi laiko limitus ir SSL pasitikėjimą.
  */
 @Configuration
 public class SmtpConfig {
 
-    // SMTP сервер (например smtp.gmail.com)
     @Value("${smtp.host}")
     private String host;
 
-    // Порт SMTP: 587 (STARTTLS) или 465 (SMTPS)
+    /** SMTP prievadas: 587 (STARTTLS) arba 465 (SMTPS). */
     @Value("${smtp.port:587}")
     private int port;
 
-    // Учётные данные отправителя (email адрес или App Password для Gmail)
     @Value("${smtp.username}")
     private String username;
 
@@ -36,14 +33,14 @@ public class SmtpConfig {
     private String password;
 
     /**
-     * Создаёт bean JavaMailSender для отправки писем на SMTP.
-     * 
-     * Конфигурация включает:
-     * - STARTTLS для шифрования соединения (стандарт для порта 587)
-     * - Таймауты соединения (10 сек) — Ollama не блокирует, поэтому таймауты фиксированные
-     * - SSL trust для домена SMTP сервера — необходимо для Microsoft JDK 17
-     * 
-     * @return настроенный JavaMailSender bean
+     * JavaMailSender bean'as laiškų siuntimui per SMTP.
+     *
+     * Konfigūracija:
+     * – STARTTLS ryšio šifravimui (standartas 587 prievadui)
+     * – Jungimosi laiko limitai (10 s) – Ollama neblokuoja, todėl limitai fiksuoti
+     * – SSL pasitikėjimas SMTP serverio domenui – būtina Microsoft JDK 17
+     *
+     * @return sukonfigūruotas JavaMailSender bean'as
      */
     @Bean
     public JavaMailSender javaMailSender() {
@@ -54,15 +51,14 @@ public class SmtpConfig {
         sender.setPassword(password);
 
         Properties props = sender.getJavaMailProperties();
-        // Используем SMTP протокол (не EWS или другие)
         props.put("mail.transport.protocol", "smtp");
-        // Требуется аутентификация перед отправкой
+        // Autentifikacija reikalinga prieš siuntimą
         props.put("mail.smtp.auth", "true");
-        // STARTTLS: сначала открыть незащищённое соединение, затем перейти на TLS
+        // STARTTLS: pirmiausia atviras ryšys, tada pereinama prie TLS
         props.put("mail.smtp.starttls.enable", "true");
-        // Доверяем сертификату SMTP хоста (исправляет SSLHandshakeException на Microsoft JDK)
+        // Pasitikime SMTP serverio sertifikatu (ištaiso SSLHandshakeException Microsoft JDK)
         props.put("mail.smtp.ssl.trust", host);
-        // Таймауты в мс (10 сек достаточно — SMTP сервер отвечает быстро)
+        // Laiko limitai ms (10 s pakanka – SMTP serveris atsako greitai)
         props.put("mail.smtp.connectiontimeout", "10000");
         props.put("mail.smtp.timeout", "10000");
         props.put("mail.smtp.writetimeout", "10000");

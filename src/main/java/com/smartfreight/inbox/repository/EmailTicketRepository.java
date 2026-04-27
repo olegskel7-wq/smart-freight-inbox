@@ -13,62 +13,86 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-// @Repository — Spring DAO компонент для работы с EmailTicket
-// JpaRepository — Spring Data JPA предоставляет готовые методы CRUD (Create, Read, Update, Delete)
-// и позволяет определять собственные запросы
+/**
+ * Spring Data JPA saugykla {@link EmailTicket} esybei.
+ *
+ * Paveldimas {@link JpaRepository} suteikia paruoštus CRUD metodus.
+ * Papildomi metodai apibrėžti pagal Spring Data metodų pavadinimų konvenciją
+ * arba JPQL užklausomis (@Query).
+ */
 @Repository
 public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> {
 
-    // Найти тикет по уникальному Message-ID письма
-    // Используется для проверки дедупликации: есть ли это письмо уже в БД?
+    /**
+     * Randa biletą pagal unikalų laiško identifikatorių (Message-ID antraštė).
+     * Naudojama dublikatų tikrinimui: ar šis laiškas jau išsaugotas?
+     *
+     * @param messageId laiško Message-ID antraštės reikšmė
+     * @return bilietas, jei rastas
+     */
     Optional<EmailTicket> findByMessageId(String messageId);
 
-    // Найти все тикеты с конкретным статусом
-    // Пример использования: найти все NEW тикеты для обработки
+    /**
+     * Randa visus bilietus su nurodyta būsena.
+     *
+     * @param status ieškoma būsena
+     * @return biletų sąrašas
+     */
     List<EmailTicket> findByStatus(TicketStatus status);
 
-    // То же самое, но с явной сортировкой — нужно UI для одновременного фильтра+сортировки.
+    /**
+     * Randa visus bilietus su nurodyta būsena ir nurodytu rikiavimo tvarka.
+     * Naudojama UI sąraše norint vienu metu filtruoti ir rikiuoti.
+     *
+     * @param status   ieškoma būsena
+     * @param sort     rikiavimo specifikacija
+     * @return surikiuotas biletų sąrašas
+     */
     List<EmailTicket> findByStatus(TicketStatus status, Sort sort);
 
-    // Найти тикеты со статусом RETRY_LATER, которые не превысили лимит попыток
-    // RetryScheduler использует это для поиска тикетов к повторной обработке
-    // Параметр maxRetries предотвращает бесконечные циклы повторов
+    /**
+     * Randa RETRY_LATER bilietus, kurie neviršijo bandymų limito.
+     * RetryScheduler naudoja tai biletams pakartotiniam apdorojimui surasti.
+     * maxRetries parametras apsaugo nuo begalinių kartojimosi ciklų.
+     *
+     * @param status     ieškoma būsena (paprastai RETRY_LATER)
+     * @param maxRetries maksimalus retryCount (šis skaičius neįtraukiamas)
+     * @return tinkamų kartoti biletų sąrašas
+     */
     List<EmailTicket> findByStatusAndRetryCountLessThan(TicketStatus status, int maxRetries);
 
     /**
-     * Получить ТОЛЬКО идентификаторы тикетов с указанными статусами.
+     * Grąžina TIK biletų ID su nurodytomis būsenomis (projekcija).
      *
-     * Используется AdminController.reprocessAll для построения списка задач без
-     * полной загрузки сущностей в память. Преимущества проекции по id:
-     *   - не тянем тяжёлые TEXT-поля body / draft_reply (могут быть до 10 МБ);
-     *   - не создаём managed-сущностей в Persistence Context, которые не нужны;
-     *   - последующий process(id) сам перечитает тикет в своей транзакции
-     *     (паттерн "pass id, not entity").
+     * Naudojama {@link com.smartfreight.inbox.controller.AdminController#reprocessAll}
+     * užduočių sąrašo kūrimui be viso esybių įkėlimo į atmintį. Privalumai:
+     * – nekrauname sunkių TEXT laukų body/draft_reply (gali būti iki 10 MB);
+     * – nesukuriame managed esybių Persistence Context, kurių nereikia;
+     * – vėlesnis process(id) pats perskaitys biletą savo transakcijoje.
      *
-     * @param statuses коллекция искомых статусов (например NEW, RETRY_LATER)
-     * @return список id, отсортированный по возрастанию (для воспроизводимости)
+     * @param statuses ieškamų būsenų kolekcija (pvz.: NEW, RETRY_LATER)
+     * @return ID sąrašas, surikiuotas didėjimo tvarka (atkartojamumui)
      */
     @Query("SELECT t.id FROM EmailTicket t WHERE t.status IN :statuses ORDER BY t.id")
     List<Long> findIdsByStatusIn(@Param("statuses") Collection<TicketStatus> statuses);
 
     /**
-     * Bulk-сброс всех FAILED тикетов в состояние NEW (одна SQL-операция).
+     * Masinis visų FAILED biletų atstatymas į NEW būseną (viena SQL operacija).
      *
-     * Используется AdminController.reprocessAll перед запуском пайплайна:
-     * FAILED-тикеты помечаются как NEW и счётчик retry_count обнуляется,
-     * чтобы TicketProcessingService.process() их принял (он работает только
-     * с NEW и RETRY_LATER).
+     * Naudojama {@link com.smartfreight.inbox.controller.AdminController#reprocessAll}
+     * prieš konvejerio paleidimą: FAILED biletai pažymimi kaip NEW ir
+     * retry_count nulinamas, kad TicketProcessingService.process() juos priimtų.
      *
-     * Зачем bulk вместо findAll + setStatus + save:
-     *   - 1 SQL UPDATE против N SELECT + N UPDATE;
-     *   - не загружаем сущности в Persistence Context (память + GC);
-     *   - короткая транзакция, соединение пула освобождается мгновенно.
+     * Masinio atnaujinimo privalumai prieš findAll + setStatus + save:
+     * – 1 SQL UPDATE prieš N SELECT + N UPDATE;
+     * – esybės nekraunamos į Persistence Context (atmintis + GC);
+     * – trumpa transakcija, HikariCP ryšys iš karto atlaisvinamas.
      *
-     * Внимание: bulk-update НЕ синхронизирует Persistence Context.
-     * Если в той же транзакции вы только что читали эти тикеты как managed —
-     * Hibernate этого не увидит. У нас вызывающий код тикеты не читал, поэтому ОК.
+     * Perspėjimas: masinis atnaujinimas NESINCHRONIZUOJA Persistence Context.
+     * Jei toje pačioje transakcijoje šie biletai buvo nuskaityti kaip managed –
+     * Hibernate to nematys. Čia naudojantis kodas biletų neskaitė, todėl OK.
      *
-     * @return количество обновлённых строк
+     * @return atnaujintų eilučių skaičius
      */
     @Modifying
     @Query("UPDATE EmailTicket t " +

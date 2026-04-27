@@ -10,9 +10,13 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.Optional;
 
-// Получает данные о контейнере из внешнего port-service через HTTP.
-// Это имитирует реальную интеграцию с портовой системой управления грузами (TOS/CMS).
-// При недоступности port-service возвращает Optional.empty() — AI сгенерирует черновик без данных.
+/**
+ * Konteinerio duomenų paieška išoriniame port-service per HTTP.
+ *
+ * Imituoja realią integraciją su uosto krovinių valdymo sistema (TOS/CMS).
+ * Jei port-service nepasiekiamas arba konteineris nerastas –
+ * grąžinamas {@link Optional#empty()}, ir AI sugeneruos juodraštį be duomenų.
+ */
 @Service
 public class ContainerLookupService {
 
@@ -24,6 +28,17 @@ public class ContainerLookupService {
         this.portServiceWebClient = portServiceWebClient;
     }
 
+    /**
+     * Ieško konteinerio port-service sistemoje pagal konteinerio numerį.
+     *
+     * Konteinerio numeris normalizuojamas (trim + toUpperCase) prieš užklausą.
+     * 4xx atsakymai (konteineris nerastas) apdorojami tyliai – grąžinamas tuščias Optional.
+     * Tinklo klaidos (timeout, 5xx) taip pat grąžina tuščią Optional –
+     * AI konvejeris turi veikti net kai port-service nepasiekiamas.
+     *
+     * @param containerNumber ISO 6346 konteinerio numeris (pvz.: MSCU1234567)
+     * @return konteinerio duomenys jei rasti, arba tuščias Optional
+     */
     public Optional<Container> findByNumber(String containerNumber) {
         if (containerNumber == null || containerNumber.isBlank()) {
             log.warn("Container lookup called with empty number");

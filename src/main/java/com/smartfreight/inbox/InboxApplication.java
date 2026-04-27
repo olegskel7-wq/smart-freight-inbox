@@ -4,17 +4,24 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-// @SpringBootApplication — главная аннотация Spring Boot:
-// включает автоконфигурацию, сканирование компонентов и настройку контекста
+/**
+ * Smart Freight Inbox – programos paleidimo taškas.
+ *
+ * @SpringBootApplication įjungia:
+ * – automatinę konfigūraciją (auto-configuration)
+ * – komponentų nuskaitymą (component scan)
+ * – Spring konteksto konfigūraciją
+ *
+ * @EnableScheduling įjungia periodinių užduočių vykdymą per @Scheduled
+ * (reikalinga {@link com.smartfreight.inbox.scheduler.RetryScheduler},
+ * kuris periodiškai paleidžia RETRY_LATER biletų persvarstymas).
+ */
 @SpringBootApplication
-// @EnableScheduling — разрешает планирование задач через @Scheduled
-// (нужно для RetryScheduler, который периодически перезапускает тикеты RETRY_LATER)
 @EnableScheduling
 public class InboxApplication {
 
-	// Точка входа в приложение: запускает Spring контекст и все компоненты
-	public static void main(String[] args) {
-		SpringApplication.run(InboxApplication.class, args);
-	}
-
+    /** Programos paleidimo metodas. */
+    public static void main(String[] args) {
+        SpringApplication.run(InboxApplication.class, args);
+    }
 }

@@ -1,25 +1,30 @@
 package com.smartfreight.inbox.entity.enums;
 
-// Перечисление возможных статусов для EmailTicket (жизненный цикл тикета)
+/**
+ * Bilieto gyvavimo ciklo būsenų sąrašas.
+ *
+ * Perėjimų schema:
+ *   NEW → PROCESSING → DRAFT_READY → CLOSED
+ *                    ↘ FAILED
+ *                    ↘ RETRY_LATER → NEW (per RetryScheduler)
+ */
 public enum TicketStatus {
 
-    // Новое письмо только что поступило, ещё не обработано
+    /** Naujas laiškas gautas, dar neapdorotas. */
     NEW,
 
-    // Письмо сейчас обрабатывается (AI извлекает контейнер, ищет в БД, генерирует ответ)
+    /** Laiškas šiuo metu apdorojamas (AI ištraukia konteinerį, ieško DB, generuoja atsakymą). */
     PROCESSING,
 
-    // Черновик ответа готов, оператор может его просмотреть и отправить
+    /** Juodraštis paruoštas – operatorius gali peržiūrėti ir išsiųsti. */
     DRAFT_READY,
 
-    // Обработка не удалась (AI недоступен, ошибка парсинга, и т.д.)
-    // Оператор должен разобраться вручную
+    /** Apdorojimas nepavyko (AI nepasiekiamas, analizės klaida ir pan.). Operatorius turi spręsti rankiniu būdu. */
     FAILED,
 
-    // Временная ошибка — запланирована повторная попытка
-    // RetryScheduler автоматически подберёт такой тикет позже
+    /** Laikina klaida – suplanuotas pakartotinis bandymas. RetryScheduler automatiškai paims biletą vėliau. */
     RETRY_LATER,
 
-    // Тикет закрыт оператором — ответ отправлен или вопрос решён без ответа
+    /** Bilietas uždarytas operatoriaus – atsakymas išsiųstas arba klausimas išspręstas be atsakymo. */
     CLOSED
 }

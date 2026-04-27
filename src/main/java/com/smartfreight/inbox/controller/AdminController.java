@@ -14,15 +14,15 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Admin API контроллер для операций обслуживания (доступен только localhost).
+ * Administravimo API valdiklis techninės priežiūros operacijoms (tik localhost).
  *
- * Содержит "опасные" операции для разработчиков и администраторов:
- *  - Переобработка неудачных/застрявших тикетов
- *  - (в будущем) очистка данных, ручной перезапуск конвейера и т.п.
+ * Saugo "pavojingas" operacijas kūrėjams ir administratoriams:
+ * – Nepavykusių / įstrigusių biletų persvarstymas
+ * – (ateityje) duomenų valymas, rankinis konvejerio paleidimas iš naujo ir pan.
  *
- * Защита: все эндпоинты проверяют, что запрос идёт с localhost (127.0.0.1 или ::1).
- * Предположение: в production этот контроллер будет недоступен снаружи
- * (firewall / reverse proxy не пробрасывает порт наружу).
+ * Apsauga: visos galūnės tikrina, kad užklausa ateina iš localhost (127.0.0.1 arba ::1).
+ * Prielaida: produkcijoje šis valdiklis nebus pasiekiamas iš išorės
+ * (ugniasienė / atvirkštinis proxy neperduoda prievado į išorę).
  */
 @RestController
 @RequestMapping("/admin")
@@ -40,54 +40,42 @@ public class AdminController {
     }
 
     /**
-     * POST /admin/reprocess — переобработать все застрявшие/неудачные тикеты.
+     * POST /admin/reprocess – persvarstyti visus įstrigusius / nepavykusius bilietus.
      *
-     * Используется когда:
-     *  1. Ollama был недоступен и много тикетов перешли в FAILED.
-     *  2. После исправления Ollama нужно переобработать их.
-     *  3. Оператор отклонил черновик (RETRY_LATER) и нужно снова запустить AI.
+     * Naudojama kai:
+     * 1. Ollama buvo nepasiekiamas ir daug biletų perėjo į FAILED.
+     * 2. Po Ollama atstatymo reikia juos persvarstyti.
+     * 3. Operatorius atmetė juodraštį (RETRY_LATER) ir reikia paleisti AI iš naujo.
      *
-     * Алгоритм:
-     *  1. Проверяем, что запрос идёт с localhost (localhost-only).
-     *  2. Bulk-сброс FAILED → NEW в отдельной короткой транзакции
-     *     (TicketProcessingService.prepareForRetry — один SQL UPDATE).
-     *  3. Получаем ТОЛЬКО id тикетов в статусах NEW и RETRY_LATER
-     *     (проекция, чтобы не тянуть в память тяжёлые TEXT-поля).
-     *  4. Синхронно запускаем process(id) для каждого тикета в текущем потоке.
-     *     Каждый process() работает в своей транзакции (REQUIRES_NEW),
-     *     поэтому соединения пула освобождаются после каждого тикета.
-     *  5. Возвращаем количество переобработанных тикетов.
+     * Algoritmas:
+     * 1. Patikriname, kad užklausa ateina iš localhost.
+     * 2. Masinis FAILED → NEW atstatymas atskiroje trumpoje transakcijoje.
+     * 3. Gauname TIK biletų ID su NEW ir RETRY_LATER būsenomis (projekcija).
+     * 4. Sinchroniškai vykdome process(id) kiekvienam biletui esamame sraute.
+     *    Kiekvienas process() veikia savo transakcijoje (REQUIRES_NEW),
+     *    todėl HikariCP ryšiai atlaisvinami po kiekvieno bilieto.
+     * 5. Grąžiname persvarstytos biletų skaičių.
      *
-     * Важные архитектурные решения:
-     *  - На методе НЕТ @Transactional. Если бы он был, контроллер держал бы
-     *    одну "жирную" транзакцию на всё время цикла (минуты/часы при тысячах
-     *    тикетов и таймауте Ollama 150 с на каждый), монопольно занимая
-     *    соединение из пула HikariCP и блокируя остальной трафик приложения.
-     *  - Транзакционные границы — на уровне сервисных методов
-     *    (prepareForRetry и process(id) с REQUIRES_NEW).
+     * Architektūros pastaba: metodas NETURI @Transactional,
+     * nes viena "stora" transakcija visam ciklui užblokuotų HikariCP ryšį
+     * visam Ollama laukimo laikui (iki 150 s × biletų skaičius).
      *
-     * Внимание: операция синхронная, при 1000+ тикетов может занять часы.
-     * Каждый тикет вызывает Ollama (таймаут 150 с) — запускайте, только если
-     * уверены в доступности AI.
-     *
-     * @param request HTTP-запрос (нужен для проверки remoteAddr)
-     * @return 200 OK с количеством переобработанных тикетов, либо 403 если не localhost
+     * @param request HTTP užklausa (reikalinga remoteAddr tikrinimui)
+     * @return 200 OK su persvarstytos biletų skaičiumi, arba 403 jei ne localhost
      */
     @PostMapping("/reprocess")
     public ResponseEntity<String> reprocessAll(HttpServletRequest request) {
-        // Безопасность: разрешаем только localhost (см. комментарий к классу).
         if (!isLocalhost(request)) {
             log.warn("Rejected /admin/reprocess from remote address: {}", request.getRemoteAddr());
             return ResponseEntity.status(403).body("Forbidden: admin endpoints are local-only.");
         }
 
-        // Шаг 1: bulk-сброс FAILED → NEW в отдельной короткой транзакции.
-        // После возврата соединение БД сразу возвращается в пул HikariCP.
+        // FAILED → NEW masinis atstatymas atskiroje trumpoje transakcijoje.
+        // Po grąžinimo DB ryšys iš karto grąžinamas į HikariCP baseiną.
         int reset = ticketProcessingService.prepareForRetry();
 
-        // Шаг 2: получаем только идентификаторы тикетов, готовых к обработке.
-        // Используем проекцию по id, чтобы не загружать в память сущности
-        // целиком (поле body может быть до нескольких МБ).
+        // Gauname tik ID – nekeliame sunkių TEXT laukų į atmintį.
+        // process(id) pats perskaitys biletą savo transakcijoje (pattern "perduok ID, ne esybę").
         List<Long> ids = emailTicketRepository.findIdsByStatusIn(
                 List.of(TicketStatus.NEW, TicketStatus.RETRY_LATER));
 
@@ -95,10 +83,6 @@ public class AdminController {
             return ResponseEntity.ok("No tickets to reprocess (reset " + reset + " from FAILED).");
         }
 
-        // Шаг 3: синхронно запускаем обработку для каждого тикета.
-        // КРИТИЧНО: метод НЕ помечен @Transactional, поэтому здесь нет
-        // объемлющей транзакции. Каждый process() работает в своей собственной
-        // транзакции (Propagation.REQUIRES_NEW), и пул соединений не блокируется.
         int count = ids.size();
         log.info("Synchronous reprocessing started for {} ticket(s) (reset {} from FAILED)", count, reset);
         ids.forEach(ticketProcessingService::process);
@@ -108,20 +92,19 @@ public class AdminController {
     }
 
     /**
-     * Проверяет, что запрос пришёл с локального компьютера.
+     * Patikrina, ar užklausa atėjo iš lokalaus kompiuterio.
      *
-     * Поддерживаемые форматы remoteAddr:
-     *   - 127.0.0.1            — IPv4 loopback
-     *   - ::1                  — IPv6 loopback (краткая форма)
-     *   - 0:0:0:0:0:0:0:1      — IPv6 loopback (полная форма)
+     * Palaikomi formatai:
+     * – {@code 127.0.0.1} – IPv4 loopback
+     * – {@code ::1} – IPv6 loopback (trumpa forma)
+     * – {@code 0:0:0:0:0:0:0:1} – IPv6 loopback (pilna forma)
      *
-     * Внимание: метод опирается на HttpServletRequest.getRemoteAddr().
-     * Если приложение стоит за reverse-proxy (nginx/traefik), нужно либо
-     * настроить server.forward-headers-strategy=NATIVE и доверять X-Forwarded-For,
-     * либо ограничить сетевой доступ к /admin/** на уровне прокси.
+     * Pastaba: jei programa veikia už atvirkštinio proxy (nginx/traefik),
+     * reikia konfigūruoti {@code server.forward-headers-strategy=NATIVE}
+     * arba riboti prieigą prie /admin/** proxy lygmenyje.
      *
-     * @param request HTTP-запрос
-     * @return true если remoteAddr указывает на localhost, иначе false
+     * @param request HTTP užklausa
+     * @return true jei remoteAddr rodo į localhost, kitaip false
      */
     private boolean isLocalhost(HttpServletRequest request) {
         String addr = request.getRemoteAddr();

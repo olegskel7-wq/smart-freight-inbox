@@ -2,11 +2,14 @@ package com.smartfreight.inbox.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
-// @Entity — JPA сущность для таблицы пользователей
+/**
+ * JPA esybė, atitinkanti lentelę {@code app_user} duomenų bazėje.
+ *
+ * Naudojama Spring Security autentifikacijai per {@link com.smartfreight.inbox.config.DbUserDetailsService}.
+ * Naudotojai kuriami per Flyway migracijas (V2, V3) – ne programiškai.
+ */
 @Entity
-// @Table — имя таблицы в БД
 @Table(name = "app_user")
 @Getter
 @Setter
@@ -15,23 +18,30 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 @Builder
 public class User {
 
-    // Первичный ключ
+    /** Pirminis raktas – automatiškai generuojamas PostgreSQL. */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Уникальный email пользователя — используется как логин при аутентификации
+    /**
+     * Unikalus el. pašto adresas – naudojamas kaip prisijungimo vardas.
+     * Spring Security ieško naudotojo pagal šį lauką.
+     */
     @Column(name = "email", nullable = false, unique = true)
     private String email;
 
-    // Хэшированный пароль (никогда не храним пароль в открытом виде!)
-    // Используется BCrypt — алгоритм с "солью" (random bytes в хэше)
-    // Один и тот же пароль даёт разный хэш каждый раз
+    /**
+     * BCrypt koduotas slaptažodis – niekada nesaugome atviro teksto slaptažodžio.
+     * BCrypt automatiškai generuoja druską (salt) kiekvienam slaptažodžiui.
+     */
     @Column(name = "password", nullable = false)
     private String password;
 
-    // Роль пользователя: ADMIN, OPERATOR, VIEWER и т.д.
-    // Используется для авторизации (кто может видеть/редактировать данные)
+    /**
+     * Naudotojo vaidmuo: ADMIN, OPERATOR, VIEWER ir pan.
+     * Naudojamas autorizacijai – kas ką gali matyti ir redaguoti.
+     * Jei null – DbUserDetailsService priskiria numatytąjį vaidmenį OPERATOR.
+     */
     @Column(name = "role")
     private String role;
 }

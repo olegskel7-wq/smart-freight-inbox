@@ -10,70 +10,80 @@ import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.mail.dsl.Mail;
 import org.springframework.messaging.MessageChannel;
 
-// @Configuration — Spring загружает этот класс при запуске
+/**
+ * IMAP IDLE gaunamojo pašto konfigūracija.
+ *
+ * Sukuria Spring Integration konvejerį:
+ * IMAP serveris → adapteris gauna laišką → siunčia į mailChannel → EmailIngestionService apdoroja.
+ *
+ * Jei konfigūracijos duomenys nenurodyti (host = imap.example.com) –
+ * adapteris išjungiamas, kad nebūtų beprasmiškų jungimosi klaidų kūrimo aplinkoje.
+ */
 @Configuration
 public class ImapConfig {
 
     private static final Logger log = LoggerFactory.getLogger(ImapConfig.class);
 
-    // Читаем настройки почты из application.yaml.
-    // Синтаксис ${ПЕРЕМЕННАЯ:значение_по_умолчанию} — если переменная окружения не задана, берём заглушку.
-
     @Value("${spring.mail.host}")
-    private String host;         // IMAP-сервер (например: imap.gmail.com)
+    private String host;
 
     @Value("${spring.mail.port:993}")
-    private int port;            // Порт IMAPS (993 = IMAP + SSL, стандартный)
+    private int port;
 
     @Value("${spring.mail.username}")
-    private String username;     // Адрес почтового ящика (inbox@company.com)
+    private String username;
 
     @Value("${spring.mail.password}")
-    private String password;     // Пароль или App Password (для Gmail)
+    private String password;
 
-    // MessageChannel — "труба", по которой Spring Integration передаёт сообщения между компонентами.
-    // DirectChannel — синхронная доставка: отправитель ждёт, пока получатель завершит обработку.
-    // Имя бина "mailChannel" указывается в @ServiceActivator(inputChannel = "mailChannel").
+    /**
+     * Sinchroninis pranešimų kanalas gaunamiems laiškams.
+     *
+     * DirectChannel – sinchroninis pristatymas: siuntėjas laukia, kol gavėjas baigia apdorojimą.
+     * Bean pavadinimas "mailChannel" nurodomas @ServiceActivator(inputChannel = "mailChannel").
+     *
+     * @return sukonfigūruotas DirectChannel
+     */
     @Bean
     public MessageChannel mailChannel() {
         return new DirectChannel();
     }
 
-    // IntegrationFlow — описывает конвейер данных в Spring Integration (DSL-стиль, Spring Integration 7.x).
-    // Поток: IMAP-сервер → адаптер получает письмо → отправляет в mailChannel → EmailIngestionService обрабатывает.
+    /**
+     * IMAP IDLE konvejeris – pristato naujus laiškus į mailChannel.
+     *
+     * IMAP IDLE: serveris pats praneša apie naujus laiškus (push protokolas, ne apklausa).
+     * Tai leidžia reaguoti akimirksniu, skirtingai nuo polling (tikrinimas kas N sekundžių).
+     *
+     * Jei konfigūracijos duomenys nenurodyti (host = "imap.example.com" arba password = "changeme") –
+     * grąžinamas tuščias srautas: mailChannel → nullChannel.
+     * Tai svarbu kūrimo aplinkoje, kad neatsirastu jungimosi klaidų.
+     *
+     * @param mailChannel kanalas, į kurį siunčiami gauti laiškai
+     * @return sukonfigūruotas IntegrationFlow
+     */
     @Bean
     public IntegrationFlow imapIdleFlow(MessageChannel mailChannel) {
-
-        // Проверяем: настроены ли реальные учётные данные или всё ещё стоят заглушки?
-        // Если host = "imap.example.com" (значение по умолчанию) — реальные данные не заданы.
         boolean configured = !host.equals("imap.example.com") && !password.equals("changeme");
 
-        // Если данные не настроены — отключаем IMAP-адаптер.
-        // Важно при разработке: не засорять логи бессмысленными ошибками подключения.
         if (!configured) {
             log.warn("IMAP not configured — adapter disabled. Set IMAP_HOST, IMAP_USER, IMAP_PASSWORD env vars to enable.");
-            // Возвращаем пустой поток: mailChannel → nullChannel (письма никуда не идут)
             return IntegrationFlow.from(mailChannel).nullChannel();
         }
 
-        // Собираем URL подключения IMAPS: imaps://пользователь:пароль@хост:порт/INBOX
-        // Логин и пароль URL-кодируются: '@' в email-адресе иначе ломает парсинг URL
+        // URL formatavimas: imaps://naudotojas:slaptažodis@host:port/INBOX
+        // URL koduojamas: '@' el. pašte kitaip sugadintų URL analizę
         String encodedUser = java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8)
                 .replace("+", "%20");
         String encodedPassword = java.net.URLEncoder.encode(password, java.nio.charset.StandardCharsets.UTF_8)
                 .replace("+", "%20");
         String url = String.format("imaps://%s:%s@%s:%d/INBOX", encodedUser, encodedPassword, host, port);
 
-        // Строим конвейер данных через DSL (Domain Specific Language)
         return IntegrationFlow
-                // Mail.imapIdleAdapter — IMAP IDLE адаптер (современный API Spring Integration 7.x).
-                // IMAP IDLE: сервер сам присылает уведомление когда приходит новое письмо (push, не опрос).
-                // В отличие от polling (проверять каждые N секунд) — реакция мгновенная.
                 .from(Mail.imapIdleAdapter(url)
-                        // Свойства JavaMail для IMAP-соединения
                         .javaMailProperties(p -> {
                             p.put("mail.store.protocol", "imaps");
-                            // Явно передаём учётные данные — Jakarta Mail не извлекает их из imaps:// URL
+                            // Ryšio duomenys perduodami aiškiai – Jakarta Mail neistraukia jų iš imaps:// URL
                             p.put("mail.imaps.user", username);
                             p.put("mail.imaps.password", password);
                             p.put("mail.imaps.auth", "true");
@@ -81,23 +91,19 @@ public class ImapConfig {
                             p.put("mail.imaps.timeout", "60000");
                             p.put("mail.imaps.keepalive.interval", "60000");
                             p.put("mail.imaps.ssl.enable", "true");
-                            // Доверяем только конкретному IMAP-хосту, не всем сертификатам
+                            // Pasitikime tik konkretaus IMAP serverio sertifikatu
                             p.put("mail.imaps.ssl.trust", host);
-                            // Отключаем частичную загрузку: без этого тело письма читается лениво
-                            // и при переключении из IDLE-режима возникает FolderClosedException
+                            // Išjungiame dalinį įkėlimą: be to laiško turinys skaitomas tingiai
+                            // ir persijungus iš IDLE režimo gaunama FolderClosedException
                             p.put("mail.imaps.partialfetch", "false");
                             p.put("mail.imaps.fetchsize", "1048576");
                         })
-                        // Помечаем письма как "Прочитанные" на сервере после получения
+                        // Žymime laiškus kaip "Perskaityti" serveryje po gavimo
                         .shouldMarkMessagesAsRead(true)
-                        // НЕ удаляем письма с сервера после чтения (безопасное поведение по умолчанию)
+                        // NЕТRINAME laiškų iš serverio (saugus numatytasis elgesys)
                         .shouldDeleteMessages(false)
-                        // Запускаем адаптер автоматически при старте приложения
                         .autoStartup(true))
-
-                // Передаём полученное письмо в mailChannel.
-                // Оттуда его подхватит @ServiceActivator в EmailIngestionService.
                 .channel(mailChannel)
-                .get(); // Завершаем построение конвейера
+                .get();
     }
 }

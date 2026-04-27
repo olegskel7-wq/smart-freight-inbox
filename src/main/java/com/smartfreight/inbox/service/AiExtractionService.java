@@ -12,39 +12,59 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-// Сервис извлечения номера контейнера из текста письма с помощью Qwen 2.5
-// Использует локальный Ollama (POST /api/generate) — синхронный вызов через .block()
-// Блокирующий .block() допустим: вызов идёт из рабочего потока сервлетов / IMAP, не из Netty event loop
+/**
+ * Konteinerio numerio ištraukimo paslauga naudojant Qwen 2.5.
+ *
+ * Siunčia laiško turinį į Ollama (POST /api/generate) ir prašo grąžinti ISO 6346 numerį.
+ * Blokuojantis {@code .block()} čia priimtinas: kvietimas vykdomas
+ * servletų/IMAP darbo sraute, ne Netty event loop.
+ *
+ * Jei Ollama nepasiekiamas arba grąžina neaiškų atsakymą –
+ * naudojamas regex atsarginis variantas tiesiogiai laiško tekste.
+ */
 @Service
 public class AiExtractionService {
 
     private static final Logger log = LoggerFactory.getLogger(AiExtractionService.class);
 
-    // Шаблон ISO 6346: 4 заглавные буквы + 7 цифр (например MSCU1234567)
-    // Используется как резервный способ извлечения, если LLM вернул мусор
+    /**
+     * ISO 6346 konteinerio numerio šablonas: 4 didžiosios raidės + 7 skaitmenys.
+     * Pvz.: MSCU1234567, TCKU9876543.
+     * Naudojamas kaip atsarginis metodas kai LLM grąžina nesuprantamą atsakymą.
+     */
     private static final Pattern CONTAINER_PATTERN =
             Pattern.compile("\\b([A-Z]{4}\\d{7})\\b");
 
-    // Имя модели для извлечения — читается из application.yaml
+    /** Ištraukimo modelės pavadinimas – skaitomas iš application.yaml. */
     @Value("${ollama.extraction-model:qwen2.5:7b}")
     private String extractionModel;
 
-    // WebClient, настроенный в WebClientConfig (таймауты, пул соединений)
     private final WebClient ollamaWebClient;
 
     public AiExtractionService(WebClient ollamaWebClient) {
         this.ollamaWebClient = ollamaWebClient;
     }
 
-    // Отправляем тело письма в Qwen 2.5 и просим вернуть номер контейнера.
-    // Возвращает найденный номер (например "MSCU1234567") или пустую строку если не найдено.
+    /**
+     * Siunčia laiško turinį į Qwen 2.5 ir gauna konteinerio numerį.
+     *
+     * Logiką:
+     * 1. Siunčiamas promptas į Ollama (LLM tiesiogiai grąžina tik numerį)
+     * 2. Jei atsakymas tiksliai atitinka ISO 6346 – grąžinamas tiesiogiai
+     * 3. Jei numeris yra atsakymo viduje – ištraukiamas regex
+     * 4. Jei LLM nerado – bandomas regex tiesiai laiško tekste
+     * 5. Bet kuri klaida → atsarginis regex
+     *
+     * @param emailBody laiško tekstinis turinys
+     * @return konteinerio numeris (pvz.: "MSCU1234567") arba tuščia eilutė
+     */
     public String extractContainerNumber(String emailBody) {
         if (emailBody == null || emailBody.isBlank()) {
             log.warn("Email body is empty, skipping extraction");
             return "";
         }
 
-        // Промпт для Qwen: просим вернуть ТОЛЬКО номер, никакого лишнего текста
+        // Promptas Qwen: prašome grąžinti TIK numerį, jokio papildomo teksto
         String prompt = """
                 You are a logistics assistant. Extract the shipping container number from the email below.
                 Container numbers follow ISO 6346 format: exactly 4 uppercase letters followed by 7 digits (e.g. MSCU1234567).
@@ -54,16 +74,13 @@ public class AiExtractionService {
                 """ + emailBody.substring(0, Math.min(emailBody.length(), 2000));
 
         try {
-            // Собираем тело запроса к Ollama API
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", extractionModel);
             requestBody.put("prompt", prompt);
-            requestBody.put("stream", false); // одним ответом, не потоком
+            requestBody.put("stream", false);
 
             log.debug("Sending extraction request to Ollama model {}", extractionModel);
 
-            // Отправляем POST /api/generate и ждём ответа (блокирующий вызов)
-            // Таймаут 150 сек задан в WebClientConfig через ReadTimeoutHandler
             @SuppressWarnings("unchecked")
             Map<String, Object> response = ollamaWebClient
                     .post()
@@ -78,24 +95,23 @@ public class AiExtractionService {
                 return fallbackRegexExtraction(emailBody);
             }
 
-            // Ollama возвращает JSON: {"response": "MSCU1234567", "done": true, ...}
             String rawResponse = String.valueOf(response.getOrDefault("response", "")).trim();
             log.info("Qwen raw response: '{}'", rawResponse);
 
-            // Если LLM вернул чистый номер — проверяем формат
+            // Jei LLM grąžino švarų numerį – tikriname formatą
             if (CONTAINER_PATTERN.matcher(rawResponse).matches()) {
                 log.info("Container number extracted by LLM: {}", rawResponse);
                 return rawResponse;
             }
 
-            // LLM мог вернуть номер внутри предложения — пробуем найти паттерн в ответе
+            // LLM galėjo grąžinti numerį sakinyje – bandome rasti šabloną atsakyme
             Matcher m = CONTAINER_PATTERN.matcher(rawResponse.toUpperCase());
             if (m.find()) {
                 log.info("Container number extracted from LLM response via regex: {}", m.group(1));
                 return m.group(1);
             }
 
-            // LLM не нашёл номер — пробуем прямой regex по тексту письма
+            // LLM nerado numerio – bandome tiesioginį regex laiško tekste
             log.warn("LLM could not extract container number, trying regex fallback");
             return fallbackRegexExtraction(emailBody);
 
@@ -105,8 +121,13 @@ public class AiExtractionService {
         }
     }
 
-    // Резервный метод: ищем номер контейнера регулярным выражением прямо в тексте письма.
-    // Срабатывает, если Ollama недоступен или вернул нечитаемый ответ.
+    /**
+     * Atsarginis metodas: ieškoma konteinerio numerio regex tiesiogiai laiško tekste.
+     * Naudojama kai Ollama nepasiekiamas arba grąžino neaiškų atsakymą.
+     *
+     * @param body laiško tekstas
+     * @return rastas konteinerio numeris arba tuščia eilutė
+     */
     private String fallbackRegexExtraction(String body) {
         Matcher m = CONTAINER_PATTERN.matcher(body.toUpperCase());
         if (m.find()) {

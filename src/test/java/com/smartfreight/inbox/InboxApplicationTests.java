@@ -5,29 +5,30 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 
 /**
- * Базовый smoke test приложения.
- * 
- * Проверяет что:
- * 1. Spring контекст поднимается без ошибок
- * 2. Все бины конфигурируются корректно
- * 3. Нет проблем с зависимостями (dependency injection)
- * 
- * @SpringBootTest — поднимает полный контекст (как при запуске приложения)
- * @Import(TestcontainersConfiguration.class) — использует Testcontainers для БД
- *                                               (тест стартует собственный PostgreSQL в Docker)
+ * Pagrindinis programos dūmų (smoke) testas.
+ *
+ * Tikrina:
+ * 1. Spring kontekstas paleidžiamas be klaidų
+ * 2. Visi bean'ai sukonfigūruoti teisingai
+ * 3. Priklausomybių įterpimas (dependency injection) veikia
+ * 4. Flyway migracijos sėkmingai įvykdytos
+ *
+ * @SpringBootTest – paleidžia pilną kontekstą (kaip realiai paleidus programą)
+ * @Import(TestcontainersConfiguration.class) – naudoja Testcontainers DB:
+ *   testas paleidžia savo PostgreSQL Docker konteinerį automatiškai.
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 class InboxApplicationTests {
 
 	/**
-	 * Smoke test: просто проверяем что приложение стартует.
-	 * 
-	 * Если этот тест проходит — значит:
-	 * - Spring конфигурация валидна
-	 * - Все бины созданы
-	 * - Зависимости связаны корректно
-	 * - БД мигрирована и готова
+	 * Dūmų testas: tiesiog tikriname, kad programa sėkmingai paleidžiama.
+	 *
+	 * Jei šis testas praeina – reiškia:
+	 * – Spring konfigūracija tinkama
+	 * – Visi bean'ai sukurti
+	 * – Priklausomybės susietos teisingai
+	 * – DB migruota ir paruošta
 	 */
 	@Test
 	void contextLoads() {

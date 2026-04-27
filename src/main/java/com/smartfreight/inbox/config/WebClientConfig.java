@@ -14,61 +14,70 @@ import reactor.netty.resources.ConnectionProvider;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
-// @Configuration — Spring конфигурация, создаёт бины
+/**
+ * WebClient bean'ų konfigūracija išorinių paslaugų kvietimams.
+ *
+ * Sukuria du atskirus WebClient bean'us:
+ * – {@code ollamaWebClient} – Ollama AI serveriui (ilgi laiko limitai dėl LLM)
+ * – {@code portServiceWebClient} – port-service (trumpi laiko limitai – greitas REST API)
+ */
 @Configuration
 public class WebClientConfig {
 
-    // URL Ollama (локального AI сервера)
-    // Значение по умолчанию: http://localhost:11434
+    /** Ollama serverio URL. Numatytasis: http://localhost:11434 (lokali kūrimo aplinka). */
     @Value("${ollama.base-url:http://localhost:11434}")
     private String ollamaBaseUrl;
 
-    // URL внешнего сервиса портовых статусов
+    /** Išorinio portų statuso paslaugos URL. */
     @Value("${port.service.url:http://localhost:9000}")
     private String portServiceUrl;
 
-    // WebClient bean для HTTP запросов к Ollama
-    // Используется в AiExtractionService и AiDraftingService (Phase 2)
+    /**
+     * WebClient Ollama AI serverio užklausoms.
+     *
+     * Naudojamas {@link com.smartfreight.inbox.service.AiExtractionService} ir
+     * {@link com.smartfreight.inbox.service.AiDraftingService}.
+     *
+     * Laiko limitai sukonfigūruoti LLM specifikai:
+     * – Skaitymo laiko limitas: 150 s – LLM gali generuoti ilgai dideliems tekstams
+     * – Rašymo laiko limitas: 30 s – užklausos siuntimas
+     * – TCP jungimosi laiko limitas: 10 s
+     *
+     * ConnectionProvider valdo ryšių baseiną (iki 10 vienalaikių ryšių su Ollama).
+     *
+     * @return sukonfigūruotas ollamaWebClient
+     */
     @Bean
     public WebClient ollamaWebClient() {
-
-        // ConnectionProvider — управляет пулом HTTP соединений
-        // Переиспользует существующие соединения вместо создания новых на каждый запрос
         ConnectionProvider provider = ConnectionProvider.builder("ollama-pool")
-                // До 10 одновременных соединений к Ollama
                 .maxConnections(10)
-                // Неактивное соединение закрывается через 10 минут
                 .maxIdleTime(Duration.ofMinutes(10))
-                // Соединение живёт максимум 20 минут, потом пересоздаётся
                 .maxLifeTime(Duration.ofMinutes(20))
-                // Если все соединения заняты — ждём свободное максимум 10 секунд
+                // Jei visi ryšiai užimti – laukiame laisvo iki 10 s
                 .pendingAcquireTimeout(Duration.ofSeconds(10))
                 .build();
 
-        // HttpClient — низкоуровневый клиент на Netty
-        // Настраиваем таймауты с учётом особенностей LLM
         HttpClient httpClient = HttpClient.create(provider)
-                // Таймаут установки TCP соединения: 10 сек
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
-
-                // Настройка после установки соединения
                 .doOnConnected(conn -> conn
-                        // Таймаут получения ответа: 150 сек
-                        // LLM может ответить долго, особенно для больших текстов
                         .addHandlerLast(new ReadTimeoutHandler(150, TimeUnit.SECONDS))
-
-                        // Таймаут отправки запроса: 30 сек
                         .addHandlerLast(new WriteTimeoutHandler(30, TimeUnit.SECONDS))
                 );
 
-        // Собираем WebClient
         return WebClient.builder()
                 .baseUrl(ollamaBaseUrl)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }
 
-    // WebClient для запросов к port-service (быстрый, короткие таймауты — это не LLM)
+    /**
+     * WebClient port-service užklausoms.
+     *
+     * Trumpi laiko limitai – port-service yra greitas REST API, ne LLM.
+     * Atskiras bean'as, kad ollamaWebClient laiko limitai negaliotų čia.
+     *
+     * @return sukonfigūruotas portServiceWebClient
+     */
     @Bean
     public WebClient portServiceWebClient() {
         HttpClient httpClient = HttpClient.create()

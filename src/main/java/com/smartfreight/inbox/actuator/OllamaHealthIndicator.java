@@ -9,62 +9,62 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
 /**
- * Health Indicator для Ollama AI сервера.
- * 
- * Используется Spring Boot Actuator эндпоинтом /actuator/health для проверки
- * доступности критических зависимостей приложения.
- * 
- * Статусы:
- * - UP: Ollama работает и обе модели (Qwen + Llama) загружены
- * - OUT_OF_SERVICE: Ollama доступна, но модели ещё загружаются (warmup)
- * - DOWN: Ollama не доступна или произошла ошибка сети
- * 
- * Используется для:
- * - Мониторинга в Grafana/Prometheus
- * - Readiness probe в Kubernetes
- * - LB для маршрутизации трафика только на здоровые инстансы
+ * Ollama AI serverio sveikatos indikatorius.
+ *
+ * Naudojamas Spring Boot Actuator galūne {@code /actuator/health}
+ * kritinių priklausomybių pasiekiamumui tikrinti.
+ *
+ * Būsenos:
+ * – UP: Ollama veikia ir abi modelės (Qwen + Llama) įkeltos
+ * – OUT_OF_SERVICE: Ollama pasiekiama, bet modelės dar įkeliamos (warmup)
+ * – DOWN: Ollama nepasiekiama arba įvyko tinklo klaida
+ *
+ * Naudojimas:
+ * – Stebėsena Grafana/Prometheus
+ * – Kubernetes readiness probe
+ * – Apkrovos balansuotojas – maršrutizuoti srautą tik į sveikas instancijas
  */
 @Component
 public class OllamaHealthIndicator implements HealthIndicator {
 
     private static final Logger log = LoggerFactory.getLogger(OllamaHealthIndicator.class);
 
-    // URL Ollama сервера (обычно http://localhost:11434 в разработке)
+    /** Ollama serverio URL. Numatytasis: http://localhost:11434 kūrimo aplinkoje. */
     @Value("${ollama.base-url:http://localhost:11434}")
     private String ollamaBaseUrl;
 
-    // Имя модели для извлечения контейнеров (Qwen 2.5)
+    /** Konteinerių ištraukimo modelės pavadinimas (Qwen 2.5). */
     @Value("${ollama.extraction-model:qwen2.5:7b}")
     private String extractionModel;
 
-    // Имя модели для генерации ответов (Llama 3.1)
+    /** Atsakymų generavimo modelės pavadinimas (Llama 3.1). */
     @Value("${ollama.drafting-model:llama3.1:8b}")
     private String draftingModel;
 
-    // RestTemplate — простой синхронный HTTP клиент
-    // Используется для health check, так как это быстрая операция (не требуется async)
+    /**
+     * Sinchroninis HTTP klientas health check tikslams.
+     * Tinkamas čia, nes tai greita operacija, nekviečiama iš Netty event loop.
+     */
     private final RestTemplate restTemplate = new RestTemplate();
 
     /**
-     * Проверяет здоровье Ollama сервера.
-     * 
-     * Алгоритм:
-     * 1. GET /api/tags у Ollama (возвращает список загруженных моделей)
-     * 2. Проверяем что в ответе присутствуют оба имена моделей (extractionModel, draftingModel)
-     * 3. Если обе найдены → UP (полностью готово)
-     * 4. Если хотя бы одна не найдена → OUT_OF_SERVICE (модели ещё загружаются)
-     * 5. Если Ollama не ответила или ошибка сети → DOWN
-     * 
-     * @return Health объект с статусом и дополнительной информацией
+     * Tikrina Ollama serverio sveikatą.
+     *
+     * Algoritmas:
+     * 1. GET /api/tags – Ollama grąžina įkeltų modelių sąrašą
+     * 2. Tikriname, ar atsakyme yra abiejų modelių pavadinimai
+     * 3. Abi rastos → UP (visiškai paruošta)
+     * 4. Bent viena nerasta → OUT_OF_SERVICE (modelės dar įkeliamos)
+     * 5. Ollama neatsakė ar tinklo klaida → DOWN
+     *
+     * @return Health objektas su būsena ir papildoma informacija
      */
     @Override
     public Health health() {
         try {
-            // Запрашиваем список загруженных моделей у Ollama
             String tagsUrl = ollamaBaseUrl + "/api/tags";
             String response = restTemplate.getForObject(tagsUrl, String.class);
 
-            // Проверяем: обе модели присутствуют?
             if (response != null
                     && response.contains(extractionModel)
                     && response.contains(draftingModel)) {
@@ -74,8 +74,8 @@ public class OllamaHealthIndicator implements HealthIndicator {
                         .withDetail("models", extractionModel + ", " + draftingModel)
                         .build();
             } else {
-                // Модели ещё загружаются (Ollama запущена, но warmup не завершён)
-                // Обычно это происходит при первом запуске контейнера (загрузка моделей из disk → GPU memory)
+                // Modelės dar įkeliamos (Ollama paleista, bet warmup nebaigtas)
+                // Dažnai pasitaiko po pirmojo konteinerio paleidimo (modelių įkėlimas iš disko į GPU)
                 log.warn("Ollama models are not yet loaded, warming up...");
                 return Health.outOfService()
                         .withDetail("status", "Warming up")
@@ -84,7 +84,6 @@ public class OllamaHealthIndicator implements HealthIndicator {
             }
 
         } catch (Exception e) {
-            // Ollama не запущена, не доступна в сети, или произошла другая ошибка
             log.warn("Ollama health check failed: {}", e.getMessage());
             return Health.down()
                     .withDetail("status", "Unavailable")
