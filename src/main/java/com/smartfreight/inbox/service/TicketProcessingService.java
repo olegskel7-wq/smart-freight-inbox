@@ -96,7 +96,7 @@ public class TicketProcessingService {
             for (int attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
                 try {
                     EmailTicket ticket = emailTicketRepository.findById(ticketId)
-                            .orElseThrow(() -> new IllegalArgumentException("Bilietas nerastas: " + ticketId));
+                            .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketId));
 
                     // Apsauga nuo dvigubo apdorojimo – priimame tik NEW ir RETRY_LATER
                     if (ticket.getStatus() != TicketStatus.NEW && ticket.getStatus() != TicketStatus.RETRY_LATER) {
