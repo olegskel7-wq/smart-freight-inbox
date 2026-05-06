@@ -16,8 +16,10 @@ import org.springframework.security.web.SecurityFilterChain;
  *
  * Prieigos taisyklės:
  * – {@code /actuator/**} – atvirai (health-check apkrovos balansuotojui ir Prometheus)
- * – {@code /admin/**} – atvirai (apsauga per localhost tikrinimą AdminController viduje)
+ * – {@code /admin/**} – reikalinga autentifikacija + localhost tikrinimas AdminController viduje
  * – viskas kita – reikalinga autentifikacija
+ *
+ * CSRF: išjungtas (demo aplinka; gamyboje rekomenduojama įjungti su Thymeleaf CSRF žetonais).
  *
  * Naudotojų šaltinis – {@code app_user} lentelė DB per {@link DbUserDetailsService}.
  */
@@ -42,9 +44,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**").permitAll()
-                .requestMatchers("/admin/**").permitAll()
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form

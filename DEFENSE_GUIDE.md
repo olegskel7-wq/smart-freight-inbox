@@ -46,7 +46,7 @@ Email In → Ingestion → Extraction AI → Container Lookup → Drafting AI �
 
 ### 2. Ключевые технологии и паттерны
 
-#### Spring Boot 3 + Java 17
+#### Spring Boot 4.0.5 + Java 17
 
 Используемые аннотации и паттерны для демонстрации:
 

@@ -20,7 +20,10 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     /**
-     * Konteineris nerastas port-service sistemoje → 404 Not Found.
+     * Konteineris nerastas → 404 Not Found.
+     *
+     * ContainerLookupService šiuo metu grąžina Optional.empty() vietoj išimties,
+     * tačiau tvarkytojas paliekamas kaip apsauginė priemonė.
      */
     @ExceptionHandler(ContainerNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleContainerNotFound(ContainerNotFoundException ex) {

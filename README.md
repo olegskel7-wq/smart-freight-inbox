@@ -123,28 +123,6 @@ To test with real emails, configure your IMAP/SMTP credentials. You can set thes
 
 ---
 
-## 🔌 REST API (Programmatic Access)
-
-### Login
-```http
-POST /api/auth/login
-Content-Type: application/json
-
-{ "email": "operator@smartfreight.com", "password": "demo123" }
-```
-Response: `{ "token": "eyJhbGci..." }`
-
-### Tickets
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/api/tickets` | List tickets (optional `?status=DRAFT_READY`) |
-| `GET` | `/api/tickets/{id}` | Get ticket by id |
-| `PATCH` | `/api/tickets/{id}/draft` | Edit draft. Body: `{ "draftReply": "...", "close": false }` |
-| `POST` | `/api/tickets/{id}/approve` | Mark ticket as `CLOSED` (without sending) |
-| `POST` | `/api/tickets/{id}/reject` | Send ticket back to `RETRY_LATER` |
-
----
-
 ## 📦 Technology Stack
 
 | Layer | Technology |
@@ -153,6 +131,6 @@ Response: `{ "token": "eyJhbGci..." }`
 | **Databases** | PostgreSQL 16, Flyway migrations |
 | **AI Models** | Ollama, Qwen 2.5:7b, Llama 3.1:8b |
 | **Integration** | Spring Integration (IMAP IDLE), Spring WebClient |
-| **Security** | Spring Security + JWT |
+| **Security** | Spring Security (session-based form login, BCrypt) |
 | **Frontend** | Thymeleaf + Bootstrap 5 |
 | **Monitoring** | Micrometer, Prometheus, Grafana |

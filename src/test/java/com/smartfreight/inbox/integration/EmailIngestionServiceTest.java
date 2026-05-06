@@ -2,6 +2,7 @@ package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.TicketProcessingService;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
@@ -22,6 +23,8 @@ import java.util.Properties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 /**
  * Vienetų testai el. laiškų priėmimo paslaugai (EmailIngestionService).
@@ -38,6 +41,7 @@ import static org.mockito.Mockito.*;
  * be aktyvios sinchronizacijos būtų išmesta IllegalStateException.
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class EmailIngestionServiceTest {
 
     @Mock
@@ -46,6 +50,9 @@ class EmailIngestionServiceTest {
     @Mock
     private TicketProcessingService ticketProcessingService;
 
+    @Mock
+    private EmailClassificationService emailClassificationService;
+
     private EmailIngestionService emailIngestionService;
 
     /** Jakarta Mail sesija be jokių savybių – naudojama MimeMessage kūrimui testams. */
@@ -53,8 +60,11 @@ class EmailIngestionServiceTest {
 
     @BeforeEach
     void setUp() {
-        emailIngestionService = new EmailIngestionService(emailTicketRepository, ticketProcessingService);
+        emailIngestionService = new EmailIngestionService(
+                emailTicketRepository, ticketProcessingService, emailClassificationService);
         mailSession = Session.getInstance(new Properties());
+        // Default: treat all emails as freight-relevant; individual tests override when needed.
+        when(emailClassificationService.isFreightInquiry(any(), any())).thenReturn(true);
     }
 
     /**
@@ -254,5 +264,28 @@ class EmailIngestionServiceTest {
         }
 
         verify(ticketProcessingService).process(99L);
+    }
+
+    /**
+     * Test: email classified as IRRELEVANT is silently ignored — no DB record created.
+     *
+     * The LLM classifier returns false before any DB operation,
+     * so neither save() nor findByMessageId() should be called.
+     */
+    @Test
+    void processIncomingEmail_irrelevantEmail_skipsWithoutAnyDbInteraction() throws Exception {
+        MimeMessage email = buildSimpleEmail(
+                "<spam-001@example.com>",
+                "marketing@somecompany.com",
+                "Happy holidays!",
+                "Wishing you all the best this holiday season.");
+
+        when(emailClassificationService.isFreightInquiry(any(), any())).thenReturn(false); // override default
+
+        emailIngestionService.processIncomingEmail(email);
+
+        verify(emailTicketRepository, never()).save(any());
+        verify(emailTicketRepository, never()).findByMessageId(any());
+        verifyNoInteractions(ticketProcessingService);
     }
 }

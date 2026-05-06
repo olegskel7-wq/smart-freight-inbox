@@ -139,7 +139,7 @@
     </div>
 
     <!-- Actions -->
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
         <a href="/tickets" class="btn btn-outline-secondary">← Back to list</a>
 
         <form th:if="${ticket.status.name() != 'CLOSED'}"
@@ -149,6 +149,13 @@
                     onclick="return confirm('Close ticket #[[${ticket.id}]] without changes to the draft?')">
                 Close without changes
             </button>
+        </form>
+
+        <form method="post"
+              th:action="@{/tickets/{id}/delete(id=${ticket.id})}"
+              class="ms-auto"
+              onsubmit="return confirm('Delete ticket #[[${ticket.id}]]? This cannot be undone.')">
+            <button type="submit" class="btn btn-outline-danger">&#128465; Delete</button>
         </form>
     </div>
 </div>

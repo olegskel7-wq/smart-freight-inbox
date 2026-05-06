@@ -1,3 +1,6 @@
+server:
+  forward-headers-strategy: framework
+
 spring:
   application:
     name: smart-freight-inbox
@@ -44,6 +47,10 @@ smtp:
   port: ${SMTP_PORT:587}
   username: ${SMTP_USER:inbox@example.com}
   password: ${SMTP_PASSWORD:changeme}
+
+notification:
+  # Set DRAFT_NOTIFY=false to disable operator email notifications without rebuilding
+  draft-enabled: ${DRAFT_NOTIFY:true}
 
 ollama:
   base-url: ${OLLAMA_URL:http://localhost:11434}

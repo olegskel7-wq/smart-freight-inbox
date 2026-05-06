@@ -147,6 +147,27 @@ public class TicketViewController {
     }
 
     /**
+     * POST /tickets/{id}/delete – soft-deletes a ticket (sets deleted = true via @SQLDelete).
+     *
+     * The record remains in the database for audit purposes but is hidden from all queries
+     * filtered by @SQLRestriction (deleted = false).
+     *
+     * @param id                 bilieto identifikatorius
+     * @param redirectAttributes flash message on success
+     * @return nukreipimas į biletų sąrašą
+     */
+    @Transactional
+    @PostMapping("/tickets/{id}/delete")
+    public String deleteTicket(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+        emailTicketRepository.findById(id).ifPresent(ticket -> {
+            emailTicketRepository.delete(ticket);
+            log.info("Ticket {} soft-deleted", id);
+        });
+        redirectAttributes.addFlashAttribute("successMessage", "Ticket #" + id + " deleted.");
+        return "redirect:/tickets";
+    }
+
+    /**
      * POST /tickets/{id}/close – operatorius uždaro biletą (atsakymas išsiųstas / klausimas išspręstas).
      *
      * @param id bilieto identifikatorius

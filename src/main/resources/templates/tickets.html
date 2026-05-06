@@ -21,6 +21,11 @@
 <!-- Content -->
 <div class="container mt-4">
 
+    <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <strong>&#10003;</strong> <span th:text="${successMessage}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
     <!--
         Каждый кликабельный заголовок строит ссылку на тот же /tickets с обновлённым
         sort/dir, но обязательно сохраняет текущий status-фильтр (statusFilter).
@@ -173,9 +178,14 @@
                             th:text="${ticket.updatedAt != null ? #temporals.format(ticket.updatedAt, 'dd.MM.yyyy HH:mm') : '—'}">
                             01.01.2025 12:00
                         </td>
-                        <td>
+                        <td class="d-flex gap-1">
                             <a th:href="@{/tickets/{id}(id=${ticket.id})}"
                                class="btn btn-sm btn-outline-secondary">View</a>
+                            <form method="post"
+                                  th:action="@{/tickets/{id}/delete(id=${ticket.id})}"
+                                  onsubmit="return confirm('Delete ticket #[[${ticket.id}]]? This cannot be undone.')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
                         </td>
                     </tr>
                     <tr th:if="${#lists.isEmpty(tickets)}">
@@ -189,5 +199,6 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

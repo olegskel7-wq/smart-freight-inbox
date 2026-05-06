@@ -2,11 +2,12 @@ package com.smartfreight.inbox.actuator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
 
 /**
  * Ollama AI serverio sveikatos indikatorius.
@@ -29,10 +30,6 @@ public class OllamaHealthIndicator implements HealthIndicator {
 
     private static final Logger log = LoggerFactory.getLogger(OllamaHealthIndicator.class);
 
-    /** Ollama serverio URL. Numatytasis: http://localhost:11434 kūrimo aplinkoje. */
-    @Value("${ollama.base-url:http://localhost:11434}")
-    private String ollamaBaseUrl;
-
     /** Konteinerių ištraukimo modelės pavadinimas (Qwen 2.5). */
     @Value("${ollama.extraction-model:qwen2.5:7b}")
     private String extractionModel;
@@ -41,11 +38,11 @@ public class OllamaHealthIndicator implements HealthIndicator {
     @Value("${ollama.drafting-model:llama3.1:8b}")
     private String draftingModel;
 
-    /**
-     * Sinchroninis HTTP klientas health check tikslams.
-     * Tinkamas čia, nes tai greita operacija, nekviečiama iš Netty event loop.
-     */
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final WebClient ollamaWebClient;
+
+    public OllamaHealthIndicator(@Qualifier("ollamaWebClient") WebClient ollamaWebClient) {
+        this.ollamaWebClient = ollamaWebClient;
+    }
 
     /**
      * Tikrina Ollama serverio sveikatą.
@@ -62,8 +59,11 @@ public class OllamaHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         try {
-            String tagsUrl = ollamaBaseUrl + "/api/tags";
-            String response = restTemplate.getForObject(tagsUrl, String.class);
+            String response = ollamaWebClient.get()
+                    .uri("/api/tags")
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
 
             if (response != null
                     && response.contains(extractionModel)

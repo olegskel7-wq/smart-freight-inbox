@@ -44,6 +44,7 @@ public class TicketProcessingService {
     private final AiExtractionService aiExtractionService;
     private final ContainerLookupService containerLookupService;
     private final AiDraftingService aiDraftingService;
+    private final GmailDraftService gmailDraftService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
@@ -52,11 +53,13 @@ public class TicketProcessingService {
                                    AiExtractionService aiExtractionService,
                                    ContainerLookupService containerLookupService,
                                    AiDraftingService aiDraftingService,
+                                   GmailDraftService gmailDraftService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.aiExtractionService = aiExtractionService;
         this.containerLookupService = containerLookupService;
         this.aiDraftingService = aiDraftingService;
+        this.gmailDraftService = gmailDraftService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -146,6 +149,9 @@ public class TicketProcessingService {
                     draftReadyCounter.increment();
                     processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
                     log.info("Bilieto apdorojimas baigtas: DRAFT_READY");
+
+                    // Save draft to Gmail Drafts folder — non-blocking, failure logged but not rethrown
+                    gmailDraftService.saveDraft(ticket);
                     return;
 
                 } catch (ObjectOptimisticLockingFailureException e) {
