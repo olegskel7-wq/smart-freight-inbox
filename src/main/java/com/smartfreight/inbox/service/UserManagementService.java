@@ -25,6 +25,7 @@ public class UserManagementService {
 
     @Transactional
     public void createUser(String email, String rawPassword, String role) {
+        validatePassword(rawPassword);
         if (userRepository.findByEmail(email).isPresent()) {
             throw new IllegalArgumentException("User with email " + email + " already exists.");
         }
@@ -38,10 +39,17 @@ public class UserManagementService {
 
     @Transactional
     public void changePassword(Long userId, String rawPassword) {
+        validatePassword(rawPassword);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
         user.setPassword(passwordEncoder.encode(rawPassword));
         userRepository.save(user);
+    }
+
+    private void validatePassword(String rawPassword) {
+        if (rawPassword == null || rawPassword.length() < 8) {
+            throw new IllegalArgumentException("Password must be at least 8 characters long.");
+        }
     }
 
     @Transactional

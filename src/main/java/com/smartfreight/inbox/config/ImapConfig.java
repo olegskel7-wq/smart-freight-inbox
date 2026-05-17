@@ -36,6 +36,10 @@ public class ImapConfig {
     @Value("${spring.mail.password}")
     private String password;
 
+    /** Set IMAP_ENABLED=false to explicitly disable the adapter in environments without a mailbox. */
+    @Value("${imap.enabled:true}")
+    private boolean imapEnabled;
+
     /**
      * Synchronous message channel for incoming emails.
      *
@@ -64,10 +68,12 @@ public class ImapConfig {
      */
     @Bean
     public IntegrationFlow imapIdleFlow(MessageChannel mailChannel) {
-        boolean configured = !host.equals("imap.example.com") && !password.equals("changeme");
+        boolean configured = imapEnabled
+                && !host.equals("imap.example.com")
+                && !password.equals("changeme");
 
         if (!configured) {
-            log.warn("IMAP not configured — adapter disabled. Set IMAP_HOST, IMAP_USER, IMAP_PASSWORD env vars to enable.");
+            log.warn("IMAP not configured — adapter disabled. Set IMAP_HOST, IMAP_USER, IMAP_PASSWORD env vars to enable (or IMAP_ENABLED=false to suppress this warning).");
             return IntegrationFlow.from(mailChannel).nullChannel();
         }
 

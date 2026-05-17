@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.TaskExecutor;
 
 import java.util.List;
 
@@ -20,16 +21,17 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * Vienetų testai pakartotinio apdorojimo planuotojui (RetryScheduler).
+ * Unit tests for RetryScheduler.
  *
- * Tikrina:
- * – biletų su RETRY_LATER būsena ir retryCount < MAX_RETRIES apdorojimą
- * – retryCount ir būsenos atnaujinimą prieš process() kvietimą
- * – Micrometer skaitiklio inkrementavimą kiekvienam biletui
- * – teisingą elgesį kai nėra biletų pertvarkyti
+ * Verifies:
+ * - RETRY_LATER tickets with retryCount < MAX_RETRIES are processed
+ * - retryCount and status are updated before process() is called
+ * - Micrometer counter is incremented per ticket
+ * - Correct behaviour when no tickets are eligible
  *
- * Naudoja SimpleMeterRegistry – realus, bet atmintyje veikiantis registras,
- * tinkamas testams (nereikia stubinti sudėtingų Counter mock'ų).
+ * Uses SimpleMeterRegistry — a real in-memory registry suitable for tests.
+ * TaskExecutor is mocked with doAnswer so async calls run synchronously,
+ * keeping assertions straightforward.
  */
 @ExtendWith(MockitoExtension.class)
 class RetrySchedulerTest {
@@ -40,21 +42,24 @@ class RetrySchedulerTest {
     @Mock
     private TicketProcessingService ticketProcessingService;
 
+    @Mock
+    private TaskExecutor taskExecutor;
+
     private RetryScheduler retryScheduler;
     private SimpleMeterRegistry meterRegistry;
 
-    /** MAX_RETRIES reikšmė iš RetryScheduler klasės (5 bandymai). */
     private static final int MAX_RETRIES = 5;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        retryScheduler = new RetryScheduler(emailTicketRepository, ticketProcessingService, meterRegistry);
+        // Run submitted Runnables immediately so process() is called synchronously in tests
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
+        retryScheduler = new RetryScheduler(
+                emailTicketRepository, ticketProcessingService, taskExecutor, meterRegistry);
     }
 
-    /**
-     * Sukuria testo biletą su nurodytu ID ir retryCount.
-     */
     private EmailTicket buildRetryTicket(Long id, int retryCount) {
         EmailTicket ticket = new EmailTicket();
         ticket.setId(id);
@@ -65,13 +70,7 @@ class RetrySchedulerTest {
     }
 
     /**
-     * Testas: vienas bilietas su RETRY_LATER – pertvarkomas sėkmingai.
-     *
-     * Tikrinama:
-     * – retryCount padidėja 1
-     * – būsena keičiama į NEW
-     * – bilietas išsaugomas
-     * – process() iškviečiamas su teisingai ID
+     * Single RETRY_LATER ticket — retryCount incremented, status set to NEW, process() called.
      */
     @Test
     void retryFailedTickets_oneEligibleTicket_processesAndUpdatesFields() {
@@ -93,10 +92,7 @@ class RetrySchedulerTest {
     }
 
     /**
-     * Testas: keli biletai – visi pertvarkomi, kiekvienam inkrementuojamas skaitiklis.
-     *
-     * Tikrinama, kad process() iškviečiamas kiekvienam biletui atskirai,
-     * o Micrometer skaitiklis atitinka biletų skaičių.
+     * Multiple tickets — all processed, counter matches ticket count.
      */
     @Test
     void retryFailedTickets_multipleTickets_processesAllAndIncrementsCounter() {
@@ -119,10 +115,7 @@ class RetrySchedulerTest {
     }
 
     /**
-     * Testas: nėra biletų pertvarkyti – joks apdorojimas nevykdomas.
-     *
-     * Jei eilė tuščia, planuotojas turi tyliai išeiti – be logging'o,
-     * be process() kvietimų, be eilės biletų modifikavimo.
+     * Empty queue — scheduler exits silently without touching anything.
      */
     @Test
     void retryFailedTickets_noTickets_doesNothing() {
@@ -137,10 +130,7 @@ class RetrySchedulerTest {
     }
 
     /**
-     * Testas: saugyklos užklausa naudoja teisingas MAX_RETRIES reikšmę.
-     *
-     * findByStatusAndRetryCountLessThan() turi būti kviečiamas tiksliai
-     * su TicketStatus.RETRY_LATER ir MAX_RETRIES = 5.
+     * Repository is queried with exactly RETRY_LATER and MAX_RETRIES = 5.
      */
     @Test
     void retryFailedTickets_queriesRepositoryWithCorrectParameters() {
@@ -155,11 +145,8 @@ class RetrySchedulerTest {
     }
 
     /**
-     * Testas: eilės tvarka – retryCount didinamas PRIEŠ process() kvietimą.
-     *
-     * Svarbu: retryCount turi būti išsaugotas PRIEŠ AI apdorojimą.
-     * Jei process() nutrūktų, kitą kartą retryCount jau būtų padidintas –
-     * apsauga nuo begalinių ciklų.
+     * retryCount is persisted BEFORE process() is invoked — protects against infinite loops
+     * if process() throws and the ticket ends up back in RETRY_LATER.
      */
     @Test
     void retryFailedTickets_incrementsRetryCountBeforeCallingProcess() {
