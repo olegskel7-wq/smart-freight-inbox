@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.Folder;
@@ -35,24 +36,26 @@ public class GmailDraftService {
 
     private static final Logger log = LoggerFactory.getLogger(GmailDraftService.class);
 
-    @Value("${spring.mail.host}")
-    private String host;
-
-    @Value("${spring.mail.port:993}")
-    private int port;
-
-    @Value("${spring.mail.username}")
-    private String username;
-
-    @Value("${spring.mail.password}")
-    private String password;
+    private final String host;
+    private final int port;
+    private final String username;
+    private final String password;
 
     private final SettingsService settingsService;
     private final Counter draftSavedCounter;
     private final Counter draftFailedCounter;
 
-    public GmailDraftService(SettingsService settingsService, MeterRegistry meterRegistry) {
+    public GmailDraftService(SettingsService settingsService,
+                             MeterRegistry meterRegistry,
+                             @Value("${spring.mail.host}") String host,
+                             @Value("${spring.mail.port:993}") int port,
+                             @Value("${spring.mail.username}") String username,
+                             @Value("${spring.mail.password}") String password) {
         this.settingsService = settingsService;
+        this.host = host;
+        this.port = port;
+        this.username = username;
+        this.password = password;
         this.draftSavedCounter = Counter.builder("smartfreight_gmail_draft_total")
                 .description("Gmail draft save results")
                 .tag("result", "saved")
@@ -94,16 +97,16 @@ public class GmailDraftService {
             draftsFolder.appendMessages(new Message[]{buildDraftMessage(session, ticket)});
             draftSavedCounter.increment();
             log.info("Draft saved to Gmail Drafts for ticket {}, addressed to {}",
-                    ticket.getId(), extractEmail(ticket.getSenderEmail()));
+                    ticket.getId(), EmailAddressUtils.extract(ticket.getSenderEmail()));
 
         } catch (Exception e) {
             draftFailedCounter.increment();
             log.warn("Failed to save draft to Gmail Drafts for ticket {}: {}", ticket.getId(), e.getMessage());
         } finally {
             try { if (draftsFolder != null && draftsFolder.isOpen()) draftsFolder.close(false); }
-            catch (Exception ignored) {}
+            catch (Exception e) { log.debug("Failed to close drafts folder: {}", e.getMessage()); }
             try { if (store != null) store.close(); }
-            catch (Exception ignored) {}
+            catch (Exception e) { log.debug("Failed to close IMAP store: {}", e.getMessage()); }
         }
     }
 
@@ -131,7 +134,9 @@ public class GmailDraftService {
                     log.debug("Found Drafts folder: {}", name);
                     return f;
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.debug("Could not probe folder {}: {}", name, e.getMessage());
+            }
         }
 
         try {
@@ -154,7 +159,7 @@ public class GmailDraftService {
         MimeMessage message = new MimeMessage(session);
         message.setFrom(new InternetAddress(username));
 
-        String customerEmail = extractEmail(ticket.getSenderEmail());
+        String customerEmail = EmailAddressUtils.extract(ticket.getSenderEmail());
         if (!customerEmail.isBlank()) {
             message.setRecipient(Message.RecipientType.TO, new InternetAddress(customerEmail));
         }
@@ -172,12 +177,4 @@ public class GmailDraftService {
         return message;
     }
 
-    private String extractEmail(String raw) {
-        if (raw == null || raw.isBlank()) return "";
-        try {
-            return new InternetAddress(raw).getAddress();
-        } catch (Exception e) {
-            return raw;
-        }
-    }
 }

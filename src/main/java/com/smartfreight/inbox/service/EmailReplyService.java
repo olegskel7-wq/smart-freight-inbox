@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.internet.InternetAddress;
@@ -34,11 +35,13 @@ public class EmailReplyService {
     private final Counter replyFailedCounter;
 
     /** Sender email address (from which operator replies are dispatched). */
-    @Value("${smtp.username}")
-    private String fromAddress;
+    private final String fromAddress;
 
-    public EmailReplyService(JavaMailSender mailSender, MeterRegistry meterRegistry) {
+    public EmailReplyService(JavaMailSender mailSender,
+                             MeterRegistry meterRegistry,
+                             @Value("${smtp.username}") String fromAddress) {
         this.mailSender = mailSender;
+        this.fromAddress = fromAddress;
         this.replySentCounter = Counter.builder("smartfreight_replies_total")
                 .description("Operator reply send results")
                 .tag("result", "sent")
@@ -66,7 +69,7 @@ public class EmailReplyService {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
 
-            String to = extractEmail(ticket.getSenderEmail());
+            String to = EmailAddressUtils.extract(ticket.getSenderEmail());
             if (to.isBlank() || !isValidEmail(to)) {
                 throw new IllegalArgumentException(
                         "Cannot send reply: invalid or missing recipient address for ticket " + ticket.getId());
@@ -89,28 +92,6 @@ public class EmailReplyService {
             replyFailedCounter.increment();
             log.error("Failed to send reply for ticket {}: {}", ticket.getId(), e.getMessage());
             throw new RuntimeException("Failed to send email reply: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Extracts a clean email address from an RFC 5321 formatted string.
-     *
-     * Examples:
-     * — {@code "john@example.com"} → {@code "john@example.com"}
-     * — {@code "John Doe <john@example.com>"} → {@code "john@example.com"}
-     * — {@code "john+tag@example.com"} → {@code "john+tag@example.com"}
-     *
-     * If parsing fails (invalid format), the raw string is returned as a fallback.
-     *
-     * @param raw RFC 5321 formatted string or a plain email address
-     * @return clean email address or an empty string if null
-     */
-    private String extractEmail(String raw) {
-        if (raw == null || raw.isBlank()) return "";
-        try {
-            return new InternetAddress(raw).getAddress();
-        } catch (Exception e) {
-            return raw;
         }
     }
 

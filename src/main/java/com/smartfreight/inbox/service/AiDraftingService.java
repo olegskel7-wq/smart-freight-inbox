@@ -33,15 +33,23 @@ public class AiDraftingService {
     private static final DateTimeFormatter ETA_FORMATTER =
             DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm");
 
+    /** Maximum email body length sent to the LLM. */
+    private static final int MAX_PROMPT_BODY_CHARS = 2000;
+
+    /** Ollama generate-call timeout. */
+    private static final Duration OLLAMA_TIMEOUT = Duration.ofSeconds(150);
+
     /** Draft generation model name — read from application.yaml. */
-    @Value("${ollama.drafting-model:llama3.1:8b}")
-    private String draftingModel;
+    private final String draftingModel;
 
     private final WebClient ollamaWebClient;
     private final Timer ollamaTimer;
 
-    public AiDraftingService(WebClient ollamaWebClient, MeterRegistry meterRegistry) {
+    public AiDraftingService(WebClient ollamaWebClient,
+                             MeterRegistry meterRegistry,
+                             @Value("${ollama.drafting-model:llama3.1:8b}") String draftingModel) {
         this.ollamaWebClient = ollamaWebClient;
+        this.draftingModel = draftingModel;
         this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
                 .description("Ollama response time per model")
                 .tag("model", "llama3.1:8b")
@@ -77,7 +85,7 @@ public class AiDraftingService {
                 """ + containerContext + """
 
                 Customer's email:
-                """ + emailBody.substring(0, Math.min(emailBody.length(), 2000)) + """
+                """ + emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS)) + """
 
                 Write only the email reply body (no subject line, no "Dear..." header unless natural).
                 """;
@@ -98,7 +106,7 @@ public class AiDraftingService {
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block(Duration.ofSeconds(150));
+                    .block(OLLAMA_TIMEOUT);
             ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
 
             if (response == null) {

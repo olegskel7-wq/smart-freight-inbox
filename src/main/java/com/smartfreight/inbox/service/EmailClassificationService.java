@@ -33,16 +33,23 @@ public class EmailClassificationService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailClassificationService.class);
 
-    @Value("${ollama.extraction-model:qwen2.5:7b}")
-    private String model;
+    /** Maximum email body length sent to the classifier — shorter than for extraction since one-word answer is faster. */
+    private static final int MAX_CLASSIFICATION_BODY_CHARS = 1000;
+
+    /** Classification call timeout — short because the response is a single word. */
+    private static final Duration CLASSIFICATION_TIMEOUT = Duration.ofSeconds(30);
+
+    private final String model;
 
     private final WebClient ollamaWebClient;
     private final Counter relevantCounter;
     private final Counter irrelevantCounter;
 
     public EmailClassificationService(@Qualifier("ollamaWebClient") WebClient ollamaWebClient,
-                                      MeterRegistry meterRegistry) {
+                                      MeterRegistry meterRegistry,
+                                      @Value("${ollama.extraction-model:qwen2.5:7b}") String model) {
         this.ollamaWebClient = ollamaWebClient;
+        this.model = model;
         this.relevantCounter = Counter.builder("smartfreight_emails_classified_total")
                 .description("Emails classified by the AI filter")
                 .tag("result", "relevant")
@@ -74,7 +81,7 @@ public class EmailClassificationService {
             return false;
         }
 
-        String truncatedBody = body.substring(0, Math.min(body.length(), 1000));
+        String truncatedBody = body.substring(0, Math.min(body.length(), MAX_CLASSIFICATION_BODY_CHARS));
         String safeSubject = subject != null ? subject : "";
 
         String prompt = "You are a logistics email classifier.\n"
@@ -98,7 +105,7 @@ public class EmailClassificationService {
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block(Duration.ofSeconds(30));
+                    .block(CLASSIFICATION_TIMEOUT);
 
             if (response == null) {
                 log.warn("Ollama returned null for classification - treating as relevant (fail-open)");

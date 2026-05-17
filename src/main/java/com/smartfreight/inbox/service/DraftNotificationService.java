@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.util.EmailAddressUtils;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
@@ -40,13 +41,14 @@ public class DraftNotificationService {
 
     private final JavaMailSender mailSender;
     private final SettingsService settingsService;
+    private final String operatorEmail;
 
-    @Value("${smtp.username}")
-    private String operatorEmail;
-
-    public DraftNotificationService(JavaMailSender mailSender, SettingsService settingsService) {
+    public DraftNotificationService(JavaMailSender mailSender,
+                                    SettingsService settingsService,
+                                    @Value("${smtp.username}") String operatorEmail) {
         this.mailSender = mailSender;
         this.settingsService = settingsService;
+        this.operatorEmail = operatorEmail;
     }
 
     /**
@@ -73,7 +75,7 @@ public class DraftNotificationService {
             helper.setFrom(operatorEmail);
             helper.setTo(operatorEmail);
 
-            String customerEmail = extractEmail(ticket.getSenderEmail());
+            String customerEmail = EmailAddressUtils.extract(ticket.getSenderEmail());
             if (!customerEmail.isBlank()) {
                 message.setReplyTo(new InternetAddress[]{new InternetAddress(customerEmail)});
             }
@@ -112,12 +114,4 @@ public class DraftNotificationService {
                 + "Ticket ID: " + ticket.getId();
     }
 
-    private String extractEmail(String raw) {
-        if (raw == null || raw.isBlank()) return "";
-        try {
-            return new InternetAddress(raw).getAddress();
-        } catch (Exception e) {
-            return raw;
-        }
-    }
 }

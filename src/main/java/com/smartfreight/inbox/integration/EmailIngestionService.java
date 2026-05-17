@@ -46,6 +46,9 @@ public class EmailIngestionService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailIngestionService.class);
 
+    /** Hard cap on email size — protects heap from runaway IMAP messages. */
+    private static final int MAX_EMAIL_BYTES = 10 * 1024 * 1024;
+
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
     private final EmailClassificationService emailClassificationService;
@@ -95,7 +98,6 @@ public class EmailIngestionService {
             String messageId = originalMessageIds[0];
             MDC.put("messageId", messageId);
 
-            final int MAX_EMAIL_BYTES = 10 * 1024 * 1024;
             int reportedSize = mimeMessage.getSize();
             // getSize() returns -1 when the server does not report size — skip this pre-check in that case
             if (reportedSize > 0 && reportedSize > MAX_EMAIL_BYTES) {

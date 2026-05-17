@@ -39,16 +39,24 @@ public class AiExtractionService {
     private static final Pattern CONTAINER_PATTERN =
             Pattern.compile("\\b([A-Z]{4}\\d{7})\\b");
 
+    /** Maximum email body length sent to the LLM — long emails are truncated to keep prompts fast. */
+    private static final int MAX_PROMPT_BODY_CHARS = 2000;
+
+    /** Ollama generate-call timeout — generous enough for slow LLM responses on CPU. */
+    private static final Duration OLLAMA_TIMEOUT = Duration.ofSeconds(150);
+
     /** Extraction model name — read from application.yaml. */
-    @Value("${ollama.extraction-model:qwen2.5:7b}")
-    private String extractionModel;
+    private final String extractionModel;
 
     private final WebClient ollamaWebClient;
     private final Counter fallbackCounter;
     private final Timer ollamaTimer;
 
-    public AiExtractionService(WebClient ollamaWebClient, MeterRegistry meterRegistry) {
+    public AiExtractionService(WebClient ollamaWebClient,
+                               MeterRegistry meterRegistry,
+                               @Value("${ollama.extraction-model:qwen2.5:7b}") String extractionModel) {
         this.ollamaWebClient = ollamaWebClient;
+        this.extractionModel = extractionModel;
         this.fallbackCounter = Counter.builder("smartfreight_extraction_fallback_total")
                 .description("Times regex fallback was used instead of LLM for container extraction")
                 .register(meterRegistry);
@@ -84,7 +92,7 @@ public class AiExtractionService {
                 Return ONLY the container number, nothing else. If no container number is found, return "NOT_FOUND".
 
                 Email:
-                """ + emailBody.substring(0, Math.min(emailBody.length(), 2000));
+                """ + emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
 
         try {
             Map<String, Object> requestBody = new HashMap<>();
@@ -102,7 +110,7 @@ public class AiExtractionService {
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block(Duration.ofSeconds(150));
+                    .block(OLLAMA_TIMEOUT);
             ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
 
             if (response == null) {
