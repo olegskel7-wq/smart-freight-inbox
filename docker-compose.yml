@@ -4,10 +4,11 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartfreight
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=postgres
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-postgres}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - OLLAMA_URL=http://ollama:11434
       - PORT_SERVICE_URL=http://port-service:9000
+      - PORT_SERVICE_API_KEY=${PORT_SERVICE_API_KEY:-smartfreight-port-secret}
       - IMAP_HOST=${IMAP_HOST:-imap.example.com}
       - IMAP_USER=${IMAP_USER:-inbox@example.com}
       - IMAP_PASSWORD=${IMAP_PASSWORD:-changeme}
@@ -31,8 +32,8 @@ services:
     image: postgres:16
     environment:
       - POSTGRES_DB=smartfreight
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
     # Host port 5433 matches application.yaml (avoids conflict with a local PostgreSQL on 5432).
     ports:
       - "5433:5432"
@@ -94,7 +95,7 @@ services:
   grafana:
     image: grafana/grafana:11.1.0
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=changeme
+      - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -110,8 +111,8 @@ services:
     image: postgres:16
     environment:
       - POSTGRES_DB=port_system
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=${PORT_DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${PORT_DB_PASSWORD:-postgres}
     ports:
       - "5435:5432"
     volumes:
@@ -126,14 +127,15 @@ services:
 
   port-service:
     build:
-      context: ../../port-service/port-service
+      context: ./port-service
       dockerfile: Dockerfile
     environment:
       - DB_HOST=port-db
       - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - DB_USER=${PORT_DB_USER:-postgres}
+      - DB_PASSWORD=${PORT_DB_PASSWORD:-postgres}
       - SCHEDULER_INTERVAL_MS=300000
+      - PORT_SERVICE_API_KEY=${PORT_SERVICE_API_KEY:-smartfreight-port-secret}
     depends_on:
       port-db:
         condition: service_healthy
@@ -151,7 +153,6 @@ services:
 volumes:
   postgres_data:
   ollama:
-    external: true
   prometheus_data:
   grafana_data:
   port_db_data:

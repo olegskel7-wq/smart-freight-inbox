@@ -10,20 +10,20 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Globalus išimčių tvarkytojas REST valdikliams.
+ * Global exception handler for REST controllers.
  *
- * Taikomas tik {@code @RestController} klasėms (AdminController) –
- * Thymeleaf valdikliui ({@code @Controller}) čia neveikia,
- * jis gauna HTML klaidos puslapį per Spring Boot BasicErrorController.
+ * Applied only to {@code @RestController} classes (AdminController) —
+ * it does not apply to the Thymeleaf controller ({@code @Controller}),
+ * which receives an HTML error page via Spring Boot BasicErrorController.
  */
 @RestControllerAdvice(annotations = RestController.class)
 public class GlobalExceptionHandler {
 
     /**
-     * Konteineris nerastas → 404 Not Found.
+     * Container not found → 404 Not Found.
      *
-     * ContainerLookupService šiuo metu grąžina Optional.empty() vietoj išimties,
-     * tačiau tvarkytojas paliekamas kaip apsauginė priemonė.
+     * ContainerLookupService currently returns Optional.empty() instead of throwing,
+     * but the handler is kept as a safety net.
      */
     @ExceptionHandler(ContainerNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleContainerNotFound(ContainerNotFoundException ex) {
@@ -34,7 +34,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Netinkamas įvesties parametras → 400 Bad Request.
+     * Invalid input parameter → 400 Bad Request.
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
@@ -45,8 +45,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Visos kitos nenumatytos išimtys → 500 Internal Server Error.
-     * Klientas gauna generalizuotą pranešimą – vidinės detalės nepateikiamos.
+     * All other unexpected exceptions → 500 Internal Server Error.
+     * The client receives a generic message — internal details are not exposed.
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleGenericException(Exception ex) {

@@ -10,31 +10,31 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 /**
- * Ollama AI serverio sveikatos indikatorius.
+ * Health indicator for the Ollama AI server.
  *
- * Naudojamas Spring Boot Actuator galūne {@code /actuator/health}
- * kritinių priklausomybių pasiekiamumui tikrinti.
+ * Used by the Spring Boot Actuator endpoint {@code /actuator/health}
+ * to check the availability of critical dependencies.
  *
- * Būsenos:
- * – UP: Ollama veikia ir abi modelės (Qwen + Llama) įkeltos
- * – OUT_OF_SERVICE: Ollama pasiekiama, bet modelės dar įkeliamos (warmup)
- * – DOWN: Ollama nepasiekiama arba įvyko tinklo klaida
+ * Statuses:
+ * — UP: Ollama is running and both models (Qwen + Llama) are loaded
+ * — OUT_OF_SERVICE: Ollama is reachable but models are still loading (warmup)
+ * — DOWN: Ollama is unreachable or a network error occurred
  *
- * Naudojimas:
- * – Stebėsena Grafana/Prometheus
- * – Kubernetes readiness probe
- * – Apkrovos balansuotojas – maršrutizuoti srautą tik į sveikas instancijas
+ * Use cases:
+ * — Grafana/Prometheus monitoring
+ * — Kubernetes readiness probe
+ * — Load balancer — route traffic only to healthy instances
  */
 @Component
 public class OllamaHealthIndicator implements HealthIndicator {
 
     private static final Logger log = LoggerFactory.getLogger(OllamaHealthIndicator.class);
 
-    /** Konteinerių ištraukimo modelės pavadinimas (Qwen 2.5). */
+    /** Container extraction model name (Qwen 2.5). */
     @Value("${ollama.extraction-model:qwen2.5:7b}")
     private String extractionModel;
 
-    /** Atsakymų generavimo modelės pavadinimas (Llama 3.1). */
+    /** Reply generation model name (Llama 3.1). */
     @Value("${ollama.drafting-model:llama3.1:8b}")
     private String draftingModel;
 
@@ -45,16 +45,16 @@ public class OllamaHealthIndicator implements HealthIndicator {
     }
 
     /**
-     * Tikrina Ollama serverio sveikatą.
+     * Checks the health of the Ollama server.
      *
-     * Algoritmas:
-     * 1. GET /api/tags – Ollama grąžina įkeltų modelių sąrašą
-     * 2. Tikriname, ar atsakyme yra abiejų modelių pavadinimai
-     * 3. Abi rastos → UP (visiškai paruošta)
-     * 4. Bent viena nerasta → OUT_OF_SERVICE (modelės dar įkeliamos)
-     * 5. Ollama neatsakė ar tinklo klaida → DOWN
+     * Algorithm:
+     * 1. GET /api/tags — Ollama returns the list of loaded models
+     * 2. Check whether both model names are present in the response
+     * 3. Both found → UP (fully ready)
+     * 4. At least one missing → OUT_OF_SERVICE (models are still loading)
+     * 5. Ollama did not respond or network error → DOWN
      *
-     * @return Health objektas su būsena ir papildoma informacija
+     * @return Health object with status and additional details
      */
     @Override
     public Health health() {
@@ -74,8 +74,6 @@ public class OllamaHealthIndicator implements HealthIndicator {
                         .withDetail("models", extractionModel + ", " + draftingModel)
                         .build();
             } else {
-                // Modelės dar įkeliamos (Ollama paleista, bet warmup nebaigtas)
-                // Dažnai pasitaiko po pirmojo konteinerio paleidimo (modelių įkėlimas iš disko į GPU)
                 log.warn("Ollama models are not yet loaded, warming up...");
                 return Health.outOfService()
                         .withDetail("status", "Warming up")

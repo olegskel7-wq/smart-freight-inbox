@@ -15,37 +15,41 @@ import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 /**
- * WebClient bean'ų konfigūracija išorinių paslaugų kvietimams.
+ * WebClient bean configuration for calling external services.
  *
- * Sukuria du atskirus WebClient bean'us:
- * – {@code ollamaWebClient} – Ollama AI serveriui (ilgi laiko limitai dėl LLM)
- * – {@code portServiceWebClient} – port-service (trumpi laiko limitai – greitas REST API)
+ * Creates two separate WebClient beans:
+ * — {@code ollamaWebClient} — for the Ollama AI server (long timeouts due to LLM)
+ * — {@code portServiceWebClient} — for port-service (short timeouts — fast REST API)
  */
 @Configuration
 public class WebClientConfig {
 
-    /** Ollama serverio URL. Numatytasis: http://localhost:11434 (lokali kūrimo aplinka). */
+    /** Ollama server URL. Default: http://localhost:11434 (local development environment). */
     @Value("${ollama.base-url:http://localhost:11434}")
     private String ollamaBaseUrl;
 
-    /** Išorinio portų statuso paslaugos URL. */
+    /** External port status service URL. */
     @Value("${port.service.url:http://localhost:9000}")
     private String portServiceUrl;
 
+    /** API key for authenticating with port-service. Passed in the X-API-Key header. */
+    @Value("${port.service.api-key}")
+    private String portServiceApiKey;
+
     /**
-     * WebClient Ollama AI serverio užklausoms.
+     * WebClient for Ollama AI server requests.
      *
-     * Naudojamas {@link com.smartfreight.inbox.service.AiExtractionService} ir
+     * Used by {@link com.smartfreight.inbox.service.AiExtractionService} and
      * {@link com.smartfreight.inbox.service.AiDraftingService}.
      *
-     * Laiko limitai sukonfigūruoti LLM specifikai:
-     * – Skaitymo laiko limitas: 150 s – LLM gali generuoti ilgai dideliems tekstams
-     * – Rašymo laiko limitas: 30 s – užklausos siuntimas
-     * – TCP jungimosi laiko limitas: 10 s
+     * Timeouts configured for LLM characteristics:
+     * — Read timeout: 150 s — LLM may take long for large texts
+     * — Write timeout: 30 s — request sending
+     * — TCP connection timeout: 10 s
      *
-     * ConnectionProvider valdo ryšių baseiną (iki 10 vienalaikių ryšių su Ollama).
+     * ConnectionProvider manages the connection pool (up to 10 concurrent connections to Ollama).
      *
-     * @return sukonfigūruotas ollamaWebClient
+     * @return configured ollamaWebClient
      */
     @Bean
     public WebClient ollamaWebClient() {
@@ -53,7 +57,6 @@ public class WebClientConfig {
                 .maxConnections(10)
                 .maxIdleTime(Duration.ofMinutes(10))
                 .maxLifeTime(Duration.ofMinutes(20))
-                // Jei visi ryšiai užimti – laukiame laisvo iki 10 s
                 .pendingAcquireTimeout(Duration.ofSeconds(10))
                 .build();
 
@@ -71,12 +74,12 @@ public class WebClientConfig {
     }
 
     /**
-     * WebClient port-service užklausoms.
+     * WebClient for port-service requests.
      *
-     * Trumpi laiko limitai – port-service yra greitas REST API, ne LLM.
-     * Atskiras bean'as, kad ollamaWebClient laiko limitai negaliotų čia.
+     * Short timeouts — port-service is a fast REST API, not an LLM.
+     * Separate bean so that ollamaWebClient timeouts do not apply here.
      *
-     * @return sukonfigūruotas portServiceWebClient
+     * @return configured portServiceWebClient
      */
     @Bean
     public WebClient portServiceWebClient() {
@@ -89,6 +92,7 @@ public class WebClientConfig {
 
         return WebClient.builder()
                 .baseUrl(portServiceUrl)
+                .defaultHeader("X-API-Key", portServiceApiKey)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }

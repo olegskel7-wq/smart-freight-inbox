@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Freight Inbox — Client Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0a1628;
+    color: #fff;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .deck {
+    width: 100%;
+    height: 100vh;
+    position: relative;
+  }
+
+  .slide {
+    display: none;
+    width: 100%;
+    height: 100vh;
+    position: absolute;
+    top: 0; left: 0;
+    padding: 60px 80px;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .slide.active { display: flex; }
+
+  /* ── Slide 1: Cover ── */
+  .slide-cover {
+    background: linear-gradient(135deg, #0a1628 0%, #0d2244 60%, #0a3060 100%);
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .slide-cover .tag {
+    background: #1e6fd4;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 16px;
+    border-radius: 20px;
+    margin-bottom: 32px;
+    display: inline-block;
+  }
+  .slide-cover h1 {
+    font-size: 64px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #fff;
+    margin-bottom: 24px;
+  }
+  .slide-cover h1 span { color: #4da3ff; }
+  .slide-cover p {
+    font-size: 22px;
+    color: #8ab4d8;
+    max-width: 620px;
+    line-height: 1.5;
+    margin-bottom: 48px;
+  }
+  .slide-cover .meta {
+    font-size: 15px;
+    color: #4a7aa8;
+    display: flex;
+    gap: 32px;
+  }
+  .slide-cover .meta span { display: flex; align-items: center; gap: 8px; }
+  .slide-cover .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #1e6fd4;
+    display: inline-block;
+  }
+  .cover-accent {
+    position: absolute;
+    right: 80px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 340px;
+    height: 340px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(30,111,212,0.15) 0%, transparent 70%);
+    border: 1px solid rgba(30,111,212,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cover-icon { font-size: 100px; opacity: 0.6; }
+
+  /* ── Slide 2: Problem ── */
+  .slide-problem { background: #0d1f3a; }
+  .slide-problem .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    margin-top: 40px;
+  }
+  .pain-card {
+    background: rgba(220, 50, 50, 0.08);
+    border: 1px solid rgba(220, 50, 50, 0.2);
+    border-radius: 12px;
+    padding: 28px;
+  }
+  .pain-card .icon { font-size: 28px; margin-bottom: 12px; }
+  .pain-card h3 { font-size: 17px; font-weight: 700; color: #ff7070; margin-bottom: 8px; }
+  .pain-card p { font-size: 14px; color: #8ab4d8; line-height: 1.6; }
+
+  /* ── Slide 3: Cost ── */
+  .slide-cost { background: #0a1628; }
+  .stat-row {
+    display: flex;
+    gap: 32px;
+    margin-top: 44px;
+  }
+  .stat-box {
+    flex: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 36px 28px;
+    text-align: center;
+  }
+  .stat-box .number {
+    font-size: 56px;
+    font-weight: 800;
+    color: #ff6b35;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .stat-box .label {
+    font-size: 14px;
+    color: #6a94b8;
+    line-height: 1.5;
+  }
+  .stat-box .sub {
+    font-size: 12px;
+    color: #3a5a78;
+    margin-top: 8px;
+  }
+
+  /* ── Slide 4: How It Works ── */
+  .slide-how { background: #0d1f3a; }
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-top: 50px;
+  }
+  .flow-step {
+    flex: 1;
+    text-align: center;
+    position: relative;
+  }
+  .flow-step .circle {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin: 0 auto 16px;
+    border: 2px solid;
+  }
+  .flow-step .step-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+  .flow-step .step-desc {
+    font-size: 12px;
+    color: #6a94b8;
+    line-height: 1.4;
+    padding: 0 8px;
+  }
+  .flow-arrow {
+    font-size: 24px;
+    color: #1e6fd4;
+    flex-shrink: 0;
+    margin-bottom: 52px;
+  }
+  .c1 { background: rgba(30,111,212,0.15); border-color: #1e6fd4; }
+  .c2 { background: rgba(100,180,255,0.12); border-color: #4da3ff; }
+  .c3 { background: rgba(80,200,120,0.12); border-color: #50c878; }
+  .c4 { background: rgba(255,200,50,0.12); border-color: #ffc832; }
+  .c5 { background: rgba(140,100,220,0.12); border-color: #8c64dc; }
+  .highlight-box {
+    margin-top: 40px;
+    background: rgba(80,200,120,0.08);
+    border: 1px solid rgba(80,200,120,0.25);
+    border-radius: 10px;
+    padding: 18px 28px;
+    font-size: 15px;
+    color: #7de8a0;
+    text-align: center;
+  }
+
+  /* ── Slide 5: Differentiators ── */
+  .slide-diff { background: #0a1628; }
+  .diff-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 28px;
+    margin-top: 44px;
+  }
+  .diff-card {
+    border-radius: 14px;
+    padding: 30px 24px;
+    text-align: center;
+  }
+  .diff-card .icon { font-size: 36px; margin-bottom: 16px; }
+  .diff-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+  .diff-card p { font-size: 13px; line-height: 1.6; }
+  .d1 { background: rgba(30,111,212,0.1); border: 1px solid rgba(30,111,212,0.25); }
+  .d1 h3 { color: #4da3ff; }
+  .d1 p { color: #6a94b8; }
+  .d2 { background: rgba(80,200,120,0.08); border: 1px solid rgba(80,200,120,0.25); }
+  .d2 h3 { color: #50c878; }
+  .d2 p { color: #6a94b8; }
+  .d3 { background: rgba(255,180,50,0.08); border: 1px solid rgba(255,180,50,0.25); }
+  .d3 h3 { color: #ffb432; }
+  .d3 p { color: #6a94b8; }
+
+  /* ── Slide 6: Results ── */
+  .slide-results { background: #0d1f3a; }
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    margin-top: 44px;
+  }
+  .compare-col h3 {
+    font-size: 16px;
+    font-weight: 700;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  .before h3 { background: rgba(220,50,50,0.15); color: #ff7070; border: 1px solid rgba(220,50,50,0.2); }
+  .after h3 { background: rgba(80,200,120,0.12); color: #50c878; border: 1px solid rgba(80,200,120,0.25); }
+  .compare-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: #8ab4d8;
+    line-height: 1.5;
+  }
+  .compare-item .bullet { flex-shrink: 0; font-size: 18px; }
+
+  /* ── Slide 7: Adaptability ── */
+  .slide-adapt { background: #0d1f3a; }
+  .adapt-intro {
+    font-size: 16px;
+    color: #6a94b8;
+    margin-top: 16px;
+    margin-bottom: 40px;
+    max-width: 700px;
+    line-height: 1.6;
+  }
+  .adapt-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 36px;
+  }
+  .adapt-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 22px 16px;
+    text-align: center;
+    transition: border-color 0.2s;
+  }
+  .adapt-card .icon { font-size: 30px; margin-bottom: 12px; }
+  .adapt-card h3 { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .adapt-card p { font-size: 12px; color: #6a94b8; line-height: 1.5; }
+  .adapt-card.a1 { border-color: rgba(77,163,255,0.35); }
+  .adapt-card.a2 { border-color: rgba(80,200,120,0.35); }
+  .adapt-card.a3 { border-color: rgba(255,180,50,0.35); }
+  .adapt-card.a4 { border-color: rgba(140,100,220,0.35); }
+  .adapt-note {
+    background: rgba(30,111,212,0.08);
+    border: 1px solid rgba(30,111,212,0.25);
+    border-radius: 10px;
+    padding: 16px 28px;
+    font-size: 14px;
+    color: #8ab4d8;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .adapt-note strong { color: #4da3ff; }
+
+  /* ── Slide 8: Pilot ── */
+  .slide-pilot {
+    background: linear-gradient(135deg, #0a1628 0%, #0d2244 100%);
+    align-items: center;
+    text-align: center;
+  }
+  .pilot-badge {
+    background: rgba(80,200,120,0.12);
+    border: 1px solid rgba(80,200,120,0.3);
+    border-radius: 50px;
+    padding: 10px 28px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #50c878;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 36px;
+    display: inline-block;
+  }
+  .slide-pilot h2 {
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 24px;
+  }
+  .slide-pilot h2 span { color: #4da3ff; }
+  .slide-pilot .subtitle {
+    font-size: 20px;
+    color: #6a94b8;
+    margin-bottom: 52px;
+    max-width: 560px;
+  }
+  .pilot-steps {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    margin-bottom: 52px;
+  }
+  .pilot-step {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 24px 28px;
+    width: 200px;
+    text-align: center;
+  }
+  .pilot-step .num {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e6fd4;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .pilot-step p { font-size: 13px; color: #8ab4d8; line-height: 1.5; }
+  .cta-btn {
+    background: linear-gradient(135deg, #1e6fd4, #0d50a0);
+    color: #fff;
+    font-size: 17px;
+    font-weight: 700;
+    padding: 18px 48px;
+    border-radius: 50px;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    box-shadow: 0 8px 32px rgba(30,111,212,0.4);
+  }
+
+  /* ── Shared heading styles ── */
+  .slide-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e6fd4;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .slide h2 {
+    font-size: 40px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.2;
+  }
+  .slide h2 span { color: #4da3ff; }
+
+  /* ── Navigation ── */
+  .nav {
+    position: fixed;
+    bottom: 36px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    z-index: 100;
+  }
+  .nav button {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #fff;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  .nav button:hover { background: rgba(30,111,212,0.4); }
+  .nav button:disabled { opacity: 0.25; cursor: not-allowed; }
+  .nav .counter {
+    font-size: 13px;
+    color: #4a7aa8;
+    min-width: 60px;
+    text-align: center;
+  }
+
+  /* ── Progress bar ── */
+  .progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #1e6fd4, #4da3ff);
+    transition: width 0.3s ease;
+    z-index: 200;
+  }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="deck">
+
+  <!-- Slide 1: Cover -->
+  <div class="slide slide-cover active">
+    <div>
+      <div class="tag">SmartFreight · AI Automation</div>
+      <h1>Your inbox<br>works for <span>itself</span></h1>
+      <p>AI-powered email processing for freight forwarding companies — drafts replies in seconds, your operator approves in one click.</p>
+      <div class="meta">
+        <span><span class="dot"></span> On-Premise AI</span>
+        <span><span class="dot"></span> GDPR Compliant</span>
+        <span><span class="dot"></span> Human-in-the-Loop</span>
+      </div>
+    </div>
+    <div class="cover-accent">
+      <span class="cover-icon">📦</span>
+    </div>
+  </div>
+
+  <!-- Slide 2: Problem -->
+  <div class="slide slide-problem">
+    <div class="slide-title">The Problem</div>
+    <h2>Your operators spend their day<br>on <span>copy-paste work</span></h2>
+    <div class="grid">
+      <div class="pain-card">
+        <div class="icon">⏱️</div>
+        <h3>5–7 minutes per email</h3>
+        <p>Read the email → find the container number → search the system → write a reply from scratch. Every. Single. Time.</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">❌</div>
+        <h3>Human error</h3>
+        <p>Container numbers misread, wrong containers looked up. One wrong reply = customer complaint or formal dispute.</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">📉</div>
+        <h3>Slow response times</h3>
+        <p>Customers wait hours for a basic status update. In freight, speed is trust. Delayed replies damage relationships.</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">📈</div>
+        <h3>Scaling means hiring</h3>
+        <p>More cargo volume = proportionally more staff needed for the same repetitive work. There is no efficiency gain.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 3: Cost -->
+  <div class="slide slide-cost">
+    <div class="slide-title">The Cost</div>
+    <h2>This is what manual processing<br>costs you <span>every day</span></h2>
+    <div class="stat-row">
+      <div class="stat-box">
+        <div class="number">150</div>
+        <div class="label">emails processed per operator per day</div>
+        <div class="sub">in a typical freight forwarding office</div>
+      </div>
+      <div class="stat-box">
+        <div class="number">~12h</div>
+        <div class="label">of team time spent on repetitive replies</div>
+        <div class="sub">at 5 min/email × 3 operators</div>
+      </div>
+      <div class="stat-box">
+        <div class="number">60%</div>
+        <div class="label">of the working day lost to routine copy-paste</div>
+        <div class="sub">time that could go to high-value work</div>
+      </div>
+      <div class="stat-box">
+        <div class="number">£0</div>
+        <div class="label">strategic value created from this work</div>
+        <div class="sub">pure overhead — no insight, no growth</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 4: How It Works -->
+  <div class="slide slide-how">
+    <div class="slide-title">How It Works</div>
+    <h2>Five steps. <span>Zero manual typing.</span></h2>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="circle c1">📨</div>
+        <div class="step-label">Email arrives</div>
+        <div class="step-desc">IMAP listener picks it up instantly — no polling, no delay</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="circle c2">🤖</div>
+        <div class="step-label">AI extracts</div>
+        <div class="step-desc">Qwen 2.5 reads the email and pulls out the container number</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="circle c3">🗄️</div>
+        <div class="step-label">System looks up</div>
+        <div class="step-desc">Container status, location, and ETA fetched from your database</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="circle c4">✍️</div>
+        <div class="step-label">AI drafts reply</div>
+        <div class="step-desc">Llama 3.1 writes a professional response using real data</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="circle c5">✅</div>
+        <div class="step-label">Operator approves</div>
+        <div class="step-desc">One click to send — or reject to regenerate. Full control</div>
+      </div>
+    </div>
+    <div class="highlight-box">
+      Nothing is sent automatically. The AI prepares — the human decides.
+    </div>
+  </div>
+
+  <!-- Slide 5: Differentiators -->
+  <div class="slide slide-diff">
+    <div class="slide-title">Why Smart Freight Inbox</div>
+    <h2>Built for freight companies,<br>not for <span>generic helpdesks</span></h2>
+    <div class="diff-grid">
+      <div class="diff-card d1">
+        <div class="icon">🔒</div>
+        <h3>Your data stays on-premise</h3>
+        <p>All AI runs locally on your hardware via Ollama. Container numbers, customer names, contract prices — nothing leaves your network. Full UK GDPR compliance, no data transfer risk.</p>
+      </div>
+      <div class="diff-card d2">
+        <div class="icon">👤</div>
+        <h3>Human always in control</h3>
+        <p>Every draft is reviewed before sending. No autonomous replies, no surprises. In logistics, one wrong reply about a container's ETA has real business consequences.</p>
+      </div>
+      <div class="diff-card d3">
+        <div class="icon">📊</div>
+        <h3>Full audit trail</h3>
+        <p>Every email becomes a tracked ticket with status history. Know exactly who approved what, when. Retry failed tickets automatically. No email gets lost or forgotten.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 6: Results -->
+  <div class="slide slide-results">
+    <div class="slide-title">Before vs After</div>
+    <h2>What changes on <span>day one</span></h2>
+    <div class="compare">
+      <div class="compare-col before">
+        <h3>❌ Without Smart Freight Inbox</h3>
+        <div class="compare-item"><span class="bullet">•</span><span>5–7 minutes to process each email manually</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>Container numbers misread, wrong data sent to customers</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>Customers wait hours for a basic status update</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>No record of who replied what and when</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>Scaling requires hiring more operators</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>Team exhausted by end of day — zero creative work</span></div>
+      </div>
+      <div class="compare-col after">
+        <h3>✅ With Smart Freight Inbox</h3>
+        <div class="compare-item"><span class="bullet">•</span><span>30 seconds to review and approve a ready draft</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>AI extracts container numbers precisely, every time</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>Replies go out minutes after the email arrives</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>Every ticket logged with full history and status</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>Handle 3× more emails with the same team</span></div>
+        <div class="compare-item"><span class="bullet">•</span><span>Operators freed for complex cases and client relationships</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 7: Adaptability -->
+  <div class="slide slide-adapt">
+    <div class="slide-title">Beyond Freight</div>
+    <h2>The same pipeline adapts to<br><span>any email-heavy industry</span></h2>
+    <p class="adapt-intro">The core architecture — AI extracts structured data from inbound emails, queries your system, drafts a reply, human approves — works wherever repetitive email processing is a bottleneck.</p>
+    <div class="adapt-grid">
+      <div class="adapt-card a1">
+        <div class="icon">⚖️</div>
+        <h3>Legal & Law Firms</h3>
+        <p>Extract case numbers, court dates, client references. Draft status updates from your case management system.</p>
+      </div>
+      <div class="adapt-card a2">
+        <div class="icon">🏥</div>
+        <h3>Healthcare & Clinics</h3>
+        <p>Handle appointment enquiries, referral requests, prescription follow-ups — linked to your scheduling system.</p>
+      </div>
+      <div class="adapt-card a3">
+        <div class="icon">🏦</div>
+        <h3>Finance & Insurance</h3>
+        <p>Process claim queries, policy lookups, document requests — with full audit trail and human sign-off.</p>
+      </div>
+      <div class="adapt-card a4">
+        <div class="icon">🏗️</div>
+        <h3>Construction & Property</h3>
+        <p>Route maintenance requests, quote enquiries, site status updates from tenants or contractors.</p>
+      </div>
+    </div>
+    <div class="adapt-note">
+      <strong>One integration, one approval flow, one audit trail.</strong> Only the AI prompt and data connector change — everything else stays the same.
+    </div>
+  </div>
+
+  <!-- Slide 8: Pilot -->
+  <div class="slide slide-pilot">
+    <div class="pilot-badge">Zero Risk · Free Pilot</div>
+    <h2>Try it on your <span>real inbox</span><br>for two weeks</h2>
+    <p class="subtitle">No commitment. No data leaves your server. See the results before you decide anything.</p>
+    <div class="pilot-steps">
+      <div class="pilot-step">
+        <div class="num">Week 1</div>
+        <p>Connect to your mailbox and database. System goes live on real emails.</p>
+      </div>
+      <div class="pilot-step">
+        <div class="num">Week 2</div>
+        <p>Operators use it daily. We track time saved and accuracy.</p>
+      </div>
+      <div class="pilot-step">
+        <div class="num">Review</div>
+        <p>We present results together. You decide if it's worth continuing.</p>
+      </div>
+    </div>
+    <button class="cta-btn">Book a 20-minute demo call →</button>
+  </div>
+
+</div>
+
+<!-- Navigation -->
+<nav class="nav">
+  <button id="prev" disabled>&#8592;</button>
+  <span class="counter" id="counter">1 / 7</span>
+  <button id="next">&#8594;</button>
+</nav>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let current = 0;
+
+  function go(n) {
+    slides[current].classList.remove('active');
+    current = Math.max(0, Math.min(n, total - 1));
+    slides[current].classList.add('active');
+    document.getElementById('counter').textContent = (current + 1) + ' / ' + total;
+    document.getElementById('prev').disabled = current === 0;
+    document.getElementById('next').disabled = current === total - 1;
+    document.getElementById('progress').style.width = ((current + 1) / total * 100) + '%';
+  }
+
+  document.getElementById('prev').addEventListener('click', () => go(current - 1));
+  document.getElementById('next').addEventListener('click', () => go(current + 1));
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') go(current + 1);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') go(current - 1);
+  });
+
+  go(0);
+</script>
+</body>
+</html>

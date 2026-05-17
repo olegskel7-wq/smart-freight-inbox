@@ -11,11 +11,11 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.util.Optional;
 
 /**
- * Konteinerio duomenų paieška išoriniame port-service per HTTP.
+ * Container data lookup in the external port-service via HTTP.
  *
- * Imituoja realią integraciją su uosto krovinių valdymo sistema (TOS/CMS).
- * Jei port-service nepasiekiamas arba konteineris nerastas –
- * grąžinamas {@link Optional#empty()}, ir AI sugeneruos juodraštį be duomenų.
+ * Simulates a real integration with a port cargo management system (TOS/CMS).
+ * If port-service is unavailable or the container is not found,
+ * {@link Optional#empty()} is returned and the AI will generate a draft without data.
  */
 @Service
 public class ContainerLookupService {
@@ -29,15 +29,15 @@ public class ContainerLookupService {
     }
 
     /**
-     * Ieško konteinerio port-service sistemoje pagal konteinerio numerį.
+     * Looks up a container in the port-service system by container number.
      *
-     * Konteinerio numeris normalizuojamas (trim + toUpperCase) prieš užklausą.
-     * 4xx atsakymai (konteineris nerastas) apdorojami tyliai – grąžinamas tuščias Optional.
-     * Tinklo klaidos (timeout, 5xx) taip pat grąžina tuščią Optional –
-     * AI konvejeris turi veikti net kai port-service nepasiekiamas.
+     * The container number is normalised (trim + toUpperCase) before the request.
+     * 4xx responses (container not found) are handled silently — an empty Optional is returned.
+     * Network errors (timeout, 5xx) also return an empty Optional —
+     * the AI pipeline must work even when port-service is unavailable.
      *
-     * @param containerNumber ISO 6346 konteinerio numeris (pvz.: MSCU1234567)
-     * @return konteinerio duomenys jei rasti, arba tuščias Optional
+     * @param containerNumber ISO 6346 container number (e.g. MSCU1234567)
+     * @return container data if found, or an empty Optional
      */
     public Optional<Container> findByNumber(String containerNumber) {
         if (containerNumber == null || containerNumber.isBlank()) {

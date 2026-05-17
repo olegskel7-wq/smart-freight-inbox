@@ -14,91 +14,101 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Spring Data JPA saugykla {@link EmailTicket} esybei.
+ * Spring Data JPA repository for the {@link EmailTicket} entity.
  *
- * Paveldimas {@link JpaRepository} suteikia paruoštus CRUD metodus.
- * Papildomi metodai apibrėžti pagal Spring Data metodų pavadinimų konvenciją
- * arba JPQL užklausomis (@Query).
+ * The inherited {@link JpaRepository} provides ready-made CRUD methods.
+ * Additional methods are defined using Spring Data method naming conventions
+ * or JPQL queries (@Query).
  */
 @Repository
 public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> {
 
     /**
-     * Randa biletą pagal unikalų laiško identifikatorių (Message-ID antraštė).
-     * Naudojama dublikatų tikrinimui: ar šis laiškas jau išsaugotas?
+     * Finds a ticket by the unique message identifier (Message-ID header).
+     * Used for duplicate detection: has this message already been saved?
      *
-     * @param messageId laiško Message-ID antraštės reikšmė
-     * @return bilietas, jei rastas
+     * @param messageId value of the email Message-ID header
+     * @return the ticket if found
      */
     Optional<EmailTicket> findByMessageId(String messageId);
 
     /**
-     * Randa visus bilietus su nurodyta būsena.
+     * Finds all tickets with the specified status.
      *
-     * @param status ieškoma būsena
-     * @return biletų sąrašas
+     * @param status the status to search for
+     * @return list of tickets
      */
     List<EmailTicket> findByStatus(TicketStatus status);
 
     /**
-     * Randa visus bilietus su nurodyta būsena ir nurodytu rikiavimo tvarka.
-     * Naudojama UI sąraše norint vienu metu filtruoti ir rikiuoti.
+     * Finds all tickets with the specified status and sort order.
+     * Used in the UI list to filter and sort simultaneously.
      *
-     * @param status   ieškoma būsena
-     * @param sort     rikiavimo specifikacija
-     * @return surikiuotas biletų sąrašas
+     * @param status   the status to search for
+     * @param sort     sort specification
+     * @return sorted list of tickets
      */
     List<EmailTicket> findByStatus(TicketStatus status, Sort sort);
 
     /**
-     * Randa RETRY_LATER bilietus, kurie neviršijo bandymų limito.
-     * RetryScheduler naudoja tai biletams pakartotiniam apdorojimui surasti.
-     * maxRetries parametras apsaugo nuo begalinių kartojimosi ciklų.
+     * Counts how many tickets exist with the specified status.
+     * Used for metrics export (Gauge).
      *
-     * @param status     ieškoma būsena (paprastai RETRY_LATER)
-     * @param maxRetries maksimalus retryCount (šis skaičius neįtraukiamas)
-     * @return tinkamų kartoti biletų sąrašas
+     * @param status the status to search for
+     * @return ticket count
+     */
+    long countByStatus(TicketStatus status);
+
+    /**
+     * Finds RETRY_LATER tickets that have not exceeded the retry limit.
+     * RetryScheduler uses this to find tickets eligible for reprocessing.
+     * The maxRetries parameter protects against infinite retry loops.
+     *
+     * @param status     the status to search for (typically RETRY_LATER)
+     * @param maxRetries maximum retryCount (exclusive upper bound)
+     * @return list of tickets eligible for retry
      */
     List<EmailTicket> findByStatusAndRetryCountLessThan(TicketStatus status, int maxRetries);
 
     /**
-     * Grąžina TIK biletų ID su nurodytomis būsenomis (projekcija).
+     * Returns ONLY ticket IDs for the specified statuses (projection).
      *
-     * Naudojama {@link com.smartfreight.inbox.controller.AdminController#reprocessAll}
-     * užduočių sąrašo kūrimui be viso esybių įkėlimo į atmintį. Privalumai:
-     * – nekrauname sunkių TEXT laukų body/draft_reply (gali būti iki 10 MB);
-     * – nesukuriame managed esybių Persistence Context, kurių nereikia;
-     * – vėlesnis process(id) pats perskaitys biletą savo transakcijoje.
+     * Used by {@link com.smartfreight.inbox.controller.AdminController#reprocessAll}
+     * to build the work list without loading full entities into memory. Benefits:
+     * — heavy TEXT fields body/draft_reply (up to 10 MB each) are not loaded;
+     * — no managed entities are created in the Persistence Context unnecessarily;
+     * — the subsequent process(id) will reload the ticket within its own transaction.
      *
-     * @param statuses ieškamų būsenų kolekcija (pvz.: NEW, RETRY_LATER)
-     * @return ID sąrašas, surikiuotas didėjimo tvarka (atkartojamumui)
+     * @param statuses collection of statuses to search for (e.g. NEW, RETRY_LATER)
+     * @return list of IDs sorted in ascending order (for reproducibility)
      */
     @Query("SELECT t.id FROM EmailTicket t WHERE t.status IN :statuses ORDER BY t.id")
     List<Long> findIdsByStatusIn(@Param("statuses") Collection<TicketStatus> statuses);
 
     /**
-     * Masinis visų FAILED biletų atstatymas į NEW būseną (viena SQL operacija).
+     * Bulk reset of all FAILED tickets to NEW status (single SQL operation).
      *
-     * Naudojama {@link com.smartfreight.inbox.controller.AdminController#reprocessAll}
-     * prieš konvejerio paleidimą: FAILED biletai pažymimi kaip NEW ir
-     * retry_count nulinamas, kad TicketProcessingService.process() juos priimtų.
+     * Used by {@link com.smartfreight.inbox.controller.AdminController#reprocessAll}
+     * before starting the pipeline: FAILED tickets are marked as NEW and
+     * retry_count is zeroed so that TicketProcessingService.process() accepts them.
      *
-     * Masinio atnaujinimo privalumai prieš findAll + setStatus + save:
-     * – 1 SQL UPDATE prieš N SELECT + N UPDATE;
-     * – esybės nekraunamos į Persistence Context (atmintis + GC);
-     * – trumpa transakcija, HikariCP ryšys iš karto atlaisvinamas.
+     * Advantages of bulk update over findAll + setStatus + save:
+     * — 1 SQL UPDATE vs N SELECT + N UPDATE;
+     * — entities are not loaded into the Persistence Context (memory + GC);
+     * — short transaction, HikariCP connection is released immediately.
      *
-     * Perspėjimas: masinis atnaujinimas NESINCHRONIZUOJA Persistence Context.
-     * Jei toje pačioje transakcijoje šie biletai buvo nuskaityti kaip managed –
-     * Hibernate to nematys. Čia naudojantis kodas biletų neskaitė, todėl OK.
+     * Warning: bulk update does NOT synchronise the Persistence Context.
+     * If these tickets were read as managed within the same transaction,
+     * Hibernate would not see the change. The calling code here does not read tickets beforehand, so this is fine.
      *
-     * @return atnaujintų eilučių skaičius
+     * @return number of updated rows
      */
     @Modifying
     @Query("UPDATE EmailTicket t " +
-           "   SET t.status = com.smartfreight.inbox.entity.enums.TicketStatus.NEW, " +
+           "   SET t.status = :newStatus, " +
            "       t.retryCount = 0, " +
            "       t.updatedAt = CURRENT_TIMESTAMP " +
-           " WHERE t.status = com.smartfreight.inbox.entity.enums.TicketStatus.FAILED")
-    int resetFailedToNew();
+           " WHERE t.status = :failedStatus")
+    int resetFailedToNew(@Param("newStatus") TicketStatus newStatus,
+                         @Param("failedStatus") TicketStatus failedStatus);
 }

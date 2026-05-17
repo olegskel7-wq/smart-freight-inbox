@@ -11,16 +11,16 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 /**
- * Operatoriaus atsakymų siuntimo el. paštu paslauga.
+ * Operator email reply sending service.
  *
- * Naudojama paskutiniame darbo eigos žingsnyje:
- * 1. Operatorius peržiūri AI sugeneruotą juodraštį
- * 2. Operatorius spaudžia "Send" in the UI
- * 3. {@link #sendReply} išsiunčia laišką per SMTP į siuntėjo adresą
- * 4. Laiške nustatomi In-Reply-To/References antraštės teisingam sriegimui
+ * Used in the final step of the workflow:
+ * 1. The operator reviews the AI-generated draft
+ * 2. The operator clicks "Send" in the UI
+ * 3. {@link #sendReply} sends the message via SMTP to the sender's address
+ * 4. In-Reply-To/References headers are set for correct threading
  *
- * Priklausomybės: {@link com.smartfreight.inbox.config.SmtpConfig} (JavaMailSender bean)
- * ir SMTP aplinkos kintamieji.
+ * Dependencies: {@link com.smartfreight.inbox.config.SmtpConfig} (JavaMailSender bean)
+ * and SMTP environment variables.
  */
 @Service
 public class EmailReplyService {
@@ -29,7 +29,7 @@ public class EmailReplyService {
 
     private final JavaMailSender mailSender;
 
-    /** El. pašto siuntėjo adresas (iš kurio išsiunčiami operatorių atsakymai). */
+    /** Sender email address (from which operator replies are dispatched). */
     @Value("${smtp.username}")
     private String fromAddress;
 
@@ -38,32 +38,32 @@ public class EmailReplyService {
     }
 
     /**
-     * Išsiunčia operatoriaus juodraštį atgal pradinio laiško siuntėjui.
+     * Sends the operator's draft back to the original email sender.
      *
-     * Algoritmas:
-     * 1. Sukuriamas MimeMessage HTML/text turiniui
-     * 2. Nustatomi In-Reply-To ir References antraštės sriegimui (RFC 2822)
-     * 3. Iš senderEmail ištraukiamas švaras el. pašto adresas (apdorojamas "Vardas <email>" formatas)
-     * 4. Laiškas išsiunčiamas per SMTP sinchroniškai
+     * Algorithm:
+     * 1. A MimeMessage is created for the HTML/text content
+     * 2. In-Reply-To and References headers are set for threading (RFC 2822)
+     * 3. A clean email address is extracted from senderEmail (handles "Name &lt;email&gt;" format)
+     * 4. The message is sent via SMTP synchronously
      *
-     * @param ticket bilietas su laiško duomenimis: siuntėjo adresas, tema, juodraštis
-     * @throws RuntimeException jei SMTP siuntimas nepavyko
+     * @param ticket ticket with message data: sender address, subject, draft
+     * @throws RuntimeException if SMTP sending failed
      */
     public void sendReply(EmailTicket ticket) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
 
-            // Ištraukiame švarų adresą: "Vardas <email@example.com>" → "email@example.com"
             String to = extractEmail(ticket.getSenderEmail());
+            if (to.isBlank() || !isValidEmail(to)) {
+                throw new IllegalArgumentException(
+                        "Cannot send reply: invalid or missing recipient address for ticket " + ticket.getId());
+            }
             helper.setFrom(fromAddress);
             helper.setTo(to);
-            // "Re: " prefiksas – standartas atsakomiesiems laiškams
             helper.setSubject("Re: " + (ticket.getSubject() != null ? ticket.getSubject() : ""));
             helper.setText(ticket.getDraftReply() != null ? ticket.getDraftReply() : "");
 
-            // In-Reply-To ir References leidžia pašto klientams (Gmail, Outlook, Thunderbird)
-            // automatiškai sugrupuoti laišką į pokalbio gijoje
             if (ticket.getMessageId() != null) {
                 message.setHeader("In-Reply-To", ticket.getMessageId());
                 message.setHeader("References", ticket.getMessageId());
@@ -79,17 +79,17 @@ public class EmailReplyService {
     }
 
     /**
-     * Ištraukia švarų el. pašto adresą iš RFC 5321 formato.
+     * Extracts a clean email address from an RFC 5321 formatted string.
      *
-     * Pavyzdžiai:
-     * – {@code "john@example.com"} → {@code "john@example.com"}
-     * – {@code "John Doe <john@example.com>"} → {@code "john@example.com"}
-     * – {@code "john+tag@example.com"} → {@code "john+tag@example.com"}
+     * Examples:
+     * — {@code "john@example.com"} → {@code "john@example.com"}
+     * — {@code "John Doe <john@example.com>"} → {@code "john@example.com"}
+     * — {@code "john+tag@example.com"} → {@code "john+tag@example.com"}
      *
-     * Jei analizė nepavyksta (netinkamas formatas) – grąžinama pradinė eilutė (atsarginis variantas).
+     * If parsing fails (invalid format), the raw string is returned as a fallback.
      *
-     * @param raw eilutė RFC 5321 formate arba paprastas el. paštas
-     * @return švaras el. pašto adresas arba tuščia eilutė jei null
+     * @param raw RFC 5321 formatted string or a plain email address
+     * @return clean email address or an empty string if null
      */
     private String extractEmail(String raw) {
         if (raw == null || raw.isBlank()) return "";
@@ -97,6 +97,15 @@ public class EmailReplyService {
             return new InternetAddress(raw).getAddress();
         } catch (Exception e) {
             return raw;
+        }
+    }
+
+    private boolean isValidEmail(String email) {
+        try {
+            new InternetAddress(email).validate();
+            return email.contains("@");
+        } catch (Exception e) {
+            return false;
         }
     }
 }

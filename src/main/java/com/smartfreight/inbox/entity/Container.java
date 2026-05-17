@@ -5,11 +5,11 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * Paprastas duomenų objektas (POJO) – konteinerio informacija iš išorinio port-service.
+ * Plain data object (POJO) — container information from the external port-service.
  *
- * Tai nėra JPA esybė (@Entity) – duomenys gaunami per HTTP iš port-service
- * ir naudojami tik AI juodraščio generavimo metu ({@link com.smartfreight.inbox.service.AiDraftingService}).
- * DB neišsaugoma, gyvuoja tik užklausos metu atmintyje.
+ * This is NOT a JPA entity (@Entity) — data is received via HTTP from port-service
+ * and used only during AI draft generation ({@link com.smartfreight.inbox.service.AiDraftingService}).
+ * It is not persisted to the DB; it lives in memory only for the duration of the request.
  */
 @Getter
 @Setter
@@ -18,18 +18,18 @@ import java.time.LocalDateTime;
 @Builder
 public class Container {
 
-    /** ISO 6346 konteinerio numeris (pvz.: MSCU1234567). */
+    /** ISO 6346 container number (e.g. MSCU1234567). */
     private String containerNumber;
 
-    /** Dabartinė konteinerio būsena (pvz.: "In Transit", "At Port"). */
+    /** Current container status (e.g. "In Transit", "At Port"). */
     private String status;
 
-    /** Numatomas atvykimo laikas (Estimated Time of Arrival). */
+    /** Estimated Time of Arrival (ETA). */
     private LocalDateTime eta;
 
-    /** Dabartinė konteinerio buvimo vieta (pvz.: "Felixstowe Port"). */
+    /** Current container location (e.g. "Felixstowe Port"). */
     private String location;
 
-    /** Duomenų atnaujinimo laikas port-service sistemoje. */
+    /** Timestamp of the last data update in the port-service system. */
     private LocalDateTime updatedAt;
 }

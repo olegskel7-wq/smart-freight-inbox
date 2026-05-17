@@ -9,12 +9,12 @@ import org.springframework.mail.javamail.JavaMailSenderImpl;
 import java.util.Properties;
 
 /**
- * SMTP siunčiamo pašto konfigūracija.
+ * SMTP outbound mail configuration.
  *
- * Atskira konfigūracija nuo IMAP: naudojami {@code smtp.*} parametrai iš application.yaml,
- * ne {@code spring.mail.*} (kurie rezervuoti gaunamiems laiškams per ImapConfig).
+ * Separate configuration from IMAP: uses {@code smtp.*} parameters from application.yaml,
+ * not {@code spring.mail.*} (which are reserved for inbound mail via ImapConfig).
  *
- * Sukonfigūruoja STARTTLS šifravimą, jungimosi laiko limitus ir SSL pasitikėjimą.
+ * Configures STARTTLS encryption, connection timeouts, and SSL trust.
  */
 @Configuration
 public class SmtpConfig {
@@ -22,7 +22,7 @@ public class SmtpConfig {
     @Value("${smtp.host}")
     private String host;
 
-    /** SMTP prievadas: 587 (STARTTLS) arba 465 (SMTPS). */
+    /** SMTP port: 587 (STARTTLS) or 465 (SMTPS). */
     @Value("${smtp.port:587}")
     private int port;
 
@@ -33,14 +33,14 @@ public class SmtpConfig {
     private String password;
 
     /**
-     * JavaMailSender bean'as laiškų siuntimui per SMTP.
+     * JavaMailSender bean for sending messages via SMTP.
      *
-     * Konfigūracija:
-     * – STARTTLS ryšio šifravimui (standartas 587 prievadui)
-     * – Jungimosi laiko limitai (10 s) – Ollama neblokuoja, todėl limitai fiksuoti
-     * – SSL pasitikėjimas SMTP serverio domenui – būtina Microsoft JDK 17
+     * Configuration:
+     * — STARTTLS for connection encryption (standard for port 587)
+     * — Connection timeouts (10 s) — Ollama does not block here, so limits are fixed
+     * — SSL trust for the SMTP server's domain — required on Microsoft JDK 17
      *
-     * @return sukonfigūruotas JavaMailSender bean'as
+     * @return configured JavaMailSender bean
      */
     @Bean
     public JavaMailSender javaMailSender() {
@@ -52,13 +52,9 @@ public class SmtpConfig {
 
         Properties props = sender.getJavaMailProperties();
         props.put("mail.transport.protocol", "smtp");
-        // Autentifikacija reikalinga prieš siuntimą
         props.put("mail.smtp.auth", "true");
-        // STARTTLS: pirmiausia atviras ryšys, tada pereinama prie TLS
         props.put("mail.smtp.starttls.enable", "true");
-        // Pasitikime SMTP serverio sertifikatu (ištaiso SSLHandshakeException Microsoft JDK)
         props.put("mail.smtp.ssl.trust", host);
-        // Laiko limitai ms (10 s pakanka – SMTP serveris atsako greitai)
         props.put("mail.smtp.connectiontimeout", "10000");
         props.put("mail.smtp.timeout", "10000");
         props.put("mail.smtp.writetimeout", "10000");

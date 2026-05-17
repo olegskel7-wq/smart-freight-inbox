@@ -24,10 +24,10 @@ import java.util.Set;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
- * Thymeleaf UI valdiklis operatoriaus naršyklės sąsajai.
+ * Thymeleaf UI controller for the operator browser interface.
  *
- * Autentifikacija per standartinį Spring Security formų prisijungimą (sesija cookie).
- * Vienintelis išorinis valdiklis – REST API pašalintas kaip nereikalingas demo versijai.
+ * Authentication via standard Spring Security form login (session cookie).
+ * The only external controller — the REST API was removed as unnecessary for the demo version.
  */
 @Controller
 public class TicketViewController {
@@ -43,24 +43,24 @@ public class TicketViewController {
         this.emailReplyService = emailReplyService;
     }
 
-    /** GET / – nukreipimas į prisijungimo puslapį. */
+    /** GET / — redirect to the login page. */
     @GetMapping("/")
     public String root() {
         return "redirect:/login";
     }
 
-    /** GET /login – prisijungimo formos puslapio rodymas. */
+    /** GET /login — renders the login form page. */
     @GetMapping("/login")
     public String loginPage() {
         return "login";
     }
 
     /**
-     * Leidžiamų rikiavimo stulpelių baltasis sąrašas.
+     * Whitelist of allowed sort columns.
      *
-     * Bet kokia kita sort reikšmė ignoruojama ir pakeičiama į createdAt –
-     * apsauga nuo PropertyReferenceException, jei klientas perduoda
-     * neegzistuojančio JPA lauko pavadinimą.
+     * Any other sort value is ignored and replaced with createdAt —
+     * protection against PropertyReferenceException if the client passes
+     * a non-existent JPA field name.
      */
     private static final Set<String> SORTABLE_COLUMNS = Set.of(
             "id", "senderEmail", "subject", "extractedContainerNumber",
@@ -69,18 +69,18 @@ public class TicketViewController {
     private static final String DEFAULT_SORT = "createdAt";
 
     /**
-     * GET /tickets – biletų sąrašas su serverio rikiavimo ir būsenos filtru.
+     * GET /tickets — ticket list with server-side sorting and status filter.
      *
-     * Parametrai:
-     * – {@code ?sort=<stulpelis>} – rikiavimo stulpelis (baltasis sąrašas viršuje)
-     * – {@code ?dir=asc|desc} – kryptis (numatytasis: desc – naujausieji viršuje)
-     * – {@code ?status=DRAFT_READY} – pasirenkamas būsenos filtras
+     * Parameters:
+     * — {@code ?sort=<column>} — sort column (whitelist above)
+     * — {@code ?dir=asc|desc} — direction (default: desc — newest first)
+     * — {@code ?status=DRAFT_READY} — optional status filter
      *
-     * @param sort   rikiavimo stulpelio pavadinimas
-     * @param dir    rikiavimo kryptis
-     * @param status pasirenkamas būsenos filtras
-     * @param model  Thymeleaf modelio objektas
-     * @return šablono "tickets" pavadinimas
+     * @param sort   sort column name
+     * @param dir    sort direction
+     * @param status optional status filter
+     * @param model  Thymeleaf model object
+     * @return template name "tickets"
      */
     @GetMapping("/tickets")
     public String listTickets(@RequestParam(name = "sort", defaultValue = DEFAULT_SORT) String sort,
@@ -88,7 +88,6 @@ public class TicketViewController {
                               @RequestParam(name = "status", required = false) String status,
                               Model model) {
 
-        // Filtruojame rikiavimo stulpelį per baltąjį sąrašą
         String safeSort = SORTABLE_COLUMNS.contains(sort) ? sort : DEFAULT_SORT;
         Sort.Direction direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
         Sort sortSpec = Sort.by(direction, safeSort);
@@ -110,10 +109,9 @@ public class TicketViewController {
     }
 
     /**
-     * Paverčia teksto parametrą į TicketStatus enum, arba grąžina null jei tuščias/netinkamas.
+     * Converts a text parameter to a TicketStatus enum value, or returns null if blank/invalid.
      *
-     * UI tolerantiškas klaidoms – neleistina būsena tiesiog ignoruojama,
-     * neleistina reikšmė tiesiog ignoruojama (UI tolerantiškas klaidoms).
+     * The UI is fault-tolerant — an invalid status value is simply ignored.
      */
     private TicketStatus parseStatusOrNull(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -127,16 +125,16 @@ public class TicketViewController {
     }
 
     /**
-     * GET /tickets/{id} – bilieto detalių puslapio rodymas.
+     * GET /tickets/{id} — renders the ticket detail page.
      *
-     * ResponseStatusException(404) leidžia Spring Boot:
-     * 1) grąžinti teisingą HTTP 404 statusą (ne 500 "whitelabel");
-     * 2) perduoti valdymą BasicErrorController, kuris ateityje atrengs templates/error.html.
-     * GlobalExceptionHandler čia NVEIKIA – jis apribotas @RestController klasėmis.
+     * ResponseStatusException(404) allows Spring Boot to:
+     * 1) return the correct HTTP 404 status (not a 500 "whitelabel" error);
+     * 2) delegate to BasicErrorController, which will later render templates/error.html.
+     * GlobalExceptionHandler does NOT apply here — it is scoped to @RestController classes.
      *
-     * @param id    bilieto identifikatorius
-     * @param model Thymeleaf modelio objektas
-     * @return šablono "ticket-detail" pavadinimas arba 404
+     * @param id    ticket identifier
+     * @param model Thymeleaf model object
+     * @return template name "ticket-detail" or 404
      */
     @GetMapping("/tickets/{id}")
     public String ticketDetail(@PathVariable Long id, Model model) {
@@ -147,31 +145,37 @@ public class TicketViewController {
     }
 
     /**
-     * POST /tickets/{id}/delete – soft-deletes a ticket (sets deleted = true via @SQLDelete).
+     * POST /tickets/{id}/delete — soft-deletes a ticket (sets deleted = true via @SQLDelete).
      *
      * The record remains in the database for audit purposes but is hidden from all queries
      * filtered by @SQLRestriction (deleted = false).
      *
-     * @param id                 bilieto identifikatorius
+     * @param id                 ticket identifier
      * @param redirectAttributes flash message on success
-     * @return nukreipimas į biletų sąrašą
+     * @return redirect to the ticket list
      */
     @Transactional
     @PostMapping("/tickets/{id}/delete")
     public String deleteTicket(@PathVariable Long id, RedirectAttributes redirectAttributes) {
         emailTicketRepository.findById(id).ifPresent(ticket -> {
+            if (ticket.getStatus() == TicketStatus.PROCESSING) {
+                log.warn("Ticket {} cannot be deleted while in PROCESSING state", id);
+                redirectAttributes.addFlashAttribute("errorMessage",
+                        "Ticket #" + id + " is currently being processed and cannot be deleted.");
+                return;
+            }
             emailTicketRepository.delete(ticket);
             log.info("Ticket {} soft-deleted", id);
+            redirectAttributes.addFlashAttribute("successMessage", "Ticket #" + id + " deleted.");
         });
-        redirectAttributes.addFlashAttribute("successMessage", "Ticket #" + id + " deleted.");
         return "redirect:/tickets";
     }
 
     /**
-     * POST /tickets/{id}/close – operatorius uždaro biletą (atsakymas išsiųstas / klausimas išspręstas).
+     * POST /tickets/{id}/close — operator closes a ticket (reply sent / question resolved).
      *
-     * @param id bilieto identifikatorius
-     * @return nukreipimas į biletų sąrašą
+     * @param id ticket identifier
+     * @return redirect to the ticket list
      */
     @Transactional
     @PostMapping("/tickets/{id}/close")
@@ -185,20 +189,20 @@ public class TicketViewController {
     }
 
     /**
-     * POST /tickets/{id}/draft – operatorius redagavo atsakymo juodraštį.
+     * POST /tickets/{id}/draft — operator edited the reply draft.
      *
-     * Veiksmo parametras {@code action}:
-     * – {@code "save"}  – tik išsaugoti ir grįžti į detales
-     * – {@code "close"} – išsaugoti ir uždaryti biletą (be laiško siuntimo)
-     * – {@code "send"}  – išsaugoti, išsiųsti laišką siuntėjui, uždaryti biletą
+     * Action parameter {@code action}:
+     * — {@code "save"}  — save only and return to the detail page
+     * — {@code "close"} — save and close the ticket (without sending an email)
+     * — {@code "send"}  — save, send the email to the sender, close the ticket
      *
-     * Uždaryto bilieto redaguoti negalima – grįžtama į biletų sąrašą be pakeitimų.
+     * A closed ticket cannot be edited — redirects to the ticket list without changes.
      *
-     * @param id                 bilieto identifikatorius
-     * @param draftReply         redaguotas juodraščio tekstas
-     * @param action             norimas veiksmas (save / close / send)
-     * @param redirectAttributes Flash pranešimams (sėkmė / klaida)
-     * @return nukreipimo URL
+     * @param id                 ticket identifier
+     * @param draftReply         edited draft text
+     * @param action             desired action (save / close / send)
+     * @param redirectAttributes flash messages (success / error)
+     * @return redirect URL
      */
     @Transactional
     @PostMapping("/tickets/{id}/draft")
@@ -231,8 +235,6 @@ public class TicketViewController {
         } else if ("close".equalsIgnoreCase(action)) {
             ticket.setStatus(TicketStatus.CLOSED);
         } else if (ticket.getStatus() != TicketStatus.DRAFT_READY) {
-            // Operatorius pats įvedė atsakymą biletui be sugeneruoto juodraščio –
-            // laikoma, kad juodraštis paruoštas (NEW/PROCESSING/RETRY_LATER/FAILED → DRAFT_READY).
             ticket.setStatus(TicketStatus.DRAFT_READY);
         }
         ticket.setUpdatedAt(LocalDateTime.now());

@@ -9,44 +9,44 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Spring Security konfigūracija programos apsaugai.
+ * Spring Security configuration for application security.
  *
- * Naudoja formų prisijungimą (form login) – tinkama naršyklės klientams
- * su Thymeleaf UI. Sesija saugoma JSESSIONID cookie.
+ * Uses form login — suitable for browser clients with the Thymeleaf UI.
+ * The session is stored in a JSESSIONID cookie.
  *
- * Prieigos taisyklės:
- * – {@code /actuator/**} – atvirai (health-check apkrovos balansuotojui ir Prometheus)
- * – {@code /admin/**} – reikalinga autentifikacija + localhost tikrinimas AdminController viduje
- * – viskas kita – reikalinga autentifikacija
+ * Access rules:
+ * — {@code /actuator/**} — public (health-check for load balancer and Prometheus)
+ * — {@code /admin/**} — requires authentication + localhost check inside AdminController
+ * — everything else — requires authentication
  *
- * CSRF: išjungtas (demo aplinka; gamyboje rekomenduojama įjungti su Thymeleaf CSRF žetonais).
+ * CSRF: enabled — Thymeleaf forms with {@code th:action} automatically receive a CSRF token.
  *
- * Naudotojų šaltinis – {@code app_user} lentelė DB per {@link DbUserDetailsService}.
+ * User source — {@code app_user} table in the DB via {@link DbUserDetailsService}.
  */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     /**
-     * Saugumo filtrų grandinė – pagrindinė autorizacijos konfigūracija.
+     * Security filter chain — the main authorisation configuration.
      *
-     * Formų prisijungimas (naršyklės klientams, Thymeleaf UI):
-     * – {@code /login} – prisijungimo formos puslapis
-     * – naudotojo vardo parametras: {@code "email"} (ne standartinis "username")
-     * – sėkmės atveju nukreipiama į {@code /tickets}
-     * – klaidos atveju → {@code /login?error=true}
-     * – atsijungus → {@code /login?logout=true}
+     * Form login (for browser clients, Thymeleaf UI):
+     * — {@code /login} — login form page
+     * — username parameter: {@code "email"} (not the standard "username")
+     * — on success redirect to {@code /tickets}
+     * — on error → {@code /login?error=true}
+     * — on logout → {@code /login?logout=true}
      *
-     * @param http HttpSecurity konfigūratorius
-     * @return sukonfigūruota filtrų grandinė
-     * @throws Exception konfigūracijos klaidos atveju
+     * @param http HttpSecurity builder
+     * @return configured security filter chain
+     * @throws Exception on configuration error
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**").permitAll()
+                .requestMatchers("/admin/**").hasRole("OPERATOR")
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form
@@ -67,12 +67,12 @@ public class SecurityConfig {
     }
 
     /**
-     * BCrypt slaptažodžių koduoklis su automatiškai generuojama druska.
+     * BCrypt password encoder with an automatically generated salt.
      *
-     * Naudojamas {@code DaoAuthenticationProvider} automatiškai
-     * per {@link DbUserDetailsService} prisijungimo tikrinimui.
+     * Picked up automatically by {@code DaoAuthenticationProvider}
+     * via {@link DbUserDetailsService} for login verification.
      *
-     * @return sukonfigūruotas BCryptPasswordEncoder
+     * @return configured BCryptPasswordEncoder
      */
     @Bean
     public PasswordEncoder passwordEncoder() {

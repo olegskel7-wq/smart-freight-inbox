@@ -11,13 +11,13 @@ import org.springframework.integration.mail.dsl.Mail;
 import org.springframework.messaging.MessageChannel;
 
 /**
- * IMAP IDLE gaunamojo pašto konfigūracija.
+ * IMAP IDLE inbound mail configuration.
  *
- * Sukuria Spring Integration konvejerį:
- * IMAP serveris → adapteris gauna laišką → siunčia į mailChannel → EmailIngestionService apdoroja.
+ * Creates a Spring Integration pipeline:
+ * IMAP server → adapter receives message → sends to mailChannel → EmailIngestionService processes it.
  *
- * Jei konfigūracijos duomenys nenurodyti (host = imap.example.com) –
- * adapteris išjungiamas, kad nebūtų beprasmiškų jungimosi klaidų kūrimo aplinkoje.
+ * If the configuration values are not set (host = imap.example.com),
+ * the adapter is disabled to avoid pointless connection errors in a development environment.
  */
 @Configuration
 public class ImapConfig {
@@ -37,12 +37,12 @@ public class ImapConfig {
     private String password;
 
     /**
-     * Sinchroninis pranešimų kanalas gaunamiems laiškams.
+     * Synchronous message channel for incoming emails.
      *
-     * DirectChannel – sinchroninis pristatymas: siuntėjas laukia, kol gavėjas baigia apdorojimą.
-     * Bean pavadinimas "mailChannel" nurodomas @ServiceActivator(inputChannel = "mailChannel").
+     * DirectChannel — synchronous delivery: the sender waits until the receiver finishes processing.
+     * The bean name "mailChannel" is referenced in @ServiceActivator(inputChannel = "mailChannel").
      *
-     * @return sukonfigūruotas DirectChannel
+     * @return configured DirectChannel
      */
     @Bean
     public MessageChannel mailChannel() {
@@ -50,17 +50,17 @@ public class ImapConfig {
     }
 
     /**
-     * IMAP IDLE konvejeris – pristato naujus laiškus į mailChannel.
+     * IMAP IDLE pipeline — delivers new messages to mailChannel.
      *
-     * IMAP IDLE: serveris pats praneša apie naujus laiškus (push protokolas, ne apklausa).
-     * Tai leidžia reaguoti akimirksniu, skirtingai nuo polling (tikrinimas kas N sekundžių).
+     * IMAP IDLE: the server pushes notifications about new messages (push protocol, not polling).
+     * This allows instant reaction, unlike polling (checking every N seconds).
      *
-     * Jei konfigūracijos duomenys nenurodyti (host = "imap.example.com" arba password = "changeme") –
-     * grąžinamas tuščias srautas: mailChannel → nullChannel.
-     * Tai svarbu kūrimo aplinkoje, kad neatsirastu jungimosi klaidų.
+     * If the configuration values are not set (host = "imap.example.com" or password = "changeme"),
+     * an empty flow is returned: mailChannel → nullChannel.
+     * This is important in a development environment to avoid connection errors.
      *
-     * @param mailChannel kanalas, į kurį siunčiami gauti laiškai
-     * @return sukonfigūruotas IntegrationFlow
+     * @param mailChannel channel to which received messages are sent
+     * @return configured IntegrationFlow
      */
     @Bean
     public IntegrationFlow imapIdleFlow(MessageChannel mailChannel) {
@@ -71,8 +71,6 @@ public class ImapConfig {
             return IntegrationFlow.from(mailChannel).nullChannel();
         }
 
-        // URL formatavimas: imaps://naudotojas:slaptažodis@host:port/INBOX
-        // URL koduojamas: '@' el. pašte kitaip sugadintų URL analizę
         String encodedUser = java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8)
                 .replace("+", "%20");
         String encodedPassword = java.net.URLEncoder.encode(password, java.nio.charset.StandardCharsets.UTF_8)
@@ -83,7 +81,6 @@ public class ImapConfig {
                 .from(Mail.imapIdleAdapter(url)
                         .javaMailProperties(p -> {
                             p.put("mail.store.protocol", "imaps");
-                            // Ryšio duomenys perduodami aiškiai – Jakarta Mail neistraukia jų iš imaps:// URL
                             p.put("mail.imaps.user", username);
                             p.put("mail.imaps.password", password);
                             p.put("mail.imaps.auth", "true");
@@ -91,16 +88,11 @@ public class ImapConfig {
                             p.put("mail.imaps.timeout", "60000");
                             p.put("mail.imaps.keepalive.interval", "60000");
                             p.put("mail.imaps.ssl.enable", "true");
-                            // Pasitikime tik konkretaus IMAP serverio sertifikatu
                             p.put("mail.imaps.ssl.trust", host);
-                            // Išjungiame dalinį įkėlimą: be to laiško turinys skaitomas tingiai
-                            // ir persijungus iš IDLE režimo gaunama FolderClosedException
                             p.put("mail.imaps.partialfetch", "false");
                             p.put("mail.imaps.fetchsize", "1048576");
                         })
-                        // Žymime laiškus kaip "Perskaityti" serveryje po gavimo
                         .shouldMarkMessagesAsRead(true)
-                        // NЕТRINAME laiškų iš serverio (saugus numatytasis elgesys)
                         .shouldDeleteMessages(false)
                         .autoStartup(true))
                 .channel(mailChannel)

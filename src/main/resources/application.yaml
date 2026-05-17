@@ -60,6 +60,7 @@ ollama:
 port:
   service:
     url: ${PORT_SERVICE_URL:http://localhost:9000}
+    api-key: ${PORT_SERVICE_API_KEY:smartfreight-port-secret}
 
 management:
   endpoints:

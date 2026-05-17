@@ -8,28 +8,29 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 /**
- * Įstrigusių biletų pakartotinio apdorojimo planuotojas.
+ * Scheduler for reprocessing stuck tickets.
  *
- * Periodiškai (kas 2 minutes) ieško biletų su RETRY_LATER būsena
- * ir automatiškai paleidžia AI konvejerį iš naujo.
+ * Periodically (every 2 minutes) searches for tickets with RETRY_LATER status
+ * and automatically restarts the AI pipeline.
  *
- * Naudojimo atvejai:
- * – Automatinis pakartojimas esant laikinoms Ollama klaidoms
- * – Operatoriaus atmestų juodraščių persvarstymas (RETRY_LATER būsena)
+ * Use cases:
+ * — Automatic retry on transient Ollama errors
+ * — Reprocessing of drafts rejected by the operator (RETRY_LATER status)
  *
- * Konvejeris:
- * 1. Ieškome RETRY_LATER biletų su retryCount &lt; MAX_RETRIES (5)
- * 2. Kiekvienam: padidinamas retryCount, būsena atstatoma į NEW
- * 3. Paleidžiamas TicketProcessingService.process() sinchroniškai
- * 4. Sėkmė → DRAFT_READY, klaida → vėl RETRY_LATER arba FAILED
+ * Pipeline:
+ * 1. Find RETRY_LATER tickets with retryCount &lt; MAX_RETRIES (5)
+ * 2. For each: increment retryCount, reset status to NEW
+ * 3. Invoke TicketProcessingService.process() synchronously
+ * 4. Success → DRAFT_READY, failure → RETRY_LATER again or FAILED
  *
- * MAX_RETRIES apsaugo nuo begalinių ciklų su "sugedusiais" biletais.
+ * MAX_RETRIES protects against infinite loops with "broken" tickets.
  */
 @Component
 public class RetryScheduler {
@@ -37,10 +38,18 @@ public class RetryScheduler {
     private static final Logger log = LoggerFactory.getLogger(RetryScheduler.class);
 
     /**
-     * Maksimalus apdorojimo bandymų skaičius vienam biletui.
-     * Po to bilietas lieka RETRY_LATER – operatorius turi spręsti rankiniu būdu.
+     * Maximum number of processing attempts per ticket.
+     * After this the ticket remains RETRY_LATER — the operator must handle it manually.
      */
     private static final int MAX_RETRIES = 5;
+
+    /**
+     * Maximum tickets processed per scheduler run.
+     * Prevents overloading Ollama when many tickets accumulate (each LLM call takes up to 150 s).
+     * Configurable via {@code retry.batch-size} (default: 10).
+     */
+    @Value("${retry.batch-size:10}")
+    private int batchSize = 10;
 
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
@@ -57,36 +66,37 @@ public class RetryScheduler {
     }
 
     /**
-     * Periodiškai vykdoma užduotis įstrigusiems biletams persvarstyti.
+     * Periodically executed task to reprocess stuck tickets.
      *
-     * Grafikas:
-     * – {@code fixedDelay = 120_000 ms} (2 minutės) – pauzė TARP vieno vykdymo pabaigos ir kito pradžios
-     * – {@code initialDelay = 60_000 ms} (1 minutė) – pauzė prieš PIRMĄ paleidimą
-     *   (duoda laikui programai inicializuotis po paleidimo)
+     * Schedule:
+     * — {@code fixedDelay = 120_000 ms} (2 minutes) — pause BETWEEN the end of one execution and the start of the next
+     * — {@code initialDelay = 60_000 ms} (1 minute) — pause before the FIRST execution
+     *   (gives the application time to initialize after startup)
      *
-     * Naudojamas fixedDelay vietoj fixedRate, kad nekauptųsi lygiagrečiai vykdymai:
-     * – fixedRate: paleidžia kas 2 minutes, nepriklausomai nuo metodo trukmės
-     * – fixedDelay: jei metodas vykdėsi 5 minutes, kitas paleidimas bus po 2 minučių nuo pabaigos
+     * fixedDelay is used instead of fixedRate to avoid accumulated concurrent executions:
+     * — fixedRate: fires every 2 minutes regardless of method duration
+     * — fixedDelay: if the method ran for 5 minutes, the next run starts 2 minutes after it finishes
      *
-     * Ollama gali laukti 150 s vienam biletui, todėl fixedDelay tinkamesnis.
+     * Ollama may take up to 150 s per ticket, so fixedDelay is more appropriate.
      */
     @Scheduled(fixedDelay = 120_000, initialDelay = 60_000)
     public void retryFailedTickets() {
-        List<EmailTicket> toRetry = emailTicketRepository
+        List<EmailTicket> allEligible = emailTicketRepository
                 .findByStatusAndRetryCountLessThan(TicketStatus.RETRY_LATER, MAX_RETRIES);
 
-        if (toRetry.isEmpty()) {
-            // Nėra darbo – tyliai išeiname (nereikia loginti kiekvieną tuščią ciklą)
+        if (allEligible.isEmpty()) {
             return;
         }
 
-        log.info("RetryScheduler: found {} ticket(s) to retry", toRetry.size());
+        List<EmailTicket> toRetry = allEligible.size() > batchSize
+                ? allEligible.subList(0, batchSize)
+                : allEligible;
+
+        log.info("RetryScheduler: found {} eligible ticket(s), processing {} (batch limit {})",
+                allEligible.size(), toRetry.size(), batchSize);
 
         for (EmailTicket ticket : toRetry) {
-            // retryCount didinamas PRIEŠ paleidimą – jei process() lūžtų,
-            // kitą kartą skaitiklis jau bus padidintas (apsauga nuo begalinių ciklų)
             ticket.setRetryCount(ticket.getRetryCount() + 1);
-            // Atstatome į NEW – TicketProcessingService.process() priima tik NEW arba RETRY_LATER
             ticket.setStatus(TicketStatus.NEW);
             emailTicketRepository.save(ticket);
 
@@ -94,7 +104,6 @@ public class RetryScheduler {
                     ticket.getId(), ticket.getRetryCount(), MAX_RETRIES);
 
             retryCounter.increment();
-            // Sinchroninis paleidimas esamame sraute – @Transactional process() sukuria naują transakciją
             ticketProcessingService.process(ticket.getId());
         }
     }

@@ -13,24 +13,24 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Atsakymo juodraščio generavimo paslauga naudojant Llama 3.1.
+ * Reply draft generation service using Llama 3.1.
  *
- * Gauna laiško turinį ir konteinerio duomenis →
- * grąžina paruoštą juodraštį operatoriui.
+ * Receives the email body and container data →
+ * returns a ready-to-review draft for the operator.
  *
- * Jei Ollama nepasiekiamas arba grąžina tuščią atsakymą –
- * naudojamas statinis atsarginis juodraštis su duomenimis iš DB.
+ * If Ollama is unavailable or returns an empty response,
+ * a static fallback draft is used with data from the DB.
  */
 @Service
 public class AiDraftingService {
 
     private static final Logger log = LoggerFactory.getLogger(AiDraftingService.class);
 
-    /** ETA datos formatavimas išvedimui (pvz.: "15 Apr 2025, 14:30"). */
+    /** ETA date formatter for display (e.g. "15 Apr 2025, 14:30"). */
     private static final DateTimeFormatter ETA_FORMATTER =
             DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm");
 
-    /** Juodraščio generavimo modelės pavadinimas – skaitomas iš application.yaml. */
+    /** Draft generation model name — read from application.yaml. */
     @Value("${ollama.drafting-model:llama3.1:8b}")
     private String draftingModel;
 
@@ -41,18 +41,18 @@ public class AiDraftingService {
     }
 
     /**
-     * Generuoja profesionalų atsakymo juodraštį kliento laišką.
+     * Generates a professional reply draft for a customer email.
      *
-     * Vykdo POST /api/generate į Ollama su promtu, kuriame:
-     * – laiško tekstas (iki 2000 simbolių)
-     * – konteinerio duomenys (jei rasti)
+     * Executes POST /api/generate to Ollama with a prompt containing:
+     * — the email text (up to 2000 characters)
+     * — container data (if found)
      *
-     * Modelė instrukuojama atsakyti ta pačia kalba kaip klientas
-     * ir nenaudoti informacijos, kurios nėra konteinerio duomenyse.
+     * The model is instructed to reply in the same language as the customer
+     * and not to use information that is not present in the container data.
      *
-     * @param emailBody  kliento laiško tekstas
-     * @param container  konteinerio duomenys (gali būti null jei nerastas)
-     * @return sugeneruotas arba atsarginis juodraštis
+     * @param emailBody  customer email text
+     * @param container  container data (may be null if not found)
+     * @return generated or fallback draft
      */
     public String generateDraft(String emailBody, Container container) {
         String containerContext = buildContainerContext(container);
@@ -111,10 +111,10 @@ public class AiDraftingService {
     }
 
     /**
-     * Sukuria tekstinį konteinerio duomenų bloką įterpimui į promptą.
+     * Builds a text block of container data for insertion into the prompt.
      *
-     * @param container konteinerio duomenys arba null
-     * @return suformatuotas tekstas su konteinerio informacija
+     * @param container container data or null
+     * @return formatted text with container information
      */
     private String buildContainerContext(Container container) {
         if (container == null) {
@@ -136,11 +136,11 @@ public class AiDraftingService {
     }
 
     /**
-     * Atsarginis juodraštis – naudojamas kai Ollama nepasiekiamas.
-     * Pateikia bazinę informaciją iš DB be AI generavimo.
+     * Fallback draft — used when Ollama is unavailable.
+     * Provides basic information from the DB without AI generation.
      *
-     * @param container konteinerio duomenys arba null
-     * @return statinis juodraštis su turimais duomenimis
+     * @param container container data or null
+     * @return static draft with available data
      */
     private String buildFallbackDraft(Container container) {
         if (container == null) {

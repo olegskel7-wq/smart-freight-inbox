@@ -113,7 +113,7 @@ IMAP can redeliver the same email after a reconnect. The system deduplicates by 
 - **Java 17** + **Spring Boot 4.0.5**
 - **Spring Integration** — IMAP IDLE mail channel
 - **Spring Data JPA** + **Flyway** — schema migrations, typed repositories
-- **Spring Security** — stateless JWT authentication
+- **Spring Security** — session-based form login, BCrypt
 - **WebClient** (reactive) — non-blocking calls to Ollama API
 - **PostgreSQL** — relational store for tickets, containers, users
 
@@ -130,8 +130,8 @@ IMAP can redeliver the same email after a reconnect. The system deduplicates by 
 
 ### Frontend (v1)
 - **Thymeleaf + Bootstrap 5** — server-side rendered operator UI
-- Login (JWT stored in httpOnly cookie), ticket list, ticket detail, close action
-- REST API (`/api/tickets`, `/api/auth/login`) available in parallel for external clients
+- Login (form-based, session via JSESSIONID cookie), ticket list, ticket detail, close action
+- v2 roadmap: REST API for external clients (`/api/tickets`, `/api/auth/login`) — not available in v1
 
 ---
 

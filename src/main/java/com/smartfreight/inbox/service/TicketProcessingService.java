@@ -19,25 +19,25 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
- * AI konvejerio orkestratorius biletų apdorojimui.
+ * AI pipeline orchestrator for ticket processing.
  *
- * Koordinuoja tris žingsnius:
- * 1. Konteinerio numerio ištraukimas (Qwen 2.5) iš laiško teksto
- * 2. Konteinerio paieška port-service sistemoje
- * 3. Atsakymo juodraščio generavimas (Llama 3.1)
+ * Coordinates three steps:
+ * 1. Container number extraction (Qwen 2.5) from the email body
+ * 2. Container lookup in the port-service system
+ * 3. Reply draft generation (Llama 3.1)
  *
- * Vykdomas sinchroniškai kviečiančiojo sraute
+ * Executed synchronously in the calling thread
  * ({@link com.smartfreight.inbox.integration.EmailIngestionService} / {@link com.smartfreight.inbox.scheduler.RetryScheduler}).
  *
- * Apsauga nuo optimistinės užraktos konfliktų: automatiškai kartoja iki MAX_RETRY_ATTEMPTS
- * (3 kartų) kai Hibernate aptinka versijos nesutapimą.
+ * Protection against optimistic lock conflicts: automatically retries up to MAX_RETRY_ATTEMPTS
+ * (3 times) when Hibernate detects a version mismatch.
  */
 @Service
 public class TicketProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(TicketProcessingService.class);
 
-    /** Maksimalus bandymų skaičius esant optimistinės užraktos konfliktui. */
+    /** Maximum number of retry attempts on an optimistic lock conflict. */
     private static final int MAX_RETRY_ATTEMPTS = 3;
 
     private final EmailTicketRepository emailTicketRepository;
@@ -74,20 +74,20 @@ public class TicketProcessingService {
     }
 
     /**
-     * Apdoroja biletą per trijų žingsnių AI konvejerį.
+     * Processes a ticket through the three-step AI pipeline.
      *
-     * Propagation.REQUIRES_NEW – kuria naują transakciją kiekvienam kvietimui.
-     * Būtina, nes metodas kviečiamas iš afterCommit() callback'o,
-     * kai dabartinė transakcija jau uždaryta.
+     * Propagation.REQUIRES_NEW — creates a new transaction for each invocation.
+     * Required because the method is called from an afterCommit() callback,
+     * when the current transaction is already closed.
      *
-     * Kartojimo logika: jei Hibernate aptinka versijos konfliktą
-     * ({@link ObjectOptimisticLockingFailureException}), metodas kartoja iki
-     * MAX_RETRY_ATTEMPTS (3) kartų prieš pažymint biletą FAILED.
+     * Retry logic: if Hibernate detects a version conflict
+     * ({@link ObjectOptimisticLockingFailureException}), the method retries up to
+     * MAX_RETRY_ATTEMPTS (3) times before marking the ticket as FAILED.
      *
-     * Patten "perduok ID, ne esybę": bilietas persikraunamas šios transakcijos viduje,
-     * nes perduotas objektas būtų detached būsenoje ir sukeltų LazyInitializationException.
+     * "Pass ID, not entity" pattern: the ticket is reloaded within this transaction,
+     * because a passed entity would be in a detached state and cause LazyInitializationException.
      *
-     * @param ticketId apdorojamo bilieto identifikatorius
+     * @param ticketId identifier of the ticket to process
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void process(Long ticketId) {
@@ -101,29 +101,21 @@ public class TicketProcessingService {
                     EmailTicket ticket = emailTicketRepository.findById(ticketId)
                             .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketId));
 
-                    // Apsauga nuo dvigubo apdorojimo – priimame tik NEW ir RETRY_LATER
                     if (ticket.getStatus() != TicketStatus.NEW && ticket.getStatus() != TicketStatus.RETRY_LATER) {
                         log.warn("Ticket already in state {}, skipping", ticket.getStatus());
                         return;
                     }
 
-                    // Užfiksuojame biletą – perkeliame į PROCESSING.
-                    // saveAndFlush iš karto matomas kitiems srautams (nelaukia transakcijos pabaigos).
                     ticket.setStatus(TicketStatus.PROCESSING);
                     ticket.setUpdatedAt(LocalDateTime.now());
                     emailTicketRepository.saveAndFlush(ticket);
 
-                    // ── 1 žingsnis: Konteinerio numerio ištraukimas ──────────────────────
-                    // Qwen 2.5 analizuoja laiško turinį ir randa numerį pagal ISO 6346 formatą.
-                    // Jei Ollama nepasiekiamas – naudojamas regex atsarginis variantas.
                     log.info("Step 1/3: Extracting container number via Qwen 2.5");
                     String containerNumber = aiExtractionService.extractContainerNumber(ticket.getBody());
                     ticket.setExtractedContainerNumber(containerNumber.isEmpty() ? null : containerNumber);
                     ticket.setUpdatedAt(LocalDateTime.now());
                     emailTicketRepository.save(ticket);
 
-                    // ── 2 žingsnis: Konteinerio paieška ─────────────────────────────────
-                    // Ieškome konteinerio pagal ištrauktą numerį. Nerastas → perduodame null.
                     log.info("Step 2/3: Looking up container '{}' in database", containerNumber);
                     Optional<Container> containerOpt = containerNumber.isEmpty()
                             ? Optional.empty()
@@ -134,28 +126,22 @@ public class TicketProcessingService {
                         log.warn("Container '{}' not found — draft will reflect missing data", containerNumber);
                     }
 
-                    // ── 3 žingsnis: Juodraščio generavimas ──────────────────────────────
-                    // Llama 3.1 kuria profesionalų atsakymą pagal laišką ir konteinerio duomenis.
-                    // Jei Ollama nepasiekiamas – grąžinamas statinis atsarginis juodraštis.
                     log.info("Step 3/3: Generating reply draft via Llama 3.1");
                     String draft = aiDraftingService.generateDraft(ticket.getBody(), container);
                     ticket.setDraftReply(draft);
 
-                    // ── Pabaiga: išsaugomas rezultatas ──────────────────────────────────
                     ticket.setStatus(TicketStatus.DRAFT_READY);
                     ticket.setUpdatedAt(LocalDateTime.now());
                     emailTicketRepository.save(ticket);
 
                     draftReadyCounter.increment();
                     processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
-                    log.info("Bilieto apdorojimas baigtas: DRAFT_READY");
+                    log.info("Ticket processing finished: DRAFT_READY");
 
-                    // Save draft to Gmail Drafts folder — non-blocking, failure logged but not rethrown
                     gmailDraftService.saveDraft(ticket);
                     return;
 
                 } catch (ObjectOptimisticLockingFailureException e) {
-                    // Versijos konfliktas: kitas srautas spėjo pakeisti įrašą.
                     log.warn("Optimistic lock conflict on attempt {}/{}, retrying", attempt + 1, MAX_RETRY_ATTEMPTS);
                     if (attempt == MAX_RETRY_ATTEMPTS - 1) {
                         log.error("All retry attempts exhausted — marking ticket as FAILED");
@@ -173,9 +159,9 @@ public class TicketProcessingService {
     }
 
     /**
-     * Pažymi biletą kaip FAILED – pakartotinis apdorojimas neįmanomas be rankinio įsikišimo.
+     * Marks a ticket as FAILED — reprocessing is not possible without manual intervention.
      *
-     * @param ticketId bilieto identifikatorius
+     * @param ticketId ticket identifier
      */
     private void markFailed(Long ticketId) {
         emailTicketRepository.findById(ticketId).ifPresent(t -> {
@@ -187,20 +173,20 @@ public class TicketProcessingService {
     }
 
     /**
-     * Paruošia bilietus masiniams persvarstymas – masinis FAILED → NEW atstatymas.
+     * Prepares tickets for bulk reprocessing — bulk FAILED → NEW reset.
      *
-     * Naudojamas {@link com.smartfreight.inbox.controller.AdminController#reprocessAll}.
-     * Išskirtas į atskirą @Transactional metodą dėl dviejų priežasčių:
-     * 1. Transakcija trumpa (vienas UPDATE, momentinis commit).
-     *    HikariCP ryšys iš karto grąžinamas į baseiną.
-     * 2. Masinis atnaujinimas reikalauja @Transactional + @Modifying JPA lygmenyje,
-     *    kitaip Hibernate meta TransactionRequiredException.
+     * Used by {@link com.smartfreight.inbox.controller.AdminController#reprocessAll}.
+     * Isolated into a separate @Transactional method for two reasons:
+     * 1. The transaction is short (one UPDATE, immediate commit).
+     *    The HikariCP connection is returned to the pool right away.
+     * 2. A bulk update requires @Transactional + @Modifying at the JPA level,
+     *    otherwise Hibernate throws TransactionRequiredException.
      *
-     * @return perkelstų iš FAILED į NEW biletų skaičius
+     * @return number of tickets reset from FAILED to NEW
      */
     @Transactional
     public int prepareForRetry() {
-        int reset = emailTicketRepository.resetFailedToNew();
+        int reset = emailTicketRepository.resetFailedToNew(TicketStatus.NEW, TicketStatus.FAILED);
         if (reset > 0) {
             log.info("prepareForRetry: reset {} FAILED ticket(s) to NEW", reset);
         }

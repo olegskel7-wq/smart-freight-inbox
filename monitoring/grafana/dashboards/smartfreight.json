@@ -76,7 +76,7 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(smartfreight_tickets_status_total) by (status)",
+          "expr": "sum(smartfreight_tickets_current_count) by (status)",
           "legendFormat": "{{status}}",
           "range": true,
           "refId": "A"
@@ -316,13 +316,78 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "up{job=\"ollama\"} or vector(1)",
+          "expr": "up{job=\"smart-freight-backend\"}",
           "legendFormat": "Health",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Ollama Health",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(smartfreight_tickets_current_count{status=~\"NEW|RETRY_LATER\"})",
+          "legendFormat": "Tickets",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Backlog (NEW + RETRY_LATER)",
       "type": "stat"
     }
   ],

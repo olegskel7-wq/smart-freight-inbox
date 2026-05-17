@@ -15,18 +15,18 @@ import org.springframework.stereotype.Service;
 import java.util.Properties;
 
 /**
- * Gmail „Drafts" aplanko paslauga – išsaugo AI sugeneruotą juodraštį
- * tiesiai į operatoriaus pašto dėžutės juodraščių aplanką per IMAP APPEND.
+ * Gmail "Drafts" folder service — saves the AI-generated draft
+ * directly to the operator's mailbox Drafts folder via IMAP APPEND.
  *
- * Operatorius atidaro Gmail → Drafts → mato paruoštą laišką su:
- *  - To: kliento adresas
- *  - Subject: Re: <originali tema>
- *  - Body: AI sugeneruotas tekstas (redaguojamas prieš siuntimą)
- *  - Threading: In-Reply-To / References → laiškas grupuojamas į originalų pokalbi
+ * The operator opens Gmail → Drafts and sees the ready message with:
+ *  - To: customer address
+ *  - Subject: Re: &lt;original subject&gt;
+ *  - Body: AI-generated text (editable before sending)
+ *  - Threading: In-Reply-To / References → message is grouped into the original conversation
  *
- * Naudoja tuos pačius IMAP duomenis kaip ImapConfig (spring.mail.*).
- * Jungtis atidaroma tik juodraščio išsaugojimui ir tuoj pat uždaroma.
- * Klaidos tik įrašomos į žurnalą – bilietas lieka DRAFT_READY bet kuriuo atveju.
+ * Uses the same IMAP credentials as ImapConfig (spring.mail.*).
+ * The connection is opened only to save the draft and immediately closed.
+ * Errors are only logged — the ticket remains DRAFT_READY regardless.
  */
 @Service
 public class GmailDraftService {
@@ -49,9 +49,9 @@ public class GmailDraftService {
     private boolean draftEnabled;
 
     /**
-     * Išsaugo juodraštį į Gmail Drafts aplanką per IMAP APPEND.
+     * Saves a draft to the Gmail Drafts folder via IMAP APPEND.
      *
-     * @param ticket bilietas su sugeneruotu juodraščiu ir siuntėjo adresu
+     * @param ticket ticket with the generated draft and sender address
      */
     public void saveDraft(EmailTicket ticket) {
         if (!draftEnabled) {
@@ -90,8 +90,6 @@ public class GmailDraftService {
         }
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
     private Properties buildImapProperties() {
         Properties props = new Properties();
         props.put("mail.store.protocol",         "imaps");
@@ -105,8 +103,8 @@ public class GmailDraftService {
     }
 
     /**
-     * Ieško Drafts aplanko: pirma bando tipinius Gmail kelius,
-     * tada ieško pagal \Drafts IMAP atributą (nepriklausomai nuo kalbos).
+     * Locates the Drafts folder: first tries common Gmail paths,
+     * then searches by the \Drafts IMAP attribute (language-independent).
      */
     private Folder findDraftsFolder(Store store) {
         for (String name : new String[]{"[Gmail]/Drafts", "[Google Mail]/Drafts", "Drafts"}) {
@@ -119,7 +117,6 @@ public class GmailDraftService {
             } catch (Exception ignored) {}
         }
 
-        // Language-independent fallback: find any folder whose name contains "draft"
         try {
             for (Folder f : store.getDefaultFolder().list("*")) {
                 if (f.getFullName().toLowerCase().contains("draft")) {
@@ -134,7 +131,7 @@ public class GmailDraftService {
     }
 
     /**
-     * Sukuria MimeMessage juodraščiui su tinkamais antraštėmis ir kūnu.
+     * Builds a MimeMessage for the draft with the appropriate headers and body.
      */
     private MimeMessage buildDraftMessage(Session session, EmailTicket ticket) throws Exception {
         MimeMessage message = new MimeMessage(session);
@@ -149,7 +146,6 @@ public class GmailDraftService {
         message.setSubject("Re: " + subject, "UTF-8");
         message.setText(ticket.getDraftReply() != null ? ticket.getDraftReply().trim() : "", "UTF-8", "plain");
 
-        // Thread this draft into the original customer email conversation
         if (ticket.getMessageId() != null) {
             message.setHeader("In-Reply-To", ticket.getMessageId());
             message.setHeader("References",  ticket.getMessageId());

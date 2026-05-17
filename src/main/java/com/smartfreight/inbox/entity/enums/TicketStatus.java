@@ -1,30 +1,30 @@
 package com.smartfreight.inbox.entity.enums;
 
 /**
- * Bilieto gyvavimo ciklo būsenų sąrašas.
+ * Ticket lifecycle status enumeration.
  *
- * Perėjimų schema:
+ * Transition diagram:
  *   NEW → PROCESSING → DRAFT_READY → CLOSED
  *                    ↘ FAILED
- *                    ↘ RETRY_LATER → NEW (per RetryScheduler)
+ *                    ↘ RETRY_LATER → NEW (via RetryScheduler)
  */
 public enum TicketStatus {
 
-    /** Naujas laiškas gautas, dar neapdorotas. */
+    /** New email received, not yet processed. */
     NEW,
 
-    /** Laiškas šiuo metu apdorojamas (AI ištraukia konteinerį, ieško DB, generuoja atsakymą). */
+    /** Email is currently being processed (AI extracts container, looks up DB, generates reply). */
     PROCESSING,
 
-    /** Juodraštis paruoštas – operatorius gali peržiūrėti ir išsiųsti. */
+    /** Draft is ready — the operator can review and send it. */
     DRAFT_READY,
 
-    /** Apdorojimas nepavyko (AI nepasiekiamas, analizės klaida ir pan.). Operatorius turi spręsti rankiniu būdu. */
+    /** Processing failed (AI unavailable, parsing error, etc.). The operator must handle it manually. */
     FAILED,
 
-    /** Laikina klaida – suplanuotas pakartotinis bandymas. RetryScheduler automatiškai paims biletą vėliau. */
+    /** Transient error — retry scheduled. RetryScheduler will automatically pick up the ticket later. */
     RETRY_LATER,
 
-    /** Bilietas uždarytas operatoriaus – atsakymas išsiųstas arba klausimas išspręstas be atsakymo. */
+    /** Ticket closed by the operator — reply sent or issue resolved without a reply. */
     CLOSED
 }

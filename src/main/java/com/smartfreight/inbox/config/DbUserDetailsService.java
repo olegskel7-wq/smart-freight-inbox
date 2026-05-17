@@ -9,30 +9,30 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 /**
- * {@link UserDetailsService} implementacija virš duomenų bazės (lentelė {@code app_user}).
+ * {@link UserDetailsService} implementation backed by the database (table {@code app_user}).
  *
- * Pakeičia ankstesnį {@code InMemoryUserDetailsManager} su hardcode'intu demo naudotoju.
- * Dabar Spring Security prisijungimo metu (tiek per formų prisijungimą {@code /login},
- * tiek per REST {@code /api/auth/login}) naudotojo duomenis skaito tik iš vieno šaltinio –
- * {@code app_user} lentelės.
+ * Replaces the previous {@code InMemoryUserDetailsManager} with a hard-coded demo user.
+ * Spring Security now reads user data from a single source at login time
+ * (both via form login {@code /login} and via REST {@code /api/auth/login}) —
+ * the {@code app_user} table.
  *
- * Privalumai:
- * – vienintelis tiesos šaltinis naudotojams (DB, ne in-memory + hardcode);
- * – naudotojai pridedami per Flyway migracijas (V2/V3 demo naudotojui operator@smartfreight.com);
- * – paruošta ateičiai: slaptažodžio keitimas, paskyros blokavimas, vaidmenys, multi-tenancy.
+ * Advantages:
+ * — single source of truth for users (DB, not in-memory + hard-code);
+ * — users are added via Flyway migrations (V2/V3 for demo user operator@smartfreight.com);
+ * — ready for the future: password change, account lock, roles, multi-tenancy.
  *
- * Spring Security automatiškai aptinka šį bean'ą kaip vienintelį {@link UserDetailsService}.
+ * Spring Security automatically picks up this bean as the sole {@link UserDetailsService}.
  *
- * Svarbu: šis klasė NETURI pati koduoti slaptažodžio. Koduotas slaptažodis jau yra DB
- * (įrašytas Flyway migracija su BCrypt hashu), o įvesto slaptažodžio palyginimą
- * atlieka {@code DaoAuthenticationProvider} per {@link org.springframework.security.crypto.password.PasswordEncoder}.
+ * Important: this class must NOT encode the password itself. The encoded password is already in the DB
+ * (inserted by a Flyway migration with a BCrypt hash), and the comparison of the entered password
+ * is performed by {@code DaoAuthenticationProvider} via {@link org.springframework.security.crypto.password.PasswordEncoder}.
  */
 @Service
 public class DbUserDetailsService implements UserDetailsService {
 
     private static final Logger log = LoggerFactory.getLogger(DbUserDetailsService.class);
 
-    /** Numatytasis vaidmuo, jei DB naudotojo {@code role} laukas yra NULL. */
+    /** Default role assigned when the user's {@code role} field in the DB is NULL. */
     private static final String DEFAULT_ROLE = "OPERATOR";
 
     private final UserRepository userRepository;
@@ -42,21 +42,21 @@ public class DbUserDetailsService implements UserDetailsService {
     }
 
     /**
-     * Įkelia naudotojo duomenis pagal prisijungimo vardą (el. paštą).
+     * Loads user data by login name (email address).
      *
-     * Metodą automatiškai kviečia Spring Security autentifikacijos metu.
-     * Grąžintas {@link UserDetails} objektas turi el. paštą, BCrypt hashą
-     * ir vaidmenų sąrašą; slaptažodžio palyginimą atlieka Spring Security.
+     * Called automatically by Spring Security during authentication.
+     * The returned {@link UserDetails} object carries the email, BCrypt hash,
+     * and role list; password comparison is performed by Spring Security.
      *
-     * Saugumo pastabos:
-     * – {@link UsernameNotFoundException} metamas su generalizuotu pranešimu –
-     *   klientui neatskleidžiama ar naudotojas egzistuoja (logai turi detalę);
-     * – jei vaidmuo DB nenustatytas, priskiriamas saugus numatytasis OPERATOR,
-     *   kad nebūtų "naudotojas be vaidmens" (Spring Security tokiu atveju skundžiasi).
+     * Security notes:
+     * — {@link UsernameNotFoundException} is thrown with a generic message —
+     *   the client is not told whether the user exists (logs contain the detail);
+     * — if no role is set in the DB, the safe default OPERATOR is assigned
+     *   to avoid a "user without a role" state (Spring Security complains in that case).
      *
-     * @param email el. pašto adresas – jis pats ir yra prisijungimo vardas
-     * @return {@link UserDetails} objektas, suprantamas Spring Security
-     * @throws UsernameNotFoundException jei naudotojas su tokiu el. paštu nerastas
+     * @param email email address — used as the login name
+     * @return {@link UserDetails} object understood by Spring Security
+     * @throws UsernameNotFoundException if no user with this email was found
      */
     @Override
     public UserDetails loadUserByUsername(String email) {
@@ -65,8 +65,6 @@ public class DbUserDetailsService implements UserDetailsService {
                     String role = (u.getRole() == null || u.getRole().isBlank())
                             ? DEFAULT_ROLE
                             : u.getRole();
-                    // Naudojamas FQN, nes trumpas importas konfliktuotų
-                    // su com.smartfreight.inbox.entity.User klase
                     return org.springframework.security.core.userdetails.User
                             .withUsername(u.getEmail())
                             .password(u.getPassword())

@@ -11,19 +11,19 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 /**
- * Pašto operatoriui pranešimų apie paruoštus juodraščius paslauga.
+ * Notification service that emails the operator when a draft is ready.
  *
- * Kai AI sugeneruoja juodraštį, ši paslauga išsiunčia pranešimą
- * operatoriaus pašto dėžutę. Laiške nurodomas Reply-To: kliento adresas,
- * todėl operatoriui užtenka peržiūrėti tekstą ir paspausti Reply –
- * atsakymas nukeliauja tiesiai klientui.
+ * When the AI generates a draft, this service sends a notification to
+ * the operator's mailbox. The message sets Reply-To to the customer's address,
+ * so the operator only needs to review the text and click Reply —
+ * the reply goes directly to the customer.
  *
- * Saugumo antraštė X-SmartFreight-Draft: true apsaugo nuo begalinio ciklo:
- * IMAP IDLE stebimas tas pats pašto dėžutė, ir be šios antraštės
- * pranešimai būtų apdorojami pakartotinai.
+ * The security header X-SmartFreight-Draft: true protects against an infinite loop:
+ * the same mailbox is monitored by IMAP IDLE, and without this header
+ * the notifications would be processed repeatedly.
  *
- * Jei siuntimas nepavyko – klaida tik užregistruojama žurnale;
- * bilieto apdorojimas nesustabdomas (DRAFT_READY išsaugomas bet kuriuo atveju).
+ * If sending fails, the error is only logged;
+ * ticket processing is not interrupted (DRAFT_READY is saved regardless).
  */
 @Service
 public class DraftNotificationService {
@@ -51,16 +51,16 @@ public class DraftNotificationService {
     }
 
     /**
-     * Išsiunčia operatoriui pranešimą su AI sugeneruotu juodraščiu.
+     * Sends the operator a notification with the AI-generated draft.
      *
-     * Laiško struktūra:
-     * – From / To: operatoriaus el. paštas (tas pats, nes pranešimas skirtas sau)
-     * – Reply-To: pradinio laiško siuntėjas (klientas)
-     * – Subject: "Re: <originali tema>" + In-Reply-To / References tinkamam sriegimui
-     * – Body: juodraščio tekstas su trumpu kontekstiniu komentaru
-     * – X-SmartFreight-Draft: true (apsauga nuo begalinio ciklo)
+     * Message structure:
+     * — From / To: operator's email (same address, as the notification is to self)
+     * — Reply-To: original email sender (the customer)
+     * — Subject: "Re: &lt;original subject&gt;" + In-Reply-To / References for proper threading
+     * — Body: draft text with a short contextual note
+     * — X-SmartFreight-Draft: true (protection against the infinite loop)
      *
-     * @param ticket bilietas su sugeneruotu juodraščiu
+     * @param ticket ticket with the generated draft
      */
     public void notifyDraftReady(EmailTicket ticket) {
         if (!draftEnabled) {
@@ -84,26 +84,23 @@ public class DraftNotificationService {
 
             helper.setText(buildBody(ticket, customerEmail));
 
-            // Group this notification in the same Gmail thread as the original customer email
             if (ticket.getMessageId() != null) {
                 message.setHeader("In-Reply-To", ticket.getMessageId());
                 message.setHeader("References",  ticket.getMessageId());
             }
 
-            // Prevents IMAP IDLE from re-processing this system message
             message.setHeader(DRAFT_HEADER_NAME, DRAFT_HEADER_VALUE);
 
             mailSender.send(message);
             log.info("Draft notification sent to operator for ticket {}", ticket.getId());
 
         } catch (Exception e) {
-            // Non-fatal: ticket remains DRAFT_READY; operator can still use the web UI
             log.warn("Failed to send draft notification for ticket {}: {}", ticket.getId(), e.getMessage());
         }
     }
 
     /**
-     * Formuoja laiško kūną su juodraščio tekstu ir kontekstine informacija.
+     * Builds the email body with the draft text and contextual information.
      */
     private String buildBody(EmailTicket ticket, String customerEmail) {
         String draft = ticket.getDraftReply() != null ? ticket.getDraftReply().trim() : "";

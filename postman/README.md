@@ -18,15 +18,9 @@
 
 ## Структура коллекции
 
-### Auth
-- **Login (API)** — `POST /api/auth/login`
-  - Получить статус при вводе demo@smartfreight.com / demo123
-
-### Tickets (REST API)
-- **List all tickets** — `GET /api/tickets`
-- **Get ticket by ID** — `GET /api/tickets/1`
-- **Approve ticket** — `POST /api/tickets/1/approve` (статус → CLOSED)
-- **Reject ticket** — `POST /api/tickets/1/reject` (статус → RETRY_LATER)
+> **Примечание v1:** REST API (`/api/auth/login`, `/api/tickets`) запланирован для v2.
+> В текущей версии UI полностью основан на Thymeleaf (server-side HTML).
+> Для тестирования через Postman используйте Thymeleaf UI эндпоинты ниже.
 
 ### Thymeleaf UI (Form)
 - **Login page** — `GET /login` (вернёт HTML)
@@ -49,18 +43,12 @@
 ## Важные замечания
 
 1. **Порт:** приложение слушает `8080`
-2. **Аутентификация для REST API:** использует Spring Security session (cookie)
-3. **CSRF:** Thymeleaf формы требуют CSRF токена (автоматический)
+2. **Аутентификация:** Spring Security session (cookie `JSESSIONID`) через form login
+3. **CSRF:** Thymeleaf формы автоматически включают CSRF-токен (`th:action`)
 4. **Localhost admin:** `/admin/reprocess` доступна только с IP 127.0.0.1
 
 ---
 
 ## Варианты ID для тестирования
 
-Замени `1` на реальный ID тикета:
-```bash
-# Посмотреть все ID
-GET /api/tickets
-```
-
-Ответ покажет список тикетов с ID.
+Замени `1` на реальный ID тикета из таблицы на странице `GET /tickets` в браузере.

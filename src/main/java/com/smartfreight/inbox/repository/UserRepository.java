@@ -7,20 +7,20 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
 /**
- * Spring Data JPA saugykla {@link User} esybei.
+ * Spring Data JPA repository for the {@link User} entity.
  *
- * Naudojama {@link com.smartfreight.inbox.config.DbUserDetailsService}
- * naudotojo paieškai autentifikacijos metu.
+ * Used by {@link com.smartfreight.inbox.config.DbUserDetailsService}
+ * to look up users during authentication.
  */
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
     /**
-     * Randa naudotoją pagal el. pašto adresą.
-     * Naudojama prisijungimo metu ir naudotojo egzistavimo tikrinimui.
+     * Finds a user by email address.
+     * Used at login time and for checking whether a user exists.
      *
-     * @param email naudotojo el. pašto adresas
-     * @return naudotojas, jei rastas
+     * @param email the user's email address
+     * @return the user if found
      */
     Optional<User> findByEmail(String email);
 }

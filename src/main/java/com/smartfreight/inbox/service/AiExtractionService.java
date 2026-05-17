@@ -13,14 +13,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Konteinerio numerio ištraukimo paslauga naudojant Qwen 2.5.
+ * Container number extraction service using Qwen 2.5.
  *
- * Siunčia laiško turinį į Ollama (POST /api/generate) ir prašo grąžinti ISO 6346 numerį.
- * Blokuojantis {@code .block()} čia priimtinas: kvietimas vykdomas
- * servletų/IMAP darbo sraute, ne Netty event loop.
+ * Sends the email body to Ollama (POST /api/generate) and requests an ISO 6346 number.
+ * The blocking {@code .block()} call is acceptable here: the invocation runs
+ * in a servlet/IMAP worker thread, not the Netty event loop.
  *
- * Jei Ollama nepasiekiamas arba grąžina neaiškų atsakymą –
- * naudojamas regex atsarginis variantas tiesiogiai laiško tekste.
+ * If Ollama is unavailable or returns an unclear response,
+ * a regex fallback is applied directly against the email text.
  */
 @Service
 public class AiExtractionService {
@@ -28,14 +28,14 @@ public class AiExtractionService {
     private static final Logger log = LoggerFactory.getLogger(AiExtractionService.class);
 
     /**
-     * ISO 6346 konteinerio numerio šablonas: 4 didžiosios raidės + 7 skaitmenys.
-     * Pvz.: MSCU1234567, TCKU9876543.
-     * Naudojamas kaip atsarginis metodas kai LLM grąžina nesuprantamą atsakymą.
+     * ISO 6346 container number pattern: 4 uppercase letters + 7 digits.
+     * E.g.: MSCU1234567, TCKU9876543.
+     * Used as a fallback when the LLM returns an unrecognisable response.
      */
     private static final Pattern CONTAINER_PATTERN =
             Pattern.compile("\\b([A-Z]{4}\\d{7})\\b");
 
-    /** Ištraukimo modelės pavadinimas – skaitomas iš application.yaml. */
+    /** Extraction model name — read from application.yaml. */
     @Value("${ollama.extraction-model:qwen2.5:7b}")
     private String extractionModel;
 
@@ -46,17 +46,17 @@ public class AiExtractionService {
     }
 
     /**
-     * Siunčia laiško turinį į Qwen 2.5 ir gauna konteinerio numerį.
+     * Sends the email body to Qwen 2.5 and retrieves a container number.
      *
-     * Logiką:
-     * 1. Siunčiamas promptas į Ollama (LLM tiesiogiai grąžina tik numerį)
-     * 2. Jei atsakymas tiksliai atitinka ISO 6346 – grąžinamas tiesiogiai
-     * 3. Jei numeris yra atsakymo viduje – ištraukiamas regex
-     * 4. Jei LLM nerado – bandomas regex tiesiai laiško tekste
-     * 5. Bet kuri klaida → atsarginis regex
+     * Logic:
+     * 1. A prompt is sent to Ollama (the LLM returns only the number)
+     * 2. If the response exactly matches ISO 6346 — it is returned directly
+     * 3. If the number is embedded in the response — it is extracted via regex
+     * 4. If the LLM found nothing — regex is tried directly on the email text
+     * 5. Any exception → regex fallback
      *
-     * @param emailBody laiško tekstinis turinys
-     * @return konteinerio numeris (pvz.: "MSCU1234567") arba tuščia eilutė
+     * @param emailBody plain-text body of the email
+     * @return container number (e.g. "MSCU1234567") or an empty string
      */
     public String extractContainerNumber(String emailBody) {
         if (emailBody == null || emailBody.isBlank()) {
@@ -64,7 +64,6 @@ public class AiExtractionService {
             return "";
         }
 
-        // Promptas Qwen: prašome grąžinti TIK numerį, jokio papildomo teksto
         String prompt = """
                 You are a logistics assistant. Extract the shipping container number from the email below.
                 Container numbers follow ISO 6346 format: exactly 4 uppercase letters followed by 7 digits (e.g. MSCU1234567).
@@ -98,20 +97,17 @@ public class AiExtractionService {
             String rawResponse = String.valueOf(response.getOrDefault("response", "")).trim();
             log.info("Qwen raw response: '{}'", rawResponse);
 
-            // Jei LLM grąžino švarų numerį – tikriname formatą
             if (CONTAINER_PATTERN.matcher(rawResponse).matches()) {
                 log.info("Container number extracted by LLM: {}", rawResponse);
                 return rawResponse;
             }
 
-            // LLM galėjo grąžinti numerį sakinyje – bandome rasti šabloną atsakyme
             Matcher m = CONTAINER_PATTERN.matcher(rawResponse.toUpperCase());
             if (m.find()) {
                 log.info("Container number extracted from LLM response via regex: {}", m.group(1));
                 return m.group(1);
             }
 
-            // LLM nerado numerio – bandome tiesioginį regex laiško tekste
             log.warn("LLM could not extract container number, trying regex fallback");
             return fallbackRegexExtraction(emailBody);
 
@@ -122,11 +118,11 @@ public class AiExtractionService {
     }
 
     /**
-     * Atsarginis metodas: ieškoma konteinerio numerio regex tiesiogiai laiško tekste.
-     * Naudojama kai Ollama nepasiekiamas arba grąžino neaiškų atsakymą.
+     * Fallback method: searches for a container number via regex directly in the email text.
+     * Used when Ollama is unavailable or returned an unrecognisable response.
      *
-     * @param body laiško tekstas
-     * @return rastas konteinerio numeris arba tuščia eilutė
+     * @param body email body text
+     * @return found container number or an empty string
      */
     private String fallbackRegexExtraction(String body) {
         Matcher m = CONTAINER_PATTERN.matcher(body.toUpperCase());
