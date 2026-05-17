@@ -1,5 +1,7 @@
 package com.smartfreight.inbox.service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -35,9 +37,20 @@ public class EmailClassificationService {
     private String model;
 
     private final WebClient ollamaWebClient;
+    private final Counter relevantCounter;
+    private final Counter irrelevantCounter;
 
-    public EmailClassificationService(@Qualifier("ollamaWebClient") WebClient ollamaWebClient) {
+    public EmailClassificationService(@Qualifier("ollamaWebClient") WebClient ollamaWebClient,
+                                      MeterRegistry meterRegistry) {
         this.ollamaWebClient = ollamaWebClient;
+        this.relevantCounter = Counter.builder("smartfreight_emails_classified_total")
+                .description("Emails classified by the AI filter")
+                .tag("result", "relevant")
+                .register(meterRegistry);
+        this.irrelevantCounter = Counter.builder("smartfreight_emails_classified_total")
+                .description("Emails classified by the AI filter")
+                .tag("result", "irrelevant")
+                .register(meterRegistry);
     }
 
     /**
@@ -97,19 +110,23 @@ public class EmailClassificationService {
 
             if (answer.startsWith("IRRELEVANT")) {
                 log.info("Email classified as IRRELEVANT - will be ignored");
+                irrelevantCounter.increment();
                 return false;
             }
 
             if (answer.startsWith("RELEVANT")) {
                 log.info("Email classified as RELEVANT - proceeding to pipeline");
+                relevantCounter.increment();
                 return true;
             }
 
             log.warn("Unexpected classification answer '{}' - treating as relevant (fail-open)", answer);
+            relevantCounter.increment();
             return true;
 
         } catch (Exception e) {
             log.warn("Classification call failed: {} - treating as relevant (fail-open)", e.getMessage());
+            relevantCounter.increment();
             return true;
         }
     }

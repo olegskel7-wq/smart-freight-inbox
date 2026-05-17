@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
@@ -28,13 +30,23 @@ public class EmailReplyService {
     private static final Logger log = LoggerFactory.getLogger(EmailReplyService.class);
 
     private final JavaMailSender mailSender;
+    private final Counter replySentCounter;
+    private final Counter replyFailedCounter;
 
     /** Sender email address (from which operator replies are dispatched). */
     @Value("${smtp.username}")
     private String fromAddress;
 
-    public EmailReplyService(JavaMailSender mailSender) {
+    public EmailReplyService(JavaMailSender mailSender, MeterRegistry meterRegistry) {
         this.mailSender = mailSender;
+        this.replySentCounter = Counter.builder("smartfreight_replies_total")
+                .description("Operator reply send results")
+                .tag("result", "sent")
+                .register(meterRegistry);
+        this.replyFailedCounter = Counter.builder("smartfreight_replies_total")
+                .description("Operator reply send results")
+                .tag("result", "failed")
+                .register(meterRegistry);
     }
 
     /**
@@ -70,9 +82,11 @@ public class EmailReplyService {
             }
 
             mailSender.send(message);
+            replySentCounter.increment();
             log.info("Reply sent for ticket {} to {}", ticket.getId(), to);
 
         } catch (Exception e) {
+            replyFailedCounter.increment();
             log.error("Failed to send reply for ticket {}: {}", ticket.getId(), e.getMessage());
             throw new RuntimeException("Failed to send email reply: " + e.getMessage(), e);
         }

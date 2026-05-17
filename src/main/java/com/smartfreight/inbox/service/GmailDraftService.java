@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
 import jakarta.mail.Session;
@@ -46,9 +48,19 @@ public class GmailDraftService {
     private String password;
 
     private final SettingsService settingsService;
+    private final Counter draftSavedCounter;
+    private final Counter draftFailedCounter;
 
-    public GmailDraftService(SettingsService settingsService) {
+    public GmailDraftService(SettingsService settingsService, MeterRegistry meterRegistry) {
         this.settingsService = settingsService;
+        this.draftSavedCounter = Counter.builder("smartfreight_gmail_draft_total")
+                .description("Gmail draft save results")
+                .tag("result", "saved")
+                .register(meterRegistry);
+        this.draftFailedCounter = Counter.builder("smartfreight_gmail_draft_total")
+                .description("Gmail draft save results")
+                .tag("result", "failed")
+                .register(meterRegistry);
     }
 
     /**
@@ -80,10 +92,12 @@ public class GmailDraftService {
             }
 
             draftsFolder.appendMessages(new Message[]{buildDraftMessage(session, ticket)});
+            draftSavedCounter.increment();
             log.info("Draft saved to Gmail Drafts for ticket {}, addressed to {}",
                     ticket.getId(), extractEmail(ticket.getSenderEmail()));
 
         } catch (Exception e) {
+            draftFailedCounter.increment();
             log.warn("Failed to save draft to Gmail Drafts for ticket {}: {}", ticket.getId(), e.getMessage());
         } finally {
             try { if (draftsFolder != null && draftsFolder.isOpen()) draftsFolder.close(false); }

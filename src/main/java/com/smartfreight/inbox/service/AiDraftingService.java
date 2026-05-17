@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.Container;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +13,7 @@ import java.time.Duration;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Reply draft generation service using Llama 3.1.
@@ -35,9 +38,15 @@ public class AiDraftingService {
     private String draftingModel;
 
     private final WebClient ollamaWebClient;
+    private final Timer ollamaTimer;
 
-    public AiDraftingService(WebClient ollamaWebClient) {
+    public AiDraftingService(WebClient ollamaWebClient, MeterRegistry meterRegistry) {
         this.ollamaWebClient = ollamaWebClient;
+        this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
+                .description("Ollama response time per model")
+                .tag("model", "llama3.1:8b")
+                .tag("operation", "drafting")
+                .register(meterRegistry);
     }
 
     /**
@@ -81,6 +90,7 @@ public class AiDraftingService {
 
             log.debug("Sending drafting request to Ollama model {}", draftingModel);
 
+            long start = System.nanoTime();
             @SuppressWarnings("unchecked")
             Map<String, Object> response = ollamaWebClient
                     .post()
@@ -89,6 +99,7 @@ public class AiDraftingService {
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block(Duration.ofSeconds(150));
+            ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
 
             if (response == null) {
                 log.warn("Ollama returned null response during drafting");

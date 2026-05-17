@@ -1,5 +1,8 @@
 package com.smartfreight.inbox.service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,6 +12,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,9 +44,19 @@ public class AiExtractionService {
     private String extractionModel;
 
     private final WebClient ollamaWebClient;
+    private final Counter fallbackCounter;
+    private final Timer ollamaTimer;
 
-    public AiExtractionService(WebClient ollamaWebClient) {
+    public AiExtractionService(WebClient ollamaWebClient, MeterRegistry meterRegistry) {
         this.ollamaWebClient = ollamaWebClient;
+        this.fallbackCounter = Counter.builder("smartfreight_extraction_fallback_total")
+                .description("Times regex fallback was used instead of LLM for container extraction")
+                .register(meterRegistry);
+        this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
+                .description("Ollama response time per model")
+                .tag("model", "qwen2.5:7b")
+                .tag("operation", "extraction")
+                .register(meterRegistry);
     }
 
     /**
@@ -80,6 +94,7 @@ public class AiExtractionService {
 
             log.debug("Sending extraction request to Ollama model {}", extractionModel);
 
+            long start = System.nanoTime();
             @SuppressWarnings("unchecked")
             Map<String, Object> response = ollamaWebClient
                     .post()
@@ -88,6 +103,7 @@ public class AiExtractionService {
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block(Duration.ofSeconds(150));
+            ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
 
             if (response == null) {
                 log.warn("Ollama returned null response during extraction");
@@ -125,6 +141,7 @@ public class AiExtractionService {
      * @return found container number or an empty string
      */
     private String fallbackRegexExtraction(String body) {
+        fallbackCounter.increment();
         Matcher m = CONTAINER_PATTERN.matcher(body.toUpperCase());
         if (m.find()) {
             log.info("Container number found via regex fallback: {}", m.group(1));

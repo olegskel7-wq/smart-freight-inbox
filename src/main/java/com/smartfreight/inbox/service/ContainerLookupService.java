@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.Container;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -23,9 +25,20 @@ public class ContainerLookupService {
     private static final Logger log = LoggerFactory.getLogger(ContainerLookupService.class);
 
     private final WebClient portServiceWebClient;
+    private final Counter hitCounter;
+    private final Counter missCounter;
 
-    public ContainerLookupService(@Qualifier("portServiceWebClient") WebClient portServiceWebClient) {
+    public ContainerLookupService(@Qualifier("portServiceWebClient") WebClient portServiceWebClient,
+                                  MeterRegistry meterRegistry) {
         this.portServiceWebClient = portServiceWebClient;
+        this.hitCounter = Counter.builder("smartfreight_container_lookup_total")
+                .description("Container lookups in port-service")
+                .tag("result", "found")
+                .register(meterRegistry);
+        this.missCounter = Counter.builder("smartfreight_container_lookup_total")
+                .description("Container lookups in port-service")
+                .tag("result", "not_found")
+                .register(meterRegistry);
     }
 
     /**
@@ -61,12 +74,15 @@ public class ContainerLookupService {
             if (container != null) {
                 log.info("Container found via port-service: {} | status={} | location={}",
                         container.getContainerNumber(), container.getStatus(), container.getLocation());
+                hitCounter.increment();
                 return Optional.of(container);
             }
+            missCounter.increment();
             return Optional.empty();
 
         } catch (Exception e) {
             log.warn("Port-service unavailable or container not found '{}': {}", normalized, e.getMessage());
+            missCounter.increment();
             return Optional.empty();
         }
     }

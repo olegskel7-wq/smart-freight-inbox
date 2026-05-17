@@ -5,6 +5,8 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.DraftNotificationService;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.TicketProcessingService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.BodyPart;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
@@ -47,13 +49,18 @@ public class EmailIngestionService {
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
     private final EmailClassificationService emailClassificationService;
+    private final Counter receivedCounter;
 
     public EmailIngestionService(EmailTicketRepository emailTicketRepository,
                                  TicketProcessingService ticketProcessingService,
-                                 EmailClassificationService emailClassificationService) {
+                                 EmailClassificationService emailClassificationService,
+                                 MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.emailClassificationService = emailClassificationService;
+        this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
+                .description("Total emails received and successfully ingested as tickets")
+                .register(meterRegistry);
     }
 
     /**
@@ -129,6 +136,7 @@ public class EmailIngestionService {
 
             try {
                 EmailTicket saved = emailTicketRepository.save(ticket);
+                receivedCounter.increment();
                 MDC.put("ticketId", String.valueOf(saved.getId()));
                 log.info("Email ingested: ticket ID={}, subject='{}'", saved.getId(), saved.getSubject());
 
