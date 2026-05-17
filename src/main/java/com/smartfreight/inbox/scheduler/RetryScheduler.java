@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -59,7 +60,7 @@ public class RetryScheduler {
 
     public RetryScheduler(EmailTicketRepository emailTicketRepository,
                           TicketProcessingService ticketProcessingService,
-                          TaskExecutor taskExecutor,
+                          @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor,
                           MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;

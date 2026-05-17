@@ -5,6 +5,7 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,7 +32,7 @@ public class AdminController {
 
     public AdminController(EmailTicketRepository emailTicketRepository,
                            TicketProcessingService ticketProcessingService,
-                           TaskExecutor taskExecutor) {
+                           @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.taskExecutor = taskExecutor;
