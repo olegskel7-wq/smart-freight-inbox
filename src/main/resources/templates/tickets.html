@@ -12,9 +12,14 @@
 <nav class="navbar navbar-dark bg-dark">
     <div class="container-fluid">
         <span class="navbar-brand fw-bold">Smart Freight Inbox</span>
-        <form method="post" th:action="@{/logout}">
-            <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
-        </form>
+        <div class="d-flex gap-2 align-items-center">
+            <a href="/tickets" class="btn btn-light btn-sm">Tickets</a>
+            <a href="/users" class="btn btn-outline-light btn-sm">Users</a>
+            <a href="/settings" class="btn btn-outline-light btn-sm">Settings</a>
+            <form method="post" th:action="@{/logout}">
+                <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
+            </form>
+        </div>
     </div>
 </nav>
 

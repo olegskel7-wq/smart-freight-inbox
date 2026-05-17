@@ -45,8 +45,11 @@ public class GmailDraftService {
     @Value("${spring.mail.password}")
     private String password;
 
-    @Value("${notification.draft-enabled:true}")
-    private boolean draftEnabled;
+    private final SettingsService settingsService;
+
+    public GmailDraftService(SettingsService settingsService) {
+        this.settingsService = settingsService;
+    }
 
     /**
      * Saves a draft to the Gmail Drafts folder via IMAP APPEND.
@@ -54,7 +57,7 @@ public class GmailDraftService {
      * @param ticket ticket with the generated draft and sender address
      */
     public void saveDraft(EmailTicket ticket) {
-        if (!draftEnabled) {
+        if (!settingsService.isDraftEnabled()) {
             log.debug("Gmail draft saving disabled (notification.draft-enabled=false)");
             return;
         }

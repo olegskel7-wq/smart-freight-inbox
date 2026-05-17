@@ -39,15 +39,14 @@ public class DraftNotificationService {
     public static final String DRAFT_HEADER_VALUE = "true";
 
     private final JavaMailSender mailSender;
+    private final SettingsService settingsService;
 
     @Value("${smtp.username}")
     private String operatorEmail;
 
-    @Value("${notification.draft-enabled:true}")
-    private boolean draftEnabled;
-
-    public DraftNotificationService(JavaMailSender mailSender) {
+    public DraftNotificationService(JavaMailSender mailSender, SettingsService settingsService) {
         this.mailSender = mailSender;
+        this.settingsService = settingsService;
     }
 
     /**
@@ -63,7 +62,7 @@ public class DraftNotificationService {
      * @param ticket ticket with the generated draft
      */
     public void notifyDraftReady(EmailTicket ticket) {
-        if (!draftEnabled) {
+        if (!settingsService.isDraftEnabled()) {
             log.debug("Draft notifications disabled (notification.draft-enabled=false)");
             return;
         }
