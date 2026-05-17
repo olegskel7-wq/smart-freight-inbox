@@ -2,6 +2,8 @@ package com.smartfreight.inbox.repository;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -49,6 +51,16 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
      * @return sorted list of tickets
      */
     List<EmailTicket> findByStatus(TicketStatus status, Sort sort);
+
+    /**
+     * Paginated ticket list with optional status filter.
+     * Used by the operator UI — avoids loading all tickets into memory.
+     *
+     * @param status   the status to search for
+     * @param pageable page and sort specification
+     * @return page of tickets
+     */
+    Page<EmailTicket> findByStatus(TicketStatus status, Pageable pageable);
 
     /**
      * Counts how many tickets exist with the specified status.

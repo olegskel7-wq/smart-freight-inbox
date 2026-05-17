@@ -65,7 +65,8 @@
                    title="Clear filter and reset sorting to default (Created ▼)">Reset</a>
             </form>
 
-            <span class="badge bg-secondary" th:text="${tickets.size()} + ' shown'">0 shown</span>
+            <span class="badge bg-secondary"
+                  th:text="${ticketPage.totalElements} + ' total, showing ' + ${tickets.size()}">0 shown</span>
         </div>
     </div>
 
@@ -202,6 +203,31 @@
             </table>
         </div>
     </div>
+</div>
+
+<!-- Pagination -->
+<div class="container mt-3" th:if="${ticketPage.totalPages > 1}">
+    <nav>
+        <ul class="pagination pagination-sm justify-content-center flex-wrap">
+            <li class="page-item" th:classappend="${ticketPage.first} ? 'disabled'">
+                <a class="page-link"
+                   th:href="@{/tickets(page=${ticketPage.number - 1}, sort=${sort}, dir=${dir}, status=${statusFilter})}"
+                   aria-label="Previous">&laquo;</a>
+            </li>
+            <li class="page-item"
+                th:each="i : ${#numbers.sequence(0, ticketPage.totalPages - 1)}"
+                th:classappend="${i == ticketPage.number} ? 'active'">
+                <a class="page-link"
+                   th:href="@{/tickets(page=${i}, sort=${sort}, dir=${dir}, status=${statusFilter})}"
+                   th:text="${i + 1}">1</a>
+            </li>
+            <li class="page-item" th:classappend="${ticketPage.last} ? 'disabled'">
+                <a class="page-link"
+                   th:href="@{/tickets(page=${ticketPage.number + 1}, sort=${sort}, dir=${dir}, status=${statusFilter})}"
+                   aria-label="Next">&raquo;</a>
+            </li>
+        </ul>
+    </nav>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

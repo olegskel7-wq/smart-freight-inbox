@@ -1,5 +1,8 @@
 server:
   forward-headers-strategy: framework
+  servlet:
+    session:
+      timeout: 8h
 
 spring:
   application:
@@ -9,9 +12,9 @@ spring:
     cache: false
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/smartfreight
-    username: postgres
-    password: postgres
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/smartfreight}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -48,10 +51,6 @@ smtp:
   username: ${SMTP_USER:inbox@example.com}
   password: ${SMTP_PASSWORD:changeme}
 
-notification:
-  # Set DRAFT_NOTIFY=false to disable operator email notifications without rebuilding
-  draft-enabled: ${DRAFT_NOTIFY:true}
-
 ollama:
   base-url: ${OLLAMA_URL:http://localhost:11434}
   extraction-model: qwen2.5:7b
@@ -66,10 +65,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics
+        include: health,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   health:
     mail:
       enabled: false

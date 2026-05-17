@@ -9,6 +9,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -53,13 +54,16 @@ public class RetryScheduler {
 
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
+    private final TaskExecutor taskExecutor;
     private final Counter retryCounter;
 
     public RetryScheduler(EmailTicketRepository emailTicketRepository,
                           TicketProcessingService ticketProcessingService,
+                          TaskExecutor taskExecutor,
                           MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
+        this.taskExecutor = taskExecutor;
         this.retryCounter = Counter.builder("smartfreight_tickets_retry_count_total")
                 .description("Total number of retry processing attempts for tickets")
                 .register(meterRegistry);
@@ -104,7 +108,8 @@ public class RetryScheduler {
                     ticket.getId(), ticket.getRetryCount(), MAX_RETRIES);
 
             retryCounter.increment();
-            ticketProcessingService.process(ticket.getId());
+            final Long ticketId = ticket.getId();
+            taskExecutor.execute(() -> ticketProcessingService.process(ticketId));
         }
     }
 }

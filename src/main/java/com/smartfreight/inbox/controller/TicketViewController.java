@@ -6,7 +6,11 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.EmailReplyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
@@ -43,10 +47,10 @@ public class TicketViewController {
         this.emailReplyService = emailReplyService;
     }
 
-    /** GET / — redirect to the login page. */
+    /** GET / — authenticated users go directly to tickets, others to login. */
     @GetMapping("/")
-    public String root() {
-        return "redirect:/login";
+    public String root(Authentication auth) {
+        return (auth != null && auth.isAuthenticated()) ? "redirect:/tickets" : "redirect:/login";
     }
 
     /** GET /login — renders the login form page. */
@@ -68,17 +72,21 @@ public class TicketViewController {
     );
     private static final String DEFAULT_SORT = "createdAt";
 
+    private static final int PAGE_SIZE = 50;
+
     /**
-     * GET /tickets — ticket list with server-side sorting and status filter.
+     * GET /tickets — paginated ticket list with server-side sorting and status filter.
      *
      * Parameters:
      * — {@code ?sort=<column>} — sort column (whitelist above)
      * — {@code ?dir=asc|desc} — direction (default: desc — newest first)
      * — {@code ?status=DRAFT_READY} — optional status filter
+     * — {@code ?page=0} — zero-based page number (default: 0)
      *
      * @param sort   sort column name
      * @param dir    sort direction
      * @param status optional status filter
+     * @param page   zero-based page number
      * @param model  Thymeleaf model object
      * @return template name "tickets"
      */
@@ -86,21 +94,22 @@ public class TicketViewController {
     public String listTickets(@RequestParam(name = "sort", defaultValue = DEFAULT_SORT) String sort,
                               @RequestParam(name = "dir", defaultValue = "desc") String dir,
                               @RequestParam(name = "status", required = false) String status,
+                              @RequestParam(name = "page", defaultValue = "0") int page,
                               Model model) {
 
         String safeSort = SORTABLE_COLUMNS.contains(sort) ? sort : DEFAULT_SORT;
         Sort.Direction direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        Sort sortSpec = Sort.by(direction, safeSort);
+        int safePage = Math.max(0, page);
 
-        List<EmailTicket> tickets;
+        Pageable pageable = PageRequest.of(safePage, PAGE_SIZE, Sort.by(direction, safeSort));
+
         TicketStatus statusFilter = parseStatusOrNull(status);
-        if (statusFilter != null) {
-            tickets = emailTicketRepository.findByStatus(statusFilter, sortSpec);
-        } else {
-            tickets = emailTicketRepository.findAll(sortSpec);
-        }
+        Page<EmailTicket> ticketPage = (statusFilter != null)
+                ? emailTicketRepository.findByStatus(statusFilter, pageable)
+                : emailTicketRepository.findAll(pageable);
 
-        model.addAttribute("tickets", tickets);
+        model.addAttribute("ticketPage", ticketPage);
+        model.addAttribute("tickets", ticketPage.getContent());
         model.addAttribute("sort", safeSort);
         model.addAttribute("dir", direction.name().toLowerCase());
         model.addAttribute("statusFilter", statusFilter == null ? "" : statusFilter.name());
@@ -157,17 +166,20 @@ public class TicketViewController {
     @Transactional
     @PostMapping("/tickets/{id}/delete")
     public String deleteTicket(@PathVariable Long id, RedirectAttributes redirectAttributes) {
-        emailTicketRepository.findById(id).ifPresent(ticket -> {
-            if (ticket.getStatus() == TicketStatus.PROCESSING) {
-                log.warn("Ticket {} cannot be deleted while in PROCESSING state", id);
-                redirectAttributes.addFlashAttribute("errorMessage",
-                        "Ticket #" + id + " is currently being processed and cannot be deleted.");
-                return;
-            }
-            emailTicketRepository.delete(ticket);
-            log.info("Ticket {} soft-deleted", id);
-            redirectAttributes.addFlashAttribute("successMessage", "Ticket #" + id + " deleted.");
-        });
+        EmailTicket ticket = emailTicketRepository.findById(id).orElse(null);
+        if (ticket == null) {
+            redirectAttributes.addFlashAttribute("errorMessage", "Ticket #" + id + " not found.");
+            return "redirect:/tickets";
+        }
+        if (ticket.getStatus() == TicketStatus.PROCESSING) {
+            log.warn("Ticket {} cannot be deleted while in PROCESSING state", id);
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "Ticket #" + id + " is currently being processed and cannot be deleted.");
+            return "redirect:/tickets";
+        }
+        emailTicketRepository.delete(ticket);
+        log.info("Ticket {} soft-deleted", id);
+        redirectAttributes.addFlashAttribute("successMessage", "Ticket #" + id + " deleted.");
         return "redirect:/tickets";
     }
 
@@ -227,7 +239,7 @@ public class TicketViewController {
                 redirectAttributes.addFlashAttribute("successMessage",
                         "Reply sent to " + ticket.getSenderEmail());
             } catch (Exception e) {
-                log.error("Bilieto {} siuntimas nepavyko: {}", id, e.getMessage(), e);
+                log.error("Failed to send reply for ticket {}: {}", id, e.getMessage(), e);
                 redirectAttributes.addFlashAttribute("errorMessage",
                         "Failed to send email: " + e.getMessage());
                 return "redirect:/tickets/" + id;

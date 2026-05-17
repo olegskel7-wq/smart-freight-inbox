@@ -97,8 +97,9 @@ public class EmailIngestionService {
 
             final int MAX_EMAIL_BYTES = 10 * 1024 * 1024;
             int reportedSize = mimeMessage.getSize();
-            if (reportedSize > MAX_EMAIL_BYTES) {
-                log.warn("Email too large ({} bytes), skipping to protect heap memory", reportedSize);
+            // getSize() returns -1 when the server does not report size — skip this pre-check in that case
+            if (reportedSize > 0 && reportedSize > MAX_EMAIL_BYTES) {
+                log.warn("Email too large ({} bytes reported by server), skipping to protect heap memory", reportedSize);
                 return;
             }
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
