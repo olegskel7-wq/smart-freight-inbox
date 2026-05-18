@@ -1,0 +1,75 @@
+name: CI — Build & Test
+
+# Запускается на каждый push и pull request в любую ветку
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    # Testcontainers поднимает реальный PostgreSQL в Docker — он уже есть на GitHub runner
+    services:
+      docker:
+        image: docker:dind
+
+    steps:
+      # 1. Скачать код
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Установить Java 17
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven          # кэшируем Maven-зависимости между запусками
+
+      # 3. Запустить тесты
+      # Ollama недоступен в CI — приложение автоматически переходит на regex-fallback
+      - name: Run tests
+        run: ./mvnw verify --no-transfer-progress
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          # Говорим Spring не пытаться подключиться к реальному IMAP/SMTP
+          IMAP_HOST: imap.example.com
+          IMAP_USER: test@example.com
+          IMAP_PASSWORD: test
+          SMTP_HOST: smtp.example.com
+          SMTP_USER: test@example.com
+          SMTP_PASSWORD: test
+
+      # 4. Сохранить отчёт о покрытии (JaCoCo)
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 7
+
+      # 5. Собрать JAR (без тестов — уже прогнали)
+      - name: Build JAR
+        run: ./mvnw package -DskipTests --no-transfer-progress
+
+      # 6. Собрать Docker-образ (проверяем что Dockerfile рабочий)
+      - name: Build Docker image
+        run: docker build -t smartfreight-inbox:${{ github.sha }} .
+
+      # 7. Если это push в main — сохранить образ как артефакт для деплоя
+      - name: Save Docker image
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: docker save smartfreight-inbox:${{ github.sha }} | gzip > inbox-image.tar.gz
+
+      - name: Upload Docker image artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: inbox-docker-image
+          path: inbox-image.tar.gz
+          retention-days: 1

@@ -1,0 +1,74 @@
+name: CD — Deploy to Server
+
+# Запускается только после успешного CI на ветке main
+on:
+  workflow_run:
+    workflows: [ "CI — Build & Test" ]
+    types: [ completed ]
+    branches: [ main ]
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+
+    # Деплоим только если CI прошёл успешно
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      # 1. Скачать код (нужен docker-compose.yml и конфиги)
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Подключиться к серверу по SSH и задеплоить
+      #
+      # Что происходит на сервере:
+      #   - git pull — получаем свежий код
+      #   - docker compose up --build -d backend port-service
+      #     (пересобираем только app-контейнеры, не трогаем БД и Ollama)
+      #   - старый контейнер останавливается, новый стартует
+      #   - суммарный downtime ~15–30 секунд
+      #
+      # Secrets нужно добавить в GitHub → Settings → Secrets:
+      #   DEPLOY_HOST     — IP или домен сервера (напр. 123.45.67.89)
+      #   DEPLOY_USER     — SSH пользователь (напр. ubuntu)
+      #   DEPLOY_SSH_KEY  — приватный SSH ключ (содержимое ~/.ssh/id_rsa)
+      #   DEPLOY_PATH     — путь к проекту на сервере (напр. /home/ubuntu/smartfreight)
+      #   DEPLOY_ENV      — содержимое .env файла (все переменные окружения)
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_SSH_KEY }}
+          port:     22
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            echo "=== Pulling latest code ==="
+            git pull origin main
+
+            echo "=== Writing .env file ==="
+            echo "${{ secrets.DEPLOY_ENV }}" > .env
+
+            echo "=== Rebuilding app containers ==="
+            docker compose up --build -d backend port-service
+
+            echo "=== Removing unused images ==="
+            docker image prune -f
+
+            echo "=== Checking health ==="
+            sleep 20
+            curl -f http://localhost:8080/actuator/health || exit 1
+
+            echo "=== Deploy successful ==="
+
+      # 3. Уведомление если деплой упал
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Deploy FAILED for commit ${{ github.sha }}"
+          echo "Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # Сюда можно добавить отправку в Slack или email
