@@ -4,6 +4,8 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.EmailReplyService;
+import com.smartfreight.inbox.service.SendRateLimiter;
+import com.smartfreight.inbox.service.TicketAuditService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -40,11 +42,17 @@ public class TicketViewController {
 
     private final EmailTicketRepository emailTicketRepository;
     private final EmailReplyService emailReplyService;
+    private final TicketAuditService auditService;
+    private final SendRateLimiter sendRateLimiter;
 
     public TicketViewController(EmailTicketRepository emailTicketRepository,
-                                EmailReplyService emailReplyService) {
+                                EmailReplyService emailReplyService,
+                                TicketAuditService auditService,
+                                SendRateLimiter sendRateLimiter) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
+        this.auditService = auditService;
+        this.sendRateLimiter = sendRateLimiter;
     }
 
     /** GET / — authenticated users go directly to tickets, others to login. */
@@ -179,6 +187,7 @@ public class TicketViewController {
         }
         emailTicketRepository.delete(ticket);
         log.info("Ticket {} soft-deleted", id);
+        auditService.record(id, TicketAuditService.ACTION_DELETE, null);
         redirectAttributes.addFlashAttribute("successMessage", "Ticket #" + id + " deleted.");
         return "redirect:/tickets";
     }
@@ -196,6 +205,7 @@ public class TicketViewController {
             ticket.setStatus(TicketStatus.CLOSED);
             ticket.setUpdatedAt(LocalDateTime.now());
             emailTicketRepository.save(ticket);
+            auditService.record(id, TicketAuditService.ACTION_CLOSE, null);
         });
         return "redirect:/tickets";
     }
@@ -232,22 +242,34 @@ public class TicketViewController {
         ticket.setDraftReply(draftReply);
 
         if ("send".equalsIgnoreCase(action)) {
+            if (!sendRateLimiter.tryAcquire(id)) {
+                log.warn("Send rate-limited for ticket {} — within {}s cooldown", id, sendRateLimiter.getCooldown().toSeconds());
+                redirectAttributes.addFlashAttribute("errorMessage",
+                        "Please wait a few seconds before sending again.");
+                return "redirect:/tickets/" + id;
+            }
             try {
                 emailReplyService.sendReply(ticket);
                 ticket.setStatus(TicketStatus.CLOSED);
                 log.info("Ticket {} draft sent to {} and closed", id, ticket.getSenderEmail());
+                auditService.record(id, TicketAuditService.ACTION_SEND, "to=" + ticket.getSenderEmail());
                 redirectAttributes.addFlashAttribute("successMessage",
                         "Reply sent to " + ticket.getSenderEmail());
             } catch (Exception e) {
                 log.error("Failed to send reply for ticket {}: {}", id, e.getMessage(), e);
+                auditService.record(id, TicketAuditService.ACTION_SEND, "FAILED: " + e.getMessage());
                 redirectAttributes.addFlashAttribute("errorMessage",
                         "Failed to send email: " + e.getMessage());
                 return "redirect:/tickets/" + id;
             }
         } else if ("close".equalsIgnoreCase(action)) {
             ticket.setStatus(TicketStatus.CLOSED);
+            auditService.record(id, TicketAuditService.ACTION_CLOSE, null);
         } else if (ticket.getStatus() != TicketStatus.DRAFT_READY) {
             ticket.setStatus(TicketStatus.DRAFT_READY);
+            auditService.record(id, TicketAuditService.ACTION_DRAFT_EDIT, null);
+        } else {
+            auditService.record(id, TicketAuditService.ACTION_DRAFT_EDIT, null);
         }
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);

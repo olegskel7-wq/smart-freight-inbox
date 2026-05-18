@@ -86,6 +86,7 @@ services:
     image: prom/prometheus:v2.53.0
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
@@ -125,6 +126,46 @@ services:
     networks:
       - llm_internal
 
+  postgres-backup:
+    # Daily compressed pg_dump → /backups, with weekly + monthly retention.
+    # Restore example: gunzip < /backups/last/smartfreight-latest.sql.gz | psql -U postgres smartfreight
+    image: prodrigestivill/postgres-backup-local:16
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=smartfreight
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - SCHEDULE=@daily
+      - BACKUP_KEEP_DAYS=7
+      - BACKUP_KEEP_WEEKS=4
+      - BACKUP_KEEP_MONTHS=6
+      - HEALTHCHECK_PORT=8080
+    volumes:
+      - postgres_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - llm_internal
+
+  nginx:
+    # HTTPS termination in front of the backend. Self-signed cert is generated on first run.
+    # For production, replace /etc/nginx/certs/server.crt and server.key with a real certificate.
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "8443:8443"
+    volumes:
+      - ./monitoring/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./monitoring/nginx/entrypoint.sh:/docker-entrypoint.d/00-generate-cert.sh:ro
+      - nginx_certs:/etc/nginx/certs
+    depends_on:
+      - backend
+    networks:
+      - llm_internal
+
   port-service:
     build:
       context: ./port-service
@@ -152,10 +193,12 @@ services:
 
 volumes:
   postgres_data:
+  postgres_backups:
   ollama:
   prometheus_data:
   grafana_data:
   port_db_data:
+  nginx_certs:
 
 networks:
   llm_internal:

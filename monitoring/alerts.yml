@@ -1,0 +1,69 @@
+groups:
+  - name: smart-freight-inbox
+    interval: 30s
+    rules:
+
+      - alert: BackendDown
+        expr: up{job="smart-freight-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Smart Freight backend is unreachable"
+          description: "/actuator/prometheus has not responded for 1 minute. Operator UI is offline."
+
+      - alert: PortServiceDown
+        expr: up{job="smart-freight-port-service"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Port lookup service is down"
+          description: "Container data lookups will silently fall back to 'not found' for the duration of this outage."
+
+      - alert: HighFailedTicketRate
+        expr: increase(smartfreight_tickets_status_total{status="FAILED"}[10m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 5 tickets transitioned to FAILED in the last 10 minutes"
+          description: "Check Ollama health and recent error logs. Run POST /admin/reprocess after the root cause is fixed."
+
+      - alert: OllamaSlowResponse
+        expr: |
+          (rate(smartfreight_ollama_request_seconds_sum[5m])
+           / rate(smartfreight_ollama_request_seconds_count[5m])) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ollama average response time above 60s for 10 minutes"
+          description: "Model {{ $labels.model }} ({{ $labels.operation }}) is responding slowly. Check GPU utilisation."
+
+      - alert: ExtractionFallbackSpike
+        expr: increase(smartfreight_extraction_fallback_total[15m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM extraction is falling back to regex frequently"
+          description: "More than 10 fallbacks in the last 15 minutes. Likely Ollama timeouts or model unloaded."
+
+      - alert: ReplySendFailures
+        expr: increase(smartfreight_replies_total{result="failed"}[5m]) > 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "More than 3 operator reply sends failed in the last 5 minutes"
+          description: "Check SMTP credentials and outbound connectivity."
+
+      - alert: TicketBacklogGrowing
+        expr: sum(smartfreight_tickets_current_count{status=~"NEW|RETRY_LATER"}) > 50
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unprocessed ticket backlog exceeds 50"
+          description: "The AI pipeline is not keeping up with incoming volume."

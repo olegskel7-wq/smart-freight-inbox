@@ -123,4 +123,20 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
            " WHERE t.status = :failedStatus")
     int resetFailedToNew(@Param("newStatus") TicketStatus newStatus,
                          @Param("failedStatus") TicketStatus failedStatus);
+
+    /**
+     * Bulk transition from one status to another, used at startup to recover
+     * tickets that were stuck mid-processing when the previous JVM was killed.
+     *
+     * @param fromStatus current status (typically {@link TicketStatus#PROCESSING})
+     * @param toStatus   target status (typically {@link TicketStatus#RETRY_LATER})
+     * @return number of rows updated
+     */
+    @Modifying
+    @Query("UPDATE EmailTicket t " +
+           "   SET t.status = :toStatus, " +
+           "       t.updatedAt = CURRENT_TIMESTAMP " +
+           " WHERE t.status = :fromStatus")
+    int bulkTransitionStatus(@Param("fromStatus") TicketStatus fromStatus,
+                             @Param("toStatus") TicketStatus toStatus);
 }
