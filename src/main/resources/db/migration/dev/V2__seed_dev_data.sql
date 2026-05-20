@@ -1,6 +1,10 @@
--- Демонстрационные данные для тестирования пайплайна.
--- Контейнеры в реальном порту Felixstowe (форматы номеров ISO 6346: 4 буквы + 7 цифр).
+-- Dev-only seed: demo containers and the operator user.
+-- This migration runs only when the 'dev' Spring profile is active
+-- (spring.flyway.locations includes classpath:db/migration/dev).
+-- Do NOT run in production — production users are created via the admin UI.
 
+-- Demo containers for testing the pipeline.
+-- Container numbers follow ISO 6346 format: 4 letters + 7 digits.
 INSERT INTO container (container_number, status, eta, location) VALUES
     ('MSCU1234567', 'IN_TRANSIT',  '2026-04-20 08:00:00', 'Vessel MSC Francesca, Bay 14'),
     ('HLXU8764321', 'AT_PORT',     '2026-04-10 14:00:00', 'Felixstowe Terminal 2, Row D'),
@@ -10,10 +14,10 @@ INSERT INTO container (container_number, status, eta, location) VALUES
     ('TEMU4448888', 'AT_PORT',     '2026-04-08 07:00:00', 'Felixstowe Terminal 1, Row B'),
     ('CAIU7773330', 'RELEASED',    '2026-04-07 10:00:00', 'Awaiting haulier collection');
 
--- Демо-пользователь для тестирования JWT.
--- Пароль: "demo123" захешированный BCrypt (стоимость 10).
--- Для генерации нового хеша: new BCryptPasswordEncoder().encode("your_password")
+-- Demo operator user. Password: "demo123" (BCrypt, cost 10).
+-- Squashed from V2 + V3 + V6 — this is the single authoritative seed.
+-- Rotate this password before any public deployment.
 INSERT INTO app_user (email, password, role) VALUES
     ('operator@smartfreight.com',
-     '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVEFDa',
+     '$2a$10$vDM1KvzVlZ9uQ8CSR.X5k.1qho.9gwoUdOSGIZh2V3LKuXWReWkra',
      'OPERATOR');

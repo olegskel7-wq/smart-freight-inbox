@@ -2,6 +2,7 @@ package com.smartfreight.port_service.service;
 
 import com.smartfreight.port_service.dto.ContainerResponse;
 import com.smartfreight.port_service.entity.Container;
+import com.smartfreight.port_service.entity.ContainerStatus;
 import com.smartfreight.port_service.repository.ContainerRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,14 +17,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 /**
- * Paslaugos vienetų testai – tikrina verslo logiką be Spring konteksto.
+ * Unit tests for {@link ContainerService} – verifies business logic without a Spring context.
  *
- * Testuojami scenarijai:
- * – Rastas konteineris grąžina DTO su teisingais laukais
- * – Nerastas konteineris grąžina Optional.empty()
- * – Null įvestis grąžina Optional.empty() ir nekviečia saugyklos
- * – Tuščia eilutė grąžina Optional.empty() ir nekviečia saugyklos
- * – Mišraus registro numeris normalizuojamas prieš paiešką DB
+ * Scenarios:
+ * – Found container returns a DTO with correct fields.
+ * – Not-found container returns Optional.empty().
+ * – Null input returns Optional.empty() without calling the repository.
+ * – Blank input returns Optional.empty() without calling the repository.
+ * – Mixed-case number is normalised to uppercase before the DB lookup.
+ * – Input with leading/trailing spaces is trimmed and normalised.
  */
 @ExtendWith(MockitoExtension.class)
 class ContainerServiceTest {
@@ -34,7 +36,7 @@ class ContainerServiceTest {
     @InjectMocks
     private ContainerService containerService;
 
-    private Container buildContainer(String number, String status) {
+    private Container buildContainer(String number, ContainerStatus status) {
         return Container.builder()
                 .id(1L)
                 .containerNumber(number)
@@ -47,7 +49,7 @@ class ContainerServiceTest {
 
     @Test
     void findByNumber_existingContainer_returnsDtoWithCorrectFields() {
-        Container entity = buildContainer("MSCU1234567", "AT_PORT");
+        Container entity = buildContainer("MSCU1234567", ContainerStatus.AT_PORT);
         when(containerRepository.findByContainerNumber("MSCU1234567"))
                 .thenReturn(Optional.of(entity));
 
@@ -89,7 +91,7 @@ class ContainerServiceTest {
 
     @Test
     void findByNumber_lowercaseInput_normalizesToUppercaseBeforeSearch() {
-        Container entity = buildContainer("MSCU1234567", "IN_TRANSIT");
+        Container entity = buildContainer("MSCU1234567", ContainerStatus.IN_TRANSIT);
         when(containerRepository.findByContainerNumber("MSCU1234567"))
                 .thenReturn(Optional.of(entity));
 
@@ -101,7 +103,7 @@ class ContainerServiceTest {
 
     @Test
     void findByNumber_inputWithSpaces_trimmedAndNormalized() {
-        Container entity = buildContainer("OOLU9876543", "CUSTOMS");
+        Container entity = buildContainer("OOLU9876543", ContainerStatus.CUSTOMS);
         when(containerRepository.findByContainerNumber("OOLU9876543"))
                 .thenReturn(Optional.of(entity));
 

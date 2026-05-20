@@ -1,6 +1,6 @@
--- 50 test email tickets for demo purposes
--- Covers all statuses: NEW, PROCESSING, DRAFT_READY, FAILED, CLOSED
--- Uses container numbers from V2 seed data
+-- Dev-only seed: 50 test email tickets for demo and UI testing.
+-- This migration runs only when the 'dev' Spring profile is active.
+-- Do NOT run in production.
 
 INSERT INTO email_ticket
     (message_id, sender_email, subject, body, extracted_container_number, status, draft_reply, retry_count, deleted, created_at, updated_at, version)

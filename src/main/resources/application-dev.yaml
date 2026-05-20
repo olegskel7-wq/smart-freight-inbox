@@ -1,0 +1,12 @@
+# Dev profile configuration.
+# Activate with: --spring.profiles.active=dev  (or SPRING_PROFILES_ACTIVE=dev)
+#
+# Extends application.yaml with dev-only Flyway seed locations so that
+# db/migration/dev/V2__seed_dev_data.sql and V4__seed_test_tickets.sql
+# are applied on fresh local databases.
+#
+# IMPORTANT: never activate the 'dev' profile in production.
+
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/migration/dev

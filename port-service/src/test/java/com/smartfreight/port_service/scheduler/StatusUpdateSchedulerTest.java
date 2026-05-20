@@ -1,8 +1,8 @@
 package com.smartfreight.port_service.scheduler;
 
 import com.smartfreight.port_service.entity.Container;
+import com.smartfreight.port_service.entity.ContainerStatus;
 import com.smartfreight.port_service.repository.ContainerRepository;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -17,14 +17,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 /**
- * Planuotojo vienetų testai – tikrina būsenų gyvavimo ciklą ir atnaujinimo logiką.
+ * Unit tests for {@link StatusUpdateScheduler} – verifies the lifecycle and update logic.
  *
- * Testuojami scenarijai:
- * – Visi STATUS_CYCLE perėjimai (kiekvienas → kitas)
- * – Ciklinis perėjimas: DELIVERED → IN_TRANSIT
- * – Nežinoma būsena → IN_TRANSIT (atkūrimas)
- * – Tuščias konteinerių sąrašas – niekas nekviečiama
- * – Atnaujinimo metu konteineris išsaugomas su nauja būsena ir updatedAt laiku
+ * Scenarios:
+ * – All STATUS_CYCLE transitions (each status → next)
+ * – Cyclic wrap: DELIVERED → IN_TRANSIT
+ * – Null status → IN_TRANSIT (recovery)
+ * – Empty container list — nothing is saved
+ * – On update: container is saved with the new status and a non-null updatedAt timestamp
+ * – At most 2 containers are updated per run
+ * – A single container is always updated (no randomness issues with count 1)
  */
 @ExtendWith(MockitoExtension.class)
 class StatusUpdateSchedulerTest {
@@ -35,7 +37,7 @@ class StatusUpdateSchedulerTest {
     @InjectMocks
     private StatusUpdateScheduler scheduler;
 
-    private Container buildContainer(String number, String status) {
+    private Container buildContainer(String number, ContainerStatus status) {
         Container c = new Container();
         c.setContainerNumber(number);
         c.setStatus(status);
@@ -43,111 +45,115 @@ class StatusUpdateSchedulerTest {
     }
 
     // -------------------------------------------------------------------------
-    // nextStatus – gyvavimo ciklo logika
+    // nextStatus – lifecycle logic
     // -------------------------------------------------------------------------
 
     @Test
     void nextStatus_inTransit_returnsAtPort() {
-        assertThat(scheduler.nextStatus("IN_TRANSIT")).isEqualTo("AT_PORT");
+        assertThat(scheduler.nextStatus(ContainerStatus.IN_TRANSIT))
+                .isEqualTo(ContainerStatus.AT_PORT);
     }
 
     @Test
     void nextStatus_atPort_returnsCustoms() {
-        assertThat(scheduler.nextStatus("AT_PORT")).isEqualTo("CUSTOMS");
+        assertThat(scheduler.nextStatus(ContainerStatus.AT_PORT))
+                .isEqualTo(ContainerStatus.CUSTOMS);
     }
 
     @Test
     void nextStatus_customs_returnsReleased() {
-        assertThat(scheduler.nextStatus("CUSTOMS")).isEqualTo("RELEASED");
+        assertThat(scheduler.nextStatus(ContainerStatus.CUSTOMS))
+                .isEqualTo(ContainerStatus.RELEASED);
     }
 
     @Test
     void nextStatus_released_returnsDelivered() {
-        assertThat(scheduler.nextStatus("RELEASED")).isEqualTo("DELIVERED");
+        assertThat(scheduler.nextStatus(ContainerStatus.RELEASED))
+                .isEqualTo(ContainerStatus.DELIVERED);
     }
 
     @Test
     void nextStatus_delivered_cyclesBackToInTransit() {
-        assertThat(scheduler.nextStatus("DELIVERED")).isEqualTo("IN_TRANSIT");
-    }
-
-    @Test
-    void nextStatus_unknownStatus_returnsInTransit() {
-        assertThat(scheduler.nextStatus("UNKNOWN_XYZ")).isEqualTo("IN_TRANSIT");
+        assertThat(scheduler.nextStatus(ContainerStatus.DELIVERED))
+                .isEqualTo(ContainerStatus.IN_TRANSIT);
     }
 
     @Test
     void nextStatus_nullStatus_returnsInTransit() {
-        assertThat(scheduler.nextStatus(null)).isEqualTo("IN_TRANSIT");
+        assertThat(scheduler.nextStatus(null)).isEqualTo(ContainerStatus.IN_TRANSIT);
     }
 
     // -------------------------------------------------------------------------
-    // updateRandomContainerStatuses – atnaujinimo logika
+    // updateRandomContainerStatuses – update logic
     // -------------------------------------------------------------------------
 
     @Test
-    void updateRandomContainerStatuses_emptyList_doesNotSave() {
+    void updateRandomContainerStatuses_emptyList_doesNotSaveAll() {
         when(containerRepository.findAll()).thenReturn(Collections.emptyList());
 
         scheduler.updateRandomContainerStatuses();
 
-        verify(containerRepository, never()).save(any());
+        verify(containerRepository, never()).saveAll(any());
     }
 
     @Test
-    void updateRandomContainerStatuses_withContainers_savesAtLeastOne() {
+    void updateRandomContainerStatuses_withContainers_callsSaveAll() {
         List<Container> containers = List.of(
-                buildContainer("MSCU1111111", "IN_TRANSIT"),
-                buildContainer("OOLU2222222", "AT_PORT"),
-                buildContainer("HLXU3333333", "CUSTOMS")
+                buildContainer("MSCU1111111", ContainerStatus.IN_TRANSIT),
+                buildContainer("OOLU2222222", ContainerStatus.AT_PORT),
+                buildContainer("HLXU3333333", ContainerStatus.CUSTOMS)
         );
         when(containerRepository.findAll()).thenReturn(containers);
 
         scheduler.updateRandomContainerStatuses();
 
-        // Saugykla turi būti iškviesta bent vieną kartą
-        verify(containerRepository, atLeastOnce()).save(any(Container.class));
+        verify(containerRepository, times(1)).saveAll(any());
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void updateRandomContainerStatuses_withContainers_savesAtMostTwo() {
         List<Container> containers = List.of(
-                buildContainer("MSCU1111111", "IN_TRANSIT"),
-                buildContainer("OOLU2222222", "AT_PORT"),
-                buildContainer("HLXU3333333", "CUSTOMS"),
-                buildContainer("TCKU4444444", "RELEASED")
+                buildContainer("MSCU1111111", ContainerStatus.IN_TRANSIT),
+                buildContainer("OOLU2222222", ContainerStatus.AT_PORT),
+                buildContainer("HLXU3333333", ContainerStatus.CUSTOMS),
+                buildContainer("TCKU4444444", ContainerStatus.RELEASED)
         );
         when(containerRepository.findAll()).thenReturn(containers);
 
         scheduler.updateRandomContainerStatuses();
 
-        // Ne daugiau nei 2 konteineriai atnaujinami per vieną paleidimą
-        verify(containerRepository, atMost(2)).save(any(Container.class));
+        ArgumentCaptor<List<Container>> captor = ArgumentCaptor.forClass(List.class);
+        verify(containerRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).hasSizeLessThanOrEqualTo(2);
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void updateRandomContainerStatuses_savedContainer_hasUpdatedStatusAndTimestamp() {
-        Container container = buildContainer("MSCU1234567", "IN_TRANSIT");
+        Container container = buildContainer("MSCU1234567", ContainerStatus.IN_TRANSIT);
         when(containerRepository.findAll()).thenReturn(List.of(container));
 
-        ArgumentCaptor<Container> captor = ArgumentCaptor.forClass(Container.class);
         scheduler.updateRandomContainerStatuses();
 
-        verify(containerRepository).save(captor.capture());
-        Container saved = captor.getValue();
-        assertThat(saved.getStatus()).isEqualTo("AT_PORT");
+        ArgumentCaptor<List<Container>> captor = ArgumentCaptor.forClass(List.class);
+        verify(containerRepository).saveAll(captor.capture());
+        Container saved = captor.getValue().get(0);
+        assertThat(saved.getStatus()).isEqualTo(ContainerStatus.AT_PORT);
         assertThat(saved.getUpdatedAt()).isNotNull();
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void updateRandomContainerStatuses_singleContainer_alwaysUpdatesIt() {
-        Container container = buildContainer("MSCU9999999", "CUSTOMS");
+        Container container = buildContainer("MSCU9999999", ContainerStatus.CUSTOMS);
         when(containerRepository.findAll()).thenReturn(List.of(container));
 
         scheduler.updateRandomContainerStatuses();
 
-        // Su vienu konteineriu jis visada turi būti atnaujintas
-        verify(containerRepository, times(1)).save(container);
-        assertThat(container.getStatus()).isEqualTo("RELEASED");
+        ArgumentCaptor<List<Container>> captor = ArgumentCaptor.forClass(List.class);
+        verify(containerRepository, times(1)).saveAll(captor.capture());
+        assertThat(captor.getValue()).hasSize(1);
+        assertThat(container.getStatus()).isEqualTo(ContainerStatus.RELEASED);
     }
 }

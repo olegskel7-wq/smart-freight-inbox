@@ -32,12 +32,14 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus,metrics
   endpoint:
     health:
       show-details: always
 
 port:
+  api:
+    key: ${PORT_SERVICE_API_KEY}
   scheduler:
     interval-ms: ${SCHEDULER_INTERVAL_MS:300000}
 

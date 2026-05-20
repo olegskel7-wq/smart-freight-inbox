@@ -9,16 +9,16 @@ import org.springframework.stereotype.Service;
 import java.util.Optional;
 
 /**
- * Verslo logika darbui su konteineriais.
+ * Business logic for working with containers.
  *
- * Paslauga atskirta nuo valdiklio pagal vienos atsakomybės principą (SRP):
- * – Valdiklis tvarko HTTP užklausas (maršrutas, serializacija)
- * – Paslauga apima verslo logiką (normalizavimas, transformavimas, validacija)
+ * The service is separated from the controller following the Single Responsibility Principle (SRP):
+ * – The controller handles HTTP requests (routing, serialization)
+ * – The service encapsulates business logic (normalization, transformation, validation)
  *
- * Tai leidžia verslo logiką pakartotinai naudoti:
- * – REST API per ContainerController
- * – Integracijoje su kitomis mikropaslaugomis
- * – Paketiniam apdorojimui (jei prireiktų)
+ * This allows the business logic to be reused across:
+ * – REST API via ContainerController
+ * – Integration with other microservices
+ * – Batch processing (if needed)
  */
 @Service
 public class ContainerService {
@@ -32,20 +32,20 @@ public class ContainerService {
     }
 
     /**
-     * Rasti konteinerį pagal numerį ir konvertuoti į DTO.
+     * Find a container by number and convert it to a DTO.
      *
-     * Procesas:
-     * 1. Įvesties validacija (null, tuščia eilutė)
-     * 2. Normalizavimas: trim() ir toUpperCase() – ISO numeriai standartizuoti
-     * 3. Paieška DB per saugyklą
-     * 4. Jei rastas – Entity transformacija į DTO per ContainerResponse.from()
-     * 5. Veiksmų žurnalavimas (auditui ir derinimui)
+     * Process:
+     * 1. Input validation (null, blank string)
+     * 2. Normalization: trim() and toUpperCase() – ISO numbers are standardized
+     * 3. Database lookup via the repository
+     * 4. If found – Entity transformation to DTO via ContainerResponse.from()
+     * 5. Action logging (for audit and debugging)
      *
-     * Naudojamas inbox programos per HTTP:
+     * Used by the inbox application over HTTP:
      * {@code inbox → ContainerLookupService → WebClient.get(/api/containers/{number}) → port-service}
      *
-     * @param containerNumber konteinerio numeris (gali būti null, tuščias, skirtingo registro)
-     * @return Optional.of(DTO) jei konteineris rastas, Optional.empty() jei ne
+     * @param containerNumber the container number (may be null, blank, or mixed case)
+     * @return Optional.of(DTO) if the container is found, Optional.empty() otherwise
      */
     public Optional<ContainerResponse> findByNumber(String containerNumber) {
         if (containerNumber == null || containerNumber.isBlank()) {
@@ -53,8 +53,6 @@ public class ContainerService {
             return Optional.empty();
         }
 
-        // Normalizavimas: "mscu1234567" → "MSCU1234567"
-        // Būtina, nes konteinerių numeriai dažnai rašomi skirtingais registrais
         String normalized = containerNumber.trim().toUpperCase();
 
         return containerRepository.findByContainerNumber(normalized)

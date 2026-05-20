@@ -30,11 +30,12 @@ jobs:
       #   - суммарный downtime ~15–30 секунд
       #
       # Secrets нужно добавить в GitHub → Settings → Secrets:
-      #   DEPLOY_HOST     — IP или домен сервера (напр. 123.45.67.89)
-      #   DEPLOY_USER     — SSH пользователь (напр. ubuntu)
-      #   DEPLOY_SSH_KEY  — приватный SSH ключ (содержимое ~/.ssh/id_rsa)
-      #   DEPLOY_PATH     — путь к проекту на сервере (напр. /home/ubuntu/smartfreight)
-      #   DEPLOY_ENV      — содержимое .env файла (все переменные окружения)
+      #   DEPLOY_HOST      — server IP or hostname (e.g. 123.45.67.89)
+      #   DEPLOY_USER      — SSH user (e.g. ubuntu)
+      #   DEPLOY_SSH_KEY   — private SSH key contents (~/.ssh/id_rsa)
+      #   DEPLOY_PATH      — project path on the server (e.g. /home/ubuntu/smartfreight)
+      #   DEPLOY_ENV_B64   — base64-encoded .env file contents
+      #                      Encode locally: base64 -w 0 .env.prod | pbcopy
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -51,7 +52,8 @@ jobs:
             git pull origin main
 
             echo "=== Writing .env file ==="
-            echo "${{ secrets.DEPLOY_ENV }}" > .env
+            printf '%s' "${{ secrets.DEPLOY_ENV_B64 }}" | base64 -d > .env
+            chmod 600 .env
 
             echo "=== Rebuilding app containers ==="
             docker compose up --build -d backend port-service

@@ -1,33 +1,36 @@
 package com.smartfreight.port_service.scheduler;
 
 import com.smartfreight.port_service.entity.Container;
+import com.smartfreight.port_service.entity.ContainerStatus;
 import com.smartfreight.port_service.repository.ContainerRepository;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Suplanuota užduotis, emuliuojanti konteinerių būsenų atnaujinimą uoste.
+ * Scheduled task that simulates container status updates in the port.
  *
- * Produkcijoje šie atnaujinimai ateitų iš realios uosto valdymo sistemos (TOS/CMS).
- * Čia naudojama paprasta emuliacija: kas N minučių atsitiktinis konteineris
- * perkeliamas į kitą būseną.
+ * In production these updates would come from a real Terminal/Cargo Management System (TOS/CMS).
+ * Here a simple simulation is used: every N minutes a random container
+ * is advanced to the next status.
  *
- * Konteinerio gyvavimo ciklas:
+ * Container lifecycle:
  * IN_TRANSIT → AT_PORT → CUSTOMS → RELEASED → DELIVERED
  *
- * Po DELIVERED būsena cikliškai grįžta į IN_TRANSIT (demonstracijos tikslais).
+ * After DELIVERED the status cycles back to IN_TRANSIT (for demonstration purposes).
  *
- * Paskirtis:
- * – Parodyti duomenų atnaujinimą realiuoju laiku
- * – Testuoti inbox programos elgseną keičiantis būsenoms
- * – Demonstracijai: „žiūrėkite, būsenos iš tikrųjų atnaujinamos kas 5 minutes"
+ * Purpose:
+ * – Demonstrate real-time data updates
+ * – Test the inbox application's behaviour as statuses change
+ * – Demo talking point: "statuses are actually updated every 5 minutes"
  */
 @Component
 public class StatusUpdateScheduler {
@@ -35,91 +38,90 @@ public class StatusUpdateScheduler {
     private static final Logger log = LoggerFactory.getLogger(StatusUpdateScheduler.class);
 
     /**
-     * Konteinerio gyvavimo ciklas – būsenų seka krovinių judėjimo metu.
+     * Container lifecycle – the sequence of statuses during cargo movement.
      *
-     * Kiekvienas konteineris pereina šiuos etapus nurodyta tvarka:
-     * 1. IN_TRANSIT – konteineris keliauja laive arba sunkvežimyje
-     * 2. AT_PORT – atvyko į uosto terminalą ir iškrautas
-     * 3. CUSTOMS – tikrinamas muitinėje (laikomas muitinės sandėlyje)
-     * 4. RELEASED – muitinė patvirtino išleidimą (konteineris pasiruošęs paėmimui)
-     * 5. DELIVERED – pristatytas galutiniam gavėjui / klientui
+     * Each container passes through the following stages in order:
+     * 1. IN_TRANSIT – container is travelling by ship or truck
+     * 2. AT_PORT – arrived at the port terminal and unloaded
+     * 3. CUSTOMS – undergoing customs inspection (held in customs warehouse)
+     * 4. RELEASED – customs has approved release (container ready for collection)
+     * 5. DELIVERED – delivered to the final recipient / customer
      */
-    private static final List<String> STATUS_CYCLE = List.of(
-            "IN_TRANSIT",
-            "AT_PORT",
-            "CUSTOMS",
-            "RELEASED",
-            "DELIVERED"
+    private static final List<ContainerStatus> STATUS_CYCLE = List.of(
+            ContainerStatus.IN_TRANSIT,
+            ContainerStatus.AT_PORT,
+            ContainerStatus.CUSTOMS,
+            ContainerStatus.RELEASED,
+            ContainerStatus.DELIVERED
     );
 
     private final ContainerRepository containerRepository;
-    private final Random random = new Random();
 
     public StatusUpdateScheduler(ContainerRepository containerRepository) {
         this.containerRepository = containerRepository;
     }
 
     /**
-     * Periodinė konteinerių būsenų atnaujinimo užduotis.
+     * Periodic task for updating container statuses.
      *
-     * Grafikas:
-     * – fixedDelayString nuskaito intervalą iš application.yaml (raktas: port.scheduler.interval-ms)
-     * – Numatytoji reikšmė: 300 000 ms = 5 minutės
-     * – fixedDelay garantuoja, kad kitas paleidimas pradės ne anksčiau nei baigs dabartinis
-     *   (skirtingai nei fixedRate, kuris paleidžia kas N ms nepriklausomai nuo vykdymo trukmės)
+     * Schedule:
+     * – fixedDelayString reads the interval from application.yaml (key: port.scheduler.interval-ms)
+     * – Default value: 300 000 ms = 5 minutes
+     * – fixedDelay guarantees the next run starts no earlier than the current one finishes
+     *   (unlike fixedRate, which fires every N ms regardless of execution duration)
      *
-     * Procesas:
-     * 1. Gauname visus konteinerius iš DB
-     * 2. Maišome juos (Collections.shuffle) atsitiktiniam pasirinkimui
-     * 3. Pasirenkame 1–2 atsitiktinius konteinerius
-     * 4. Kiekvienam: perkeliame į kitą būseną, išsaugome DB
-     * 5. Žurnale fiksuojame pakeitimą
+     * ShedLock ensures only one replica runs this job at a time across horizontal scaling.
+     *
+     * Process:
+     * 1. Fetch all containers from the DB
+     * 2. Shuffle them (Collections.shuffle) for random selection
+     * 3. Select 1–2 random containers
+     * 4. For each: advance to the next status, save to the DB
+     * 5. Log the change
      */
     @Scheduled(fixedDelayString = "${port.scheduler.interval-ms:300000}")
+    @SchedulerLock(name = "statusUpdateScheduler", lockAtLeastFor = "PT4M", lockAtMostFor = "PT6M")
     public void updateRandomContainerStatuses() {
-        // Kopijuojame sąrašą, nes Collections.shuffle reikalauja keičiamo sąrašo
-        List<Container> all = new java.util.ArrayList<>(containerRepository.findAll());
+        List<Container> all = new ArrayList<>(containerRepository.findAll());
         if (all.isEmpty()) {
             return;
         }
 
-        Collections.shuffle(all, random);
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        Collections.shuffle(all, rng);
 
-        // random.nextInt(2) grąžina 0 arba 1; +1 → rezultatas 1 arba 2
-        int count = random.nextInt(2) + 1;
+        int count = rng.nextInt(2) + 1;
 
-        all.stream()
-                .limit(count)
-                .forEach(container -> {
-                    String oldStatus = container.getStatus();
-                    String newStatus = nextStatus(oldStatus);
-                    container.setStatus(newStatus);
-                    container.setUpdatedAt(LocalDateTime.now());
-                    containerRepository.save(container);
-                    log.info("Container {} status: {} → {}",
-                            container.getContainerNumber(), oldStatus, newStatus);
-                });
+        List<Container> toUpdate = new ArrayList<>(count);
+        for (Container container : all.subList(0, count)) {
+            ContainerStatus oldStatus = container.getStatus();
+            ContainerStatus newStatus = nextStatus(oldStatus);
+            container.setStatus(newStatus);
+            container.setUpdatedAt(LocalDateTime.now());
+            toUpdate.add(container);
+            log.info("Container {} status: {} → {}",
+                    container.getContainerNumber(), oldStatus, newStatus);
+        }
+        containerRepository.saveAll(toUpdate);
     }
 
     /**
-     * Apskaičiuoja kitą būseną konteinerio gyvavimo cikle.
+     * Calculates the next status in the container lifecycle.
      *
-     * Logika:
-     * – Randame dabartinės būsenos indeksą STATUS_CYCLE sąraše
-     * – Pereiname į kitą: (index + 1) % SIZE
-     * – Modulis (%) užtikrina ciklinį perėjimą: paskutinė būsena → pirmoji
+     * Logic:
+     * – Find the index of the current status in STATUS_CYCLE
+     * – Advance to the next: (index + 1) % SIZE
+     * – The modulo (%) ensures cyclic wrapping: last status → first status
      *
-     * Pavyzdžiai:
-     * – nextStatus("IN_TRANSIT") → "AT_PORT" (indeksas 0 → 1)
-     * – nextStatus("DELIVERED") → "IN_TRANSIT" (indeksas 4 → 0 per modulį)
-     * – nextStatus("UNKNOWN") → "IN_TRANSIT" (nežinoma būsena → ciklo pradžia)
+     * Examples:
+     * – nextStatus(IN_TRANSIT) → AT_PORT  (index 0 → 1)
+     * – nextStatus(DELIVERED)  → IN_TRANSIT (index 4 → 0 via modulo)
+     * – nextStatus(null)       → IN_TRANSIT (null → start of cycle)
      *
-     * @param current dabartinė konteinerio būsena
-     * @return kita būsena cikle
+     * @param current the current container status
+     * @return the next status in the cycle
      */
-    String nextStatus(String current) {
-        // Jei būsena null arba nežinoma – pradedame ciklą iš pradžių.
-        // List.of() neleidžia iškviesti indexOf(null), todėl tikriname iš anksto.
+    ContainerStatus nextStatus(ContainerStatus current) {
         if (current == null) {
             return STATUS_CYCLE.get(0);
         }

@@ -9,21 +9,21 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST valdiklis konteinerių duomenų užklausoms.
+ * REST controller for container data queries.
  *
- * Mikropaslauga port-service teikia vieną skaitymo galinį tašką:
+ * The port-service microservice exposes a single read-only endpoint:
  * {@code GET /api/containers/{containerNumber}}
  *
- * Pagrindinis inbox programos ContainerLookupService naudoja šį galinį tašką
- * konteinerio būsenai gauti apdorojant klientų el. pašto užklausas.
+ * The main inbox application's ContainerLookupService uses this endpoint
+ * to retrieve container status while processing customer email inquiries.
  *
- * Duomenų srautas:
- * 1. Klientas siunčia el. laišką: „Kur mano konteineris MSCU1234567?"
- * 2. inbox → AiExtractionService ištraukia numerį MSCU1234567
- * 3. inbox → ContainerLookupService siunčia: GET /api/containers/MSCU1234567
- * 4. port-service grąžina JSON su dabartine būsena
- * 5. inbox → AiDraftingService generuoja atsakymą pagal gautus duomenis
- * 6. Operatorius išsiunčia atsakymą klientui
+ * Data flow:
+ * 1. Customer sends an email: "Where is my container MSCU1234567?"
+ * 2. inbox → AiExtractionService extracts the number MSCU1234567
+ * 3. inbox → ContainerLookupService sends: GET /api/containers/MSCU1234567
+ * 4. port-service returns JSON with the current status
+ * 5. inbox → AiDraftingService generates a reply based on the data
+ * 6. Operator sends the reply to the customer
  */
 @RestController
 @RequestMapping("/api/containers")
@@ -36,12 +36,12 @@ public class ContainerController {
     }
 
     /**
-     * Gauti konteinerio duomenis pagal ISO 6346 numerį.
+     * Retrieve container data by ISO 6346 number.
      *
-     * HTTP metodas: GET
+     * HTTP method: GET
      * URL: /api/containers/{number}
      *
-     * Sėkmingas atsakymas (200 OK):
+     * Success response (200 OK):
      * <pre>
      * {
      *   "containerNumber": "MSCU1234567",
@@ -52,10 +52,10 @@ public class ContainerController {
      * }
      * </pre>
      *
-     * Klaidos atsakymas (404 Not Found) – konteineris nerastas DB.
+     * Error response (404 Not Found) – container not found in the DB.
      *
-     * @param number konteinerio numeris iš URL kelio
-     * @return ResponseEntity.ok(DTO) jei rastas, ResponseEntity.notFound() jei ne
+     * @param number the container number from the URL path
+     * @return ResponseEntity.ok(DTO) if found, ResponseEntity.notFound() otherwise
      */
     @GetMapping("/{number}")
     public ResponseEntity<ContainerResponse> getByNumber(@PathVariable String number) {

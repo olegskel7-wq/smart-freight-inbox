@@ -3,12 +3,10 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
-import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,8 +17,9 @@ import java.util.List;
 /**
  * Admin API controller for maintenance operations.
  *
- * Access is restricted to OPERATOR role via SecurityConfig.
- * — (future) data cleanup, manual pipeline restart, etc.
+ * Access is restricted to OPERATOR role via SecurityConfig
+ * ({@code .requestMatchers("/admin/**").hasRole("OPERATOR")}).
+ * No additional IP-level check is needed here — Spring Security is the authorisation boundary.
  */
 @RestController
 @RequestMapping("/admin")
@@ -49,29 +48,21 @@ public class AdminController {
      * 3. An operator rejected a draft (RETRY_LATER) and the AI needs to run again.
      *
      * Algorithm:
-     * 1. Reject requests from non-localhost addresses (403 Forbidden).
-     * 2. Bulk FAILED → NEW reset in a separate short transaction.
-     * 3. Retrieve ONLY ticket IDs with NEW and RETRY_LATER statuses (projection).
-     * 4. Dispatch each ticket to the application thread pool asynchronously.
+     * 1. Bulk FAILED → NEW reset in a separate short transaction.
+     * 2. Retrieve ONLY ticket IDs with NEW and RETRY_LATER statuses (projection).
+     * 3. Dispatch each ticket to the application thread pool asynchronously.
      *    Each process() runs in its own transaction (REQUIRES_NEW),
      *    so HikariCP connections are released after each ticket.
-     * 5. Return the number of queued tickets.
+     * 4. Return the number of queued tickets.
      *
      * Architectural note: the method has NO @Transactional,
      * because one "fat" transaction for the entire loop would hold a HikariCP connection
      * for the entire Ollama wait time (up to 150 s × number of tickets).
      *
-     * @param request HTTP request used to verify the caller is localhost
-     * @return 200 OK with the number of reprocessed tickets, or 403 if not localhost
+     * @return 200 OK with the number of reprocessed tickets
      */
     @PostMapping("/reprocess")
-    public ResponseEntity<String> reprocessAll(HttpServletRequest request) {
-        String remoteAddr = request.getRemoteAddr();
-        if (!"127.0.0.1".equals(remoteAddr) && !"::1".equals(remoteAddr)) {
-            log.warn("Rejected /admin/reprocess from non-localhost address: {}", remoteAddr);
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body("Forbidden: admin endpoint is only accessible from localhost");
-        }
+    public ResponseEntity<String> reprocessAll() {
         int reset = ticketProcessingService.prepareForRetry();
 
         List<Long> ids = emailTicketRepository.findIdsByStatusIn(
