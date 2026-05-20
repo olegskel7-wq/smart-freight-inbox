@@ -3,13 +3,15 @@ package com.smartfreight.port_service.config;
 import com.smartfreight.port_service.TestcontainersConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.*;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * Integration tests for {@link ApiKeyFilter}.
@@ -18,52 +20,41 @@ import static org.assertj.core.api.Assertions.assertThat;
  * – Requests without X-API-Key are rejected with 401.
  * – Requests with a wrong key are rejected with 401.
  * – Requests with the correct key are allowed through (200 or 404, never 401/403).
- *
- * Uses a full Spring context with Testcontainers Postgres so that the
- * SecurityFilterChain, ApiKeyFilter, and the real endpoint are all active.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest
+@AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 @TestPropertySource(properties = "port.api.key=test-api-key-for-tests")
 class ApiKeyFilterTest {
 
     private static final String TEST_API_KEY = "test-api-key-for-tests";
-    private static final String TEST_CONTAINER_URL = "/api/containers/MSCU1234567";
+    private static final String TEST_URL = "/api/containers/MSCU1234567";
 
     @Autowired
-    private TestRestTemplate restTemplate;
+    private MockMvc mockMvc;
 
     @Test
-    void request_withoutApiKey_returns401() {
-        ResponseEntity<String> response = restTemplate.getForEntity(TEST_CONTAINER_URL, String.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    void request_withoutApiKey_returns401() throws Exception {
+        mockMvc.perform(get(TEST_URL))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void request_withWrongApiKey_returns401() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(ApiKeyFilter.API_KEY_HEADER, "completely-wrong-key");
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
-
-        ResponseEntity<String> response = restTemplate.exchange(
-                TEST_CONTAINER_URL, HttpMethod.GET, entity, String.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    void request_withWrongApiKey_returns401() throws Exception {
+        mockMvc.perform(get(TEST_URL)
+                        .header(ApiKeyFilter.API_KEY_HEADER, "completely-wrong-key"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void request_withCorrectApiKey_isAuthenticated() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(ApiKeyFilter.API_KEY_HEADER, TEST_API_KEY);
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
+    void request_withCorrectApiKey_isAuthenticated() throws Exception {
+        // 200 (found) or 404 (not seeded) — either proves authentication passed
+        int responseStatus = mockMvc.perform(get(TEST_URL)
+                        .header(ApiKeyFilter.API_KEY_HEADER, TEST_API_KEY))
+                .andReturn()
+                .getResponse()
+                .getStatus();
 
-        ResponseEntity<String> response = restTemplate.exchange(
-                TEST_CONTAINER_URL, HttpMethod.GET, entity, String.class);
-
-        // 200 (container exists in seed data) or 404 (not seeded) — both prove auth succeeded
-        assertThat(response.getStatusCode())
-                .isNotEqualTo(HttpStatus.UNAUTHORIZED)
-                .isNotEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(responseStatus).isNotEqualTo(401).isNotEqualTo(403);
     }
 }
