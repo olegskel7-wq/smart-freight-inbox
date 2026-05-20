@@ -1,11 +1,11 @@
 package com.smartfreight.inbox.service;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -43,9 +43,7 @@ class AiExtractionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiExtractionService(webClient);
-        // Инъектируем имя модели (т.к. @Value не работает в unit тестах без контекста)
-        ReflectionTestUtils.setField(service, "extractionModel", "qwen2.5:7b");
+        service = new AiExtractionService(webClient, new SimpleMeterRegistry(), "qwen2.5:7b");
     }
 
     /**

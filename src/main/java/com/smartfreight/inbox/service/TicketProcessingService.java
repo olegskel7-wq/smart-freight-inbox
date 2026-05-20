@@ -10,6 +10,8 @@ import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -30,7 +32,8 @@ import java.util.Optional;
  * ({@link com.smartfreight.inbox.integration.EmailIngestionService} / {@link com.smartfreight.inbox.scheduler.RetryScheduler}).
  *
  * Protection against optimistic lock conflicts: automatically retries up to MAX_RETRY_ATTEMPTS
- * (3 times) when Hibernate detects a version mismatch.
+ * (3 times). Each attempt runs in its own REQUIRES_NEW transaction so that a failed attempt's
+ * rollback-only state does not poison the next attempt.
  */
 @Service
 public class TicketProcessingService {
@@ -48,6 +51,15 @@ public class TicketProcessingService {
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
+
+    /**
+     * Self-reference to the Spring proxy so that @Transactional on processAttempt()
+     * and markFailed() is honoured on intra-class calls.
+     * @Lazy breaks the circular-dependency cycle during context startup.
+     */
+    @Autowired
+    @Lazy
+    private TicketProcessingService self;
 
     public TicketProcessingService(EmailTicketRepository emailTicketRepository,
                                    AiExtractionService aiExtractionService,
@@ -76,20 +88,17 @@ public class TicketProcessingService {
     /**
      * Processes a ticket through the three-step AI pipeline.
      *
-     * Propagation.REQUIRES_NEW — creates a new transaction for each invocation.
-     * Required because the method is called from an afterCommit() callback,
-     * when the current transaction is already closed.
+     * Not transactional itself — each attempt delegates to {@link #processAttempt} which
+     * opens its own REQUIRES_NEW transaction. This ensures that when Hibernate throws
+     * {@link ObjectOptimisticLockingFailureException} and marks a transaction rollback-only,
+     * the next attempt starts with a completely fresh transaction rather than inheriting
+     * the poisoned one.
      *
-     * Retry logic: if Hibernate detects a version conflict
-     * ({@link ObjectOptimisticLockingFailureException}), the method retries up to
-     * MAX_RETRY_ATTEMPTS (3) times before marking the ticket as FAILED.
-     *
-     * "Pass ID, not entity" pattern: the ticket is reloaded within this transaction,
-     * because a passed entity would be in a detached state and cause LazyInitializationException.
+     * "Pass ID, not entity" pattern: the ticket is reloaded inside processAttempt because
+     * a passed detached entity would cause LazyInitializationException.
      *
      * @param ticketId identifier of the ticket to process
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void process(Long ticketId) {
         MDC.put("ticketId", String.valueOf(ticketId));
         long startTime = System.nanoTime();
@@ -98,58 +107,18 @@ public class TicketProcessingService {
 
             for (int attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
                 try {
-                    EmailTicket ticket = emailTicketRepository.findById(ticketId)
-                            .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketId));
-
-                    if (ticket.getStatus() != TicketStatus.NEW && ticket.getStatus() != TicketStatus.RETRY_LATER) {
-                        log.warn("Ticket already in state {}, skipping", ticket.getStatus());
-                        return;
-                    }
-
-                    ticket.setStatus(TicketStatus.PROCESSING);
-                    ticket.setUpdatedAt(LocalDateTime.now());
-                    emailTicketRepository.saveAndFlush(ticket);
-
-                    log.info("Step 1/3: Extracting container number via Qwen 2.5");
-                    String containerNumber = aiExtractionService.extractContainerNumber(ticket.getBody());
-                    ticket.setExtractedContainerNumber(containerNumber.isEmpty() ? null : containerNumber);
-                    ticket.setUpdatedAt(LocalDateTime.now());
-                    emailTicketRepository.save(ticket);
-
-                    log.info("Step 2/3: Looking up container '{}' in database", containerNumber);
-                    Optional<Container> containerOpt = containerNumber.isEmpty()
-                            ? Optional.empty()
-                            : containerLookupService.findByNumber(containerNumber);
-
-                    Container container = containerOpt.orElse(null);
-                    if (container == null) {
-                        log.warn("Container '{}' not found — draft will reflect missing data", containerNumber);
-                    }
-
-                    log.info("Step 3/3: Generating reply draft via Llama 3.1");
-                    String draft = aiDraftingService.generateDraft(ticket.getBody(), container);
-                    ticket.setDraftReply(draft);
-
-                    ticket.setStatus(TicketStatus.DRAFT_READY);
-                    ticket.setUpdatedAt(LocalDateTime.now());
-                    emailTicketRepository.save(ticket);
-
-                    draftReadyCounter.increment();
-                    processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
-                    log.info("Ticket processing finished: DRAFT_READY");
-
-                    gmailDraftService.saveDraft(ticket);
+                    self.processAttempt(ticketId, startTime);
                     return;
-
                 } catch (ObjectOptimisticLockingFailureException e) {
-                    log.warn("Optimistic lock conflict on attempt {}/{}, retrying", attempt + 1, MAX_RETRY_ATTEMPTS);
+                    log.warn("Optimistic lock conflict on attempt {}/{}, retrying",
+                            attempt + 1, MAX_RETRY_ATTEMPTS);
                     if (attempt == MAX_RETRY_ATTEMPTS - 1) {
                         log.error("All retry attempts exhausted — marking ticket as FAILED");
-                        markFailed(ticketId);
+                        self.markFailed(ticketId);
                     }
                 } catch (Exception e) {
                     log.error("Unexpected error during ticket processing", e);
-                    markFailed(ticketId);
+                    self.markFailed(ticketId);
                     return;
                 }
             }
@@ -159,11 +128,70 @@ public class TicketProcessingService {
     }
 
     /**
-     * Marks a ticket as FAILED — reprocessing is not possible without manual intervention.
+     * Executes one attempt of the AI pipeline inside a dedicated transaction.
+     *
+     * REQUIRES_NEW guarantees a fresh transaction for every call, so an optimistic lock
+     * failure on attempt N cannot affect attempt N+1.
+     *
+     * @param ticketId  identifier of the ticket to process
+     * @param startTime {@code System.nanoTime()} captured at the start of {@link #process}
+     *                  for end-to-end duration measurement
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processAttempt(Long ticketId, long startTime) {
+        EmailTicket ticket = emailTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketId));
+
+        if (ticket.getStatus() != TicketStatus.NEW && ticket.getStatus() != TicketStatus.RETRY_LATER) {
+            log.warn("Ticket already in state {}, skipping", ticket.getStatus());
+            return;
+        }
+
+        ticket.setStatus(TicketStatus.PROCESSING);
+        ticket.setUpdatedAt(LocalDateTime.now());
+        emailTicketRepository.saveAndFlush(ticket);
+
+        log.info("Step 1/3: Extracting container number via Qwen 2.5");
+        String containerNumber = aiExtractionService.extractContainerNumber(ticket.getBody());
+        ticket.setExtractedContainerNumber(containerNumber.isEmpty() ? null : containerNumber);
+        ticket.setUpdatedAt(LocalDateTime.now());
+        emailTicketRepository.save(ticket);
+
+        log.info("Step 2/3: Looking up container '{}' in database", containerNumber);
+        Optional<Container> containerOpt = containerNumber.isEmpty()
+                ? Optional.empty()
+                : containerLookupService.findByNumber(containerNumber);
+
+        Container container = containerOpt.orElse(null);
+        if (container == null) {
+            log.warn("Container '{}' not found — draft will reflect missing data", containerNumber);
+        }
+
+        log.info("Step 3/3: Generating reply draft via Llama 3.1");
+        String draft = aiDraftingService.generateDraft(ticket.getBody(), container);
+        ticket.setDraftReply(draft);
+
+        ticket.setStatus(TicketStatus.DRAFT_READY);
+        ticket.setUpdatedAt(LocalDateTime.now());
+        emailTicketRepository.save(ticket);
+
+        draftReadyCounter.increment();
+        processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
+        log.info("Ticket processing finished: DRAFT_READY");
+
+        gmailDraftService.saveDraft(ticket);
+    }
+
+    /**
+     * Marks a ticket as FAILED in its own transaction.
+     *
+     * Public and REQUIRES_NEW so it can be called through the Spring proxy from
+     * {@link #process} after a failed attempt's transaction has already been rolled back.
      *
      * @param ticketId ticket identifier
      */
-    private void markFailed(Long ticketId) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markFailed(Long ticketId) {
         emailTicketRepository.findById(ticketId).ifPresent(t -> {
             t.setStatus(TicketStatus.FAILED);
             t.setUpdatedAt(LocalDateTime.now());

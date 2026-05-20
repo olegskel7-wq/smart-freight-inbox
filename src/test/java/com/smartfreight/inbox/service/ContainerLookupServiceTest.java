@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.Container;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,7 +30,7 @@ class ContainerLookupServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ContainerLookupService(webClient);
+        service = new ContainerLookupService(webClient, new SimpleMeterRegistry());
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

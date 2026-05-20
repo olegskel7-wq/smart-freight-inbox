@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.TicketProcessingService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Optional;
@@ -53,6 +55,9 @@ class EmailIngestionServiceTest {
     @Mock
     private EmailClassificationService emailClassificationService;
 
+    @Mock
+    private TaskExecutor taskExecutor;
+
     private EmailIngestionService emailIngestionService;
 
     /** Jakarta Mail sesija be jokių savybių – naudojama MimeMessage kūrimui testams. */
@@ -60,8 +65,13 @@ class EmailIngestionServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Run submitted Runnables immediately so process() calls are synchronous in tests
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
+
         emailIngestionService = new EmailIngestionService(
-                emailTicketRepository, ticketProcessingService, emailClassificationService);
+                emailTicketRepository, ticketProcessingService, emailClassificationService,
+                taskExecutor, new SimpleMeterRegistry());
         mailSession = Session.getInstance(new Properties());
         // Default: treat all emails as freight-relevant; individual tests override when needed.
         when(emailClassificationService.isFreightInquiry(any(), any())).thenReturn(true);

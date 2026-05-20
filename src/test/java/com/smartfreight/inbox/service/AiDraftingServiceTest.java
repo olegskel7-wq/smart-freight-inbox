@@ -1,12 +1,12 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.Container;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -31,8 +31,7 @@ class AiDraftingServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiDraftingService(webClient);
-        ReflectionTestUtils.setField(service, "draftingModel", "llama3.1:8b");
+        service = new AiDraftingService(webClient, new SimpleMeterRegistry(), "llama3.1:8b");
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

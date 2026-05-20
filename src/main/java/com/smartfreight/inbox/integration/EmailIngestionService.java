@@ -14,6 +14,8 @@ import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.stereotype.Service;
@@ -52,15 +54,18 @@ public class EmailIngestionService {
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
     private final EmailClassificationService emailClassificationService;
+    private final TaskExecutor taskExecutor;
     private final Counter receivedCounter;
 
     public EmailIngestionService(EmailTicketRepository emailTicketRepository,
                                  TicketProcessingService ticketProcessingService,
                                  EmailClassificationService emailClassificationService,
+                                 @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor,
                                  MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.emailClassificationService = emailClassificationService;
+        this.taskExecutor = taskExecutor;
         this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
                 .description("Total emails received and successfully ingested as tickets")
                 .register(meterRegistry);
@@ -147,7 +152,7 @@ public class EmailIngestionService {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        ticketProcessingService.process(ticketId);
+                        taskExecutor.execute(() -> ticketProcessingService.process(ticketId));
                     }
                 });
 
@@ -182,16 +187,22 @@ public class EmailIngestionService {
         }
 
         if (content instanceof Multipart multipart) {
-            StringBuilder sb = new StringBuilder();
+            StringBuilder plainSb = new StringBuilder();
+            StringBuilder htmlSb  = new StringBuilder();
             for (int i = 0; i < multipart.getCount(); i++) {
                 BodyPart part = multipart.getBodyPart(i);
                 if (part.isMimeType("text/plain")) {
-                    sb.append(part.getContent());
-                    sb.append("\n");
+                    plainSb.append(part.getContent()).append("\n");
+                } else if (part.isMimeType("text/html")) {
+                    htmlSb.append(part.getContent()).append("\n");
                 }
             }
-            if (!sb.isEmpty()) {
-                return sb.toString();
+            if (!plainSb.isEmpty()) {
+                return plainSb.toString();
+            }
+            // HTML-only email: strip tags for plain-text extraction
+            if (!htmlSb.isEmpty()) {
+                return htmlSb.toString().replaceAll("<[^>]+>", " ").replaceAll("\\s{2,}", " ").trim();
             }
             if (multipart.getCount() > 0) {
                 Object firstPart = multipart.getBodyPart(0).getContent();

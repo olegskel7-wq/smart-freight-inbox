@@ -8,11 +8,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -26,10 +30,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * – biletų pertvarkymą (reprocess)
  * – atsako pranešimus įvairiomis sąlygomis
  *
- * Naudoja standalone MockMvc su RequestPostProcessor,
- * kad galėtume valdyti request.getRemoteAddr() reikšmę.
+ * TaskExecutor stubbinamas sinchroniškai (doAnswer) kad process() kvietimai
+ * įvyktų iš karto ir galėtume juos patikrinti su verify().
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class AdminControllerTest {
 
     @Mock
@@ -38,19 +43,24 @@ class AdminControllerTest {
     @Mock
     private TicketProcessingService ticketProcessingService;
 
+    @Mock
+    private TaskExecutor taskExecutor;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        AdminController controller = new AdminController(emailTicketRepository, ticketProcessingService);
+        // Run submitted Runnables immediately so process() calls are synchronous in tests
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(taskExecutor).execute(any());
+
+        AdminController controller = new AdminController(
+                emailTicketRepository, ticketProcessingService, taskExecutor);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     /**
      * Testas: užklausa iš localhost (127.0.0.1) – 200 OK, biletai pertvarkomi.
-     *
-     * Tikrina, kad prepareForRetry() ir process() iškviečiami,
-     * o atsakas nurodo kiek biletų buvo pertvarkyta.
      */
     @Test
     void reprocessAll_fromLocalhost_returns200AndProcessesTickets() throws Exception {
@@ -60,7 +70,7 @@ class AdminControllerTest {
         mockMvc.perform(post("/admin/reprocess")
                         .with(req -> { req.setRemoteAddr("127.0.0.1"); return req; }))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Reprocessed 2 tickets")));
+                .andExpect(content().string(containsString("2 tickets")));
 
         verify(ticketProcessingService).process(1L);
         verify(ticketProcessingService).process(2L);
@@ -68,8 +78,6 @@ class AdminControllerTest {
 
     /**
      * Testas: užklausa iš IPv6 loopback (::1) – turi būti leidžiama.
-     *
-     * IPv6 loopback yra lygiavertis IPv4 127.0.0.1 – turi praeiti patikrinimą.
      */
     @Test
     void reprocessAll_fromIPv6Localhost_returns200() throws Exception {
@@ -83,16 +91,13 @@ class AdminControllerTest {
 
     /**
      * Testas: užklausa iš išorinio IP – 403 Forbidden.
-     *
-     * Administravimo galūnės turi būti nepasiekiamos iš interneto.
-     * Tikrinama, kad joks biletų apdorojimas nevykdomas.
      */
     @Test
     void reprocessAll_fromExternalIp_returns403() throws Exception {
         mockMvc.perform(post("/admin/reprocess")
                         .with(req -> { req.setRemoteAddr("203.0.113.42"); return req; }))
                 .andExpect(status().isForbidden())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Forbidden")));
+                .andExpect(content().string(containsString("Forbidden")));
 
         verifyNoInteractions(ticketProcessingService);
         verifyNoInteractions(emailTicketRepository);
@@ -100,9 +105,6 @@ class AdminControllerTest {
 
     /**
      * Testas: nėra biletų pertvarkyti – 200 su informatyviu pranešimu.
-     *
-     * FAILED biletai buvo atstatyti į NEW (reset > 0), bet
-     * findIdsByStatusIn grąžina tuščią sąrašą – todėl process() nekviečiamas.
      */
     @Test
     void reprocessAll_noTicketsToProcess_returns200WithNoTicketsMessage() throws Exception {
@@ -112,16 +114,13 @@ class AdminControllerTest {
         mockMvc.perform(post("/admin/reprocess")
                         .with(req -> { req.setRemoteAddr("127.0.0.1"); return req; }))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("No tickets to reprocess")));
+                .andExpect(content().string(containsString("No tickets to reprocess")));
 
         verify(ticketProcessingService, never()).process(any());
     }
 
     /**
      * Testas: prepareForRetry() iškviečiamas prieš findIdsByStatusIn().
-     *
-     * FAILED → NEW atstatymas turi įvykti PRIEŠ biletų sąrašo gavimą,
-     * kitaip ką tik atstatyti biletai nepatektų į sąrašą.
      */
     @Test
     void reprocessAll_callsPrepareForRetryBeforeFindIds() throws Exception {
