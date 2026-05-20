@@ -9,4 +9,4 @@
 
 spring:
   flyway:
-    locations: classpath:db/migration,classpath:db/migration/dev
+    locations: classpath:db/migration,classpath:db/dev-seed
