@@ -10,3 +10,9 @@
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/dev-seed
+
+# Local dev defaults — values that must be set via env vars in production.
+# These are intentionally weak/placeholder values safe only on a local machine.
+port:
+  service:
+    api-key: local-dev-api-key
