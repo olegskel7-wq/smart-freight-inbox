@@ -6,10 +6,11 @@ import org.springframework.context.annotation.Bean;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
- * Testcontainers configuration for integration tests.
+ * Testcontainers konfigūracija integraciniams testams.
  *
- * Automatically starts a PostgreSQL container and configures the Spring Boot
- * data source via {@code @ServiceConnection} (no manual DynamicPropertySource needed).
+ * Automatiškai paleidžia PostgreSQL konteinerį ir konfigūruoja
+ * Spring Boot duomenų šaltinį per @ServiceConnection anotaciją
+ * (nereikia rankiniu būdu registruoti DynamicPropertySource).
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {

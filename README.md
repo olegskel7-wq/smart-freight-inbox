@@ -50,7 +50,7 @@ Once the stack is up, you can access the services here:
 | **Grafana** | [http://localhost:3000](http://localhost:3000) | `admin` / `admin` (skip password change) |
 | **Prometheus** | [http://localhost:9090](http://localhost:9090) | *(No auth)* |
 | **Actuator Health** | [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health) | *(No auth)* |
-| **Port Service API** | [http://localhost:9000/api/containers/MSCU1234567](http://localhost:9000/api/containers/MSCU1234567) | *(No auth)* |
+| **Port Service API** | `http://localhost:9000/api/v1/containers/MSCU1234567` | `X-API-Key` header required |
 
 *Note: Grafana is pre-provisioned with the "Smart Freight Inbox" dashboard out of the box.*
 

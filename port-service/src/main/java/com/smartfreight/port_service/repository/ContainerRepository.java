@@ -7,31 +7,31 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
 /**
- * Spring Data JPA saugykla darbui su konteineriais.
+ * Spring Data JPA repository for working with containers.
  *
- * {@code @Repository} – Spring automatiškai sukuria šios sąsajos implementaciją
- * naudodamas cglib baito kodo generavimą arba Java proxy objektus.
+ * {@code @Repository} – Spring automatically creates an implementation of this interface
+ * using cglib bytecode generation or Java proxy objects.
  *
- * {@code JpaRepository<Entity, PrimaryKeyType>} suteikia CRUD metodus:
- * – findAll(), findById(), save(), delete() ir kt. (automatiškai)
- * – Pasirinktiniai metodai apibrėžiami per {@code @Query} arba metodo pavadinimo konvenciją
+ * {@code JpaRepository<Entity, PrimaryKeyType>} provides CRUD methods:
+ * – findAll(), findById(), save(), delete(), etc. (automatically)
+ * – Custom methods are defined via {@code @Query} or the method-name convention
  */
 @Repository
 public interface ContainerRepository extends JpaRepository<Container, Long> {
 
     /**
-     * Rasti konteinerį pagal ISO 6346 numerį.
+     * Find a container by its ISO 6346 number.
      *
-     * Spring Data JPA generuoja SQL:
+     * Spring Data JPA generates the SQL:
      * {@code SELECT * FROM container WHERE container_number = ?}
-     * pagal metodo pavadinimą ir parametrų tipus.
+     * based on the method name and parameter types.
      *
-     * Naudojama:
-     * – Pagrindiniame inbox programoje per ContainerLookupService
-     * – {@link com.smartfreight.port_service.scheduler.StatusUpdateScheduler} demonstracijos tikslais
+     * Used by:
+     * – The main inbox application via ContainerLookupService
+     * – {@link com.smartfreight.port_service.scheduler.StatusUpdateScheduler} for demonstration purposes
      *
-     * @param containerNumber konteinerio numeris (pvz. "MSCU1234567")
-     * @return Optional.of(konteineris) jei rastas, arba Optional.empty()
+     * @param containerNumber the container number (e.g. "MSCU1234567")
+     * @return Optional.of(container) if found, or Optional.empty()
      */
     Optional<Container> findByContainerNumber(String containerNumber);
 }

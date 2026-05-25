@@ -17,15 +17,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for {@link ContainerService} – verifies business logic without a Spring context.
+ * Unit tests for ContainerService — verify business logic without Spring context.
  *
- * Scenarios:
- * – Found container returns a DTO with correct fields.
- * – Not-found container returns Optional.empty().
- * – Null input returns Optional.empty() without calling the repository.
- * – Blank input returns Optional.empty() without calling the repository.
- * – Mixed-case number is normalised to uppercase before the DB lookup.
- * – Input with leading/trailing spaces is trimmed and normalised.
+ * Covered scenarios:
+ * – Found container returns DTO with correct fields
+ * – Unknown container returns Optional.empty()
+ * – Null input returns Optional.empty() without hitting the repository
+ * – Blank input returns Optional.empty() without hitting the repository
+ * – Mixed-case number is normalised to uppercase before DB lookup
  */
 @ExtendWith(MockitoExtension.class)
 class ContainerServiceTest {

@@ -42,7 +42,7 @@ public class ContainerService {
      * 5. Action logging (for audit and debugging)
      *
      * Used by the inbox application over HTTP:
-     * {@code inbox → ContainerLookupService → WebClient.get(/api/containers/{number}) → port-service}
+     * {@code inbox → ContainerLookupService → WebClient.get(/api/v1/containers/{number}) → port-service}
      *
      * @param containerNumber the container number (may be null, blank, or mixed case)
      * @return Optional.of(DTO) if the container is found, Optional.empty() otherwise

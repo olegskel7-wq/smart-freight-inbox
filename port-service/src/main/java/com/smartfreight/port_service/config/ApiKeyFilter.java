@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.jspecify.annotations.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,7 +23,7 @@ import java.util.List;
  * {@link SecurityConfig} denies access (HTTP 401).
  *
  * Usage: the inbox service sends {@code X-API-Key: <key>} with every
- * GET /api/containers/{number} request via {@code portServiceWebClient}.
+ * GET /api/v1/containers/{number} request via {@code portServiceWebClient}.
  */
 public class ApiKeyFilter extends OncePerRequestFilter {
 
@@ -36,8 +37,8 @@ public class ApiKeyFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain filterChain) throws ServletException, IOException {
         String providedKey = request.getHeader(API_KEY_HEADER);
         if (providedKey != null && MessageDigest.isEqual(
                 validApiKey.getBytes(StandardCharsets.UTF_8),

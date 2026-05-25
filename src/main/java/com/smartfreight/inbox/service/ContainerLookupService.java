@@ -62,7 +62,7 @@ public class ContainerLookupService {
 
         try {
             Container container = portServiceWebClient.get()
-                    .uri("/api/containers/{number}", normalized)
+                    .uri("/api/v1/containers/{number}", normalized)
                     .retrieve()
                     .onStatus(HttpStatusCode::is4xxClientError, response -> {
                         log.warn("Container not found in port-service: {}", normalized);

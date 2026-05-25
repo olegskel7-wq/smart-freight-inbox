@@ -1,6 +1,5 @@
 package com.smartfreight.port_service.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartfreight.port_service.dto.ContainerResponse;
 import com.smartfreight.port_service.service.ContainerService;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,14 +19,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Valdiklio vienetų testai – tikrina HTTP maršrutizavimą ir atsakymų formavimą.
+ * Unit tests for ContainerController — verify HTTP routing and response formatting.
  *
- * Naudojamas standalone MockMvc (be Spring konteksto), todėl testai vykdomi
- * itin greitai. ContainerService imituojamas per Mockito.
+ * Uses standalone MockMvc (no Spring context), so tests run very fast.
+ * ContainerService is mocked via Mockito.
  *
- * Testuojami scenarijai:
- * – 200 OK su JSON kūnu, kai konteineris rastas
- * – 404 Not Found, kai konteineris nerastas
+ * Covered scenarios:
+ * – 200 OK with JSON body when container is found
+ * – 404 Not Found when container does not exist
  */
 @ExtendWith(MockitoExtension.class)
 class ContainerControllerTest {
@@ -56,7 +55,7 @@ class ContainerControllerTest {
         );
         when(containerService.findByNumber("MSCU1234567")).thenReturn(Optional.of(dto));
 
-        mockMvc.perform(get("/api/containers/MSCU1234567"))
+        mockMvc.perform(get("/api/v1/containers/MSCU1234567"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType("application/json"))
                 .andExpect(jsonPath("$.containerNumber").value("MSCU1234567"))
@@ -68,7 +67,7 @@ class ContainerControllerTest {
     void getByNumber_nonExistingContainer_returns404() throws Exception {
         when(containerService.findByNumber("XXXX0000000")).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/api/containers/XXXX0000000"))
+        mockMvc.perform(get("/api/v1/containers/XXXX0000000"))
                 .andExpect(status().isNotFound());
     }
 
@@ -76,7 +75,7 @@ class ContainerControllerTest {
     void getByNumber_serviceReturnsEmpty_returns404() throws Exception {
         when(containerService.findByNumber("HLXU9999999")).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/api/containers/HLXU9999999"))
+        mockMvc.perform(get("/api/v1/containers/HLXU9999999"))
                 .andExpect(status().isNotFound());
     }
 }

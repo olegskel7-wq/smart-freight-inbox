@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import org.springframework.data.domain.PageRequest;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -70,8 +72,6 @@ public class StatusUpdateScheduler {
      * – fixedDelay guarantees the next run starts no earlier than the current one finishes
      *   (unlike fixedRate, which fires every N ms regardless of execution duration)
      *
-     * ShedLock ensures only one replica runs this job at a time across horizontal scaling.
-     *
      * Process:
      * 1. Fetch all containers from the DB
      * 2. Shuffle them (Collections.shuffle) for random selection
@@ -82,7 +82,7 @@ public class StatusUpdateScheduler {
     @Scheduled(fixedDelayString = "${port.scheduler.interval-ms:300000}")
     @SchedulerLock(name = "statusUpdateScheduler", lockAtLeastFor = "PT4M", lockAtMostFor = "PT6M")
     public void updateRandomContainerStatuses() {
-        List<Container> all = new ArrayList<>(containerRepository.findAll());
+        List<Container> all = new ArrayList<>(containerRepository.findAll(PageRequest.of(0, 1000)).getContent());
         if (all.isEmpty()) {
             return;
         }
@@ -90,7 +90,7 @@ public class StatusUpdateScheduler {
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         Collections.shuffle(all, rng);
 
-        int count = rng.nextInt(2) + 1;
+        int count = Math.min(rng.nextInt(2) + 1, all.size());
 
         List<Container> toUpdate = new ArrayList<>(count);
         for (Container container : all.subList(0, count)) {

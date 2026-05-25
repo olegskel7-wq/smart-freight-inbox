@@ -11,6 +11,10 @@ scrape_configs:
     static_configs:
       - targets: ['host.docker.internal:8080']
 
+  # port-service secures /api/v1/** and most of /actuator/** with an X-API-Key header.
+  # Prometheus cannot send custom request headers in scrape_configs, so /actuator/prometheus
+  # is intentionally left open at the application level and must be protected by network
+  # isolation in production (private network / internal management port / firewall).
   - job_name: 'smart-freight-port-service'
     metrics_path: '/actuator/prometheus'
     static_configs:

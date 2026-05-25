@@ -3,7 +3,7 @@ package com.smartfreight.port_service.config;
 import com.smartfreight.port_service.TestcontainersConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
@@ -28,7 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ApiKeyFilterTest {
 
     private static final String TEST_API_KEY = "test-api-key-for-tests";
-    private static final String TEST_URL = "/api/containers/MSCU1234567";
+    private static final String TEST_URL = "/api/v1/containers/MSCU1234567";
 
     @Autowired
     private MockMvc mockMvc;

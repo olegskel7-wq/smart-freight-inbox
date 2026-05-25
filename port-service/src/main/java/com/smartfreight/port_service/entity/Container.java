@@ -16,7 +16,7 @@ import static jakarta.persistence.EnumType.STRING;
  *
  * Example data:
  * – containerNumber = "MSCU1234567" (ISO 6346 format: 4 letters + 7 digits)
- * – status = AT_PORT (possible values: IN_TRANSIT, AT_PORT, CUSTOMS, RELEASED, DELIVERED)
+ * – status = "AT_PORT" (possible values: IN_TRANSIT, AT_PORT, CUSTOMS, RELEASED, DELIVERED)
  * – location = "Felixstowe Terminal 2" (port terminal location)
  * – eta = 2026-04-25T14:30:00 (estimated arrival / release time)
  */

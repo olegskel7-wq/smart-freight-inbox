@@ -15,4 +15,4 @@ spring:
 # These are intentionally weak/placeholder values safe only on a local machine.
 port:
   service:
-    api-key: local-dev-api-key
+    api-key: ${PORT_SERVICE_API_KEY:local-dev-api-key}

@@ -1,6 +1,7 @@
 package com.smartfreight.port_service.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.smartfreight.port_service.entity.Container;
 
 import java.time.LocalDateTime;
 
@@ -14,7 +15,7 @@ import java.time.LocalDateTime;
  * 4. Security – sensitive DB information (e.g. password hashes) is never exposed in the response
  *
  * Used as:
- * {@code GET /api/containers/MSCU1234567 → ContainerResponse JSON}
+ * {@code GET /api/v1/containers/MSCU1234567 → ContainerResponse JSON}
  *
  * @param containerNumber the container number (ISO 6346)
  * @param status status in the port system (IN_TRANSIT, AT_PORT, DELIVERED, etc.)
@@ -45,7 +46,7 @@ public record ContainerResponse(
      * @param c the JPA container entity
      * @return DTO ready for JSON serialization
      */
-    public static ContainerResponse from(com.smartfreight.port_service.entity.Container c) {
+    public static ContainerResponse from(Container c) {
         return new ContainerResponse(
                 c.getContainerNumber(),
                 c.getStatus() != null ? c.getStatus().name() : null,

@@ -6,23 +6,28 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Smoke test for the port-service microservice.
+ * Dūmų testas (smoke test) mikropaslaugai port-service.
  *
- * Verifies that the application starts without errors:
- * 1. Spring context is initialised successfully.
- * 2. All components are created and wired.
- * 3. DB migrations run (Flyway).
- * 4. Configuration is valid.
+ * Patikrina, kad programa paleidžiama be klaidų:
+ * 1. Spring kontekstas inicializuojamas sėkmingai
+ * 2. Visi komponentai sukuriami ir sujungiami
+ * 3. DB migruojama per Flyway (realus PostgreSQL per Testcontainers)
+ * 4. Konfigūracija galiojanti
  *
- * {@code @SpringBootTest} raises the full context (same as a real startup).
+ * {@link TestcontainersConfiguration} automatiškai paleidžia PostgreSQL konteinerį
+ * ir konfigūruoja duomenų šaltinį – testas nepriklausomas nuo lokalios DB.
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @TestPropertySource(properties = "port.api.key=test-api-key-smoke")
 class PortServiceApplicationTests {
 
+    /**
+     * Jei testas praėjo – konfigūracija teisinga ir Flyway migracija sėkminga.
+     * Jei išmesta išimtis – yra konfigūracijos arba migracijos klaida.
+     */
     @Test
     void contextLoads() {
-        // Empty by design: context loading itself is the assertion.
+        // Tuščias tyčia: pats konteksto įkėlimas yra pakankamas patikrinimas
     }
 }
