@@ -3,6 +3,7 @@ package com.smartfreight.port_service;
 import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -19,7 +20,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * @see com.smartfreight.port_service.scheduler.StatusUpdateScheduler – periodic status updates
  * @see com.smartfreight.port_service.controller.ContainerController – REST API for container queries
  */
-@SpringBootApplication
+// Authentication is handled by ApiKeyFilter, not by a login form, so the default
+// in-memory user (and its random generated password) is unnecessary — exclude it.
+@SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
 @EnableScheduling
 @EnableSchedulerLock(defaultLockAtMostFor = "PT6M")
 public class PortServiceApplication {
