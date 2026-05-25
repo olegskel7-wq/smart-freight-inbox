@@ -195,10 +195,12 @@ VM: -Djava.rmi.server.hostname=127.0.0.1 -Djava.net.preferIPv4Stack=true
 ## 📁 Расположение файлов
 
 ```
-C:\Users\olegs\Downloads\inbox\inbox\        — главное приложение
-C:\Users\olegs\Downloads\port-service\port-service\ — микросервис данных
-C:\Users\olegs\Desktop\ENTERPRISE_PLAN.md    — план развития
+C:\Users\olegs\Downloads\inbox\inbox\               — монорепо (git), главное приложение
+C:\Users\olegs\Downloads\inbox\inbox\port-service\  — микросервис данных (подпапка монорепо)
+C:\Users\olegs\Desktop\ENTERPRISE_PLAN.md           — план развития
 ```
+> ⚠️ Раньше port-service был отдельной папкой `Downloads\port-service` — удалена 25.05.2026.
+> Теперь единственная копия в монорепо. Открывать в IntelliJ именно её.
 
 ---
 
