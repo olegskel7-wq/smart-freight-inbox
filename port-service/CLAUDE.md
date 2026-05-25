@@ -47,6 +47,21 @@ DB_HOST=localhost / DB_PORT=5435
 VM: -Djava.net.preferIPv4Stack=true
 ```
 
+### Перед запуском поднять БД (из папки inbox/inbox):
+```
+docker compose up -d postgres port-db
+```
+postgres = БД inbox (5433, smartfreight), port-db = БД port-service (5435, port_system)
+
+### ⚠️ Flyway: НЕ редактировать применённые миграции
+Изменение даже комментария в уже применённой миграции ломает checksum-валидацию
+(`Migration checksum mismatch`). Если всё же изменил — repair:
+```
+docker exec inbox-port-db-1 psql -U postgres -d port_system \
+  -c "UPDATE flyway_schema_history SET checksum=<новый> WHERE version='N';"
+```
+Новые изменения схемы — только новой миграцией (V7, V8, ...).
+
 ## Известные проблемы
 - Медленный старт (~20 сек) → решение: Java 25 (lazy-initialization пробовали — не помогло, убрали)
 
