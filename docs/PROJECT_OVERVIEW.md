@@ -151,11 +151,11 @@ Smart Freight Inbox combines **local AI**, **human oversight**, and **structured
 | Version | Status | Description |
 |---------|--------|-------------|
 | **v1 (MVP)** | Feature-complete for demo | Monolith: IMAP IDLE + synchronous AI pipeline + PostgreSQL + Thymeleaf UI + REST API |
-| **v2** | Planned | Scale-out: RabbitMQ + Redis + Microsoft Graph API + multi-tenant |
+| **v2** | Planned | Scale-out: RabbitMQ + Redis + Keycloak + multi-tenant + React/Next.js UI |
 
-**v1** is a university capstone project demonstrating real-world applicability of local LLMs in enterprise workflows.
+**v1** is a working MVP — the foundation for a commercial SaaS product targeting UK businesses.
 
-**v2** extends the architecture toward production-readiness: replacing in-process synchronous handling with RabbitMQ-backed workers, adding multi-tenancy so multiple freight companies can use the same deployment, and replacing IMAP with Microsoft Graph API for better reliability and Office 365 integration.
+**v2** extends the architecture toward production-readiness: replacing in-process synchronous handling with RabbitMQ-backed workers, adding multi-tenancy (PostgreSQL Row-Level Security) so multiple companies can use the same deployment, and introducing Keycloak for OAuth2/OIDC authentication. See [`docs/V2_ARCHITECTURE_AND_PLAN.md`](./V2_ARCHITECTURE_AND_PLAN.md) for the full roadmap.
 
 ---
 
@@ -169,4 +169,4 @@ Smart Freight Inbox combines **local AI**, **human oversight**, and **structured
 
 ## Author
 
-Built as a university graduation project exploring practical applications of on-premise large language models in industrial logistics workflows.
+Built as a graduation project, now evolving into a commercial SaaS product for the UK market. The core thesis: on-premise local LLMs make AI email automation viable for GDPR-sensitive industries where data cannot leave the company's own infrastructure.

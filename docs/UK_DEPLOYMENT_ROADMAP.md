@@ -14,15 +14,6 @@ looks up live status, and drafts professional replies for operator review.
 
 ---
 
-## Assets Created (local)
-
-| File | Purpose |
-|------|---------|
-| `C:\Users\olegs\Downloads\smartfreight-presentation.html` | UK client landing page (navy/orange, British English) |
-| `C:\Users\olegs\Downloads\smartfreight-demo.html` | Animated interactive UI demo — record with Loom/OBS |
-
----
-
 ## CI/CD Status
 
 - **CI** (tests + build): active — triggers on every `git push` ✅
@@ -34,10 +25,20 @@ Files: `.github/workflows/ci.yml` + `.github/workflows/deploy.yml`
 
 ## Server Setup Checklist
 
-### 1. Rent VPS — Hetzner CX22 (~€4.5/mo)
-- Site: hetzner.com → Cloud → CX22
+### 1. Rent VPS — UK-based server (GDPR requirement)
+
+> ⚠️ **UK data residency is a core product promise** — "100% UK infrastructure".
+> Do NOT use servers in Finland, Germany or the US. UK customers in legal, healthcare,
+> and finance sectors require data to stay in the UK.
+
+Recommended options:
+- **AWS EC2 `eu-west-2` (London)** — t3.medium ~$35/mo, industry-standard, easy SSL
+- **Hetzner UK** (London) — CX22 ~€5/mo if available in UK region (verify at hetzner.com)
+- **OVHcloud UK** (London/Gravelines UK) — affordable, UK DC
+
+Minimum spec: 2 vCPU, 4 GB RAM (Ollama requires 8+ GB — use GPU instance or demo-mode mock)
+
 - OS: Ubuntu 24.04
-- Region: Finland or Germany
 - Get: IP address + root SSH access
 
 ### 2. Server bootstrap (run as root)
