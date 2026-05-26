@@ -1,80 +1,81 @@
 # port-service / item-service
-## CLAUDE.md — Контекст для AI ассистента
+## CLAUDE.md — AI Assistant Context
 
-Этот микросервис — часть Universal AI Email Automation Platform.
-**Полный контекст проекта:** `C:\Users\olegs\Downloads\inbox\inbox\CLAUDE.md`
+This microservice is part of the Universal AI Email Automation Platform.  
+**Full project context:** `C:\Users\olegs\Downloads\inbox\inbox\CLAUDE.md`
 
 ---
 
-## Назначение
-REST микросервис — backend данных для inbox приложения.
-Текущая реализация: контейнеры в порту Felixstowe.
-**План:** универсализировать в item-service (любая сфера).
+## Purpose
+REST microservice — data backend for the inbox application.  
+Current implementation: containers at Felixstowe port.  
+**Plan:** universalise into item-service (any sector).
 
 ## Endpoint
 ```
-GET /api/v1/items/{identifier}
-Защищён: X-API-Key header (timing-safe comparison)
+GET /api/v1/containers/{identifier}
+Protected by: X-API-Key header (timing-safe comparison)
 ```
 
-## Ключевые файлы
+## Key Files
 ```
 ContainerController   → REST endpoint
-ContainerService      → нормализация, трансформация
+ContainerService      → normalisation, transformation
 ContainerRepository   → Spring Data JPA
 Container (entity)    → JPA entity
 ContainerResponse     → DTO (record)
 ContainerStatus       → enum: IN_TRANSIT, AT_PORT, CUSTOMS, RELEASED, DELIVERED
-StatusUpdateScheduler → симуляция обновлений (каждые 5 мин, ShedLock)
-ApiKeyFilter          → timing-safe API Key аутентификация
+StatusUpdateScheduler → status update simulation (every 5 min, ShedLock)
+ApiKeyFilter          → timing-safe API Key authentication
 SecurityConfig        → Spring Security stateless
 ShedLockConfig        → distributed lock config
 ```
 
-## Flyway миграции
+## Flyway Migrations
 ```
-V1 — схема таблицы + индекс
-V2 — seed данных (7 контейнеров)
-V3 — расширение данных
-V4 — CHECK constraint на status (валидация на уровне БД)
-V5 — shedlock таблица
+V1 — table schema + index
+V2 — seed data (7 containers)
+V3 — data expansion
+V4 — CHECK constraint on status (DB-level validation)
+V5 — shedlock table
+V6 — drop redundant index idx_container_number
 ```
 
-## Конфигурация запуска (IntelliJ)
+## Run Configuration (IntelliJ)
 ```
 PORT_SERVICE_API_KEY=smartfreight-port-secret
 DB_HOST=localhost / DB_PORT=5435
 VM: -Djava.net.preferIPv4Stack=true
 ```
 
-### Перед запуском поднять БД (из папки inbox/inbox):
+### Before starting — bring up the DB (from the inbox/inbox folder):
 ```
 docker compose up -d postgres port-db
 ```
-postgres = БД inbox (5433, smartfreight), port-db = БД port-service (5435, port_system)
+postgres = inbox DB (5433, smartfreight), port-db = port-service DB (5435, port_system)
 
-### ⚠️ Flyway: НЕ редактировать применённые миграции
-Изменение даже комментария в уже применённой миграции ломает checksum-валидацию
-(`Migration checksum mismatch`). Если всё же изменил — repair:
+### ⚠️ Flyway: DO NOT edit applied migrations
+Changing even a comment in an already-applied migration breaks checksum validation
+(`Migration checksum mismatch`). If you did — repair:
 ```
 docker exec inbox-port-db-1 psql -U postgres -d port_system \
-  -c "UPDATE flyway_schema_history SET checksum=<новый> WHERE version='N';"
+  -c "UPDATE flyway_schema_history SET checksum=<new> WHERE version='N';"
 ```
-Новые изменения схемы — только новой миграцией (V7, V8, ...).
+New schema changes — only via a new migration (V7, V8, ...).
 
-## Известные проблемы
-- Медленный старт (~20 сек) → решение: Java 25 (lazy-initialization пробовали — не помогло, убрали)
+## Known Issues
+- Slow startup (~20 sec) → solution: Java 25 (lazy-initialization tried — did not help, removed)
 
-## Сделано в code review (25 мая 2026)
-- ✅ findAll() в StatusUpdateScheduler → пагинация PageRequest.of(0, 1000)
-- ✅ API версионирован: /api/containers → /api/v1/containers (inbox обновлён синхронно)
+## Done in Code Review (25 May 2026)
+- ✅ findAll() in StatusUpdateScheduler → pagination PageRequest.of(0, 1000)
+- ✅ API versioned: /api/containers → /api/v1/containers (inbox updated in sync)
 - ✅ 404 → RFC 7807 ProblemDetail (ContainerNotFoundException + GlobalExceptionHandler)
-- ✅ Actuator закрыт: health (only when-authorized details) + /actuator/prometheus открыты, остальное под X-API-Key
-- ✅ Fail-fast при дефолтном ключе dev-local-key в профиле prod (ApiKeyStartupValidator)
-- ✅ Убран дублирующий индекс idx_container_number (миграция V6)
-- ⚠️ Prometheus НЕ умеет слать кастомный X-API-Key → /actuator/prometheus защищается сетевой изоляцией в проде, не ключом
+- ✅ Actuator locked down: health (only when-authorized details) + /actuator/prometheus open, rest under X-API-Key
+- ✅ Fail-fast on default key dev-local-key in prod profile (ApiKeyStartupValidator)
+- ✅ Removed duplicate index idx_container_number (migration V6)
+- ⚠️ Prometheus cannot send a custom X-API-Key → /actuator/prometheus is protected by network isolation in prod, not by key
 
-## Следующий шаг (Phase 0)
-Переименовать Container → TrackedItem, сделать статусы конфигурируемыми из БД
+## Next Step (Phase 0)
+Rename Container → TrackedItem, make statuses configurable from DB
 
-*Последнее обновление: 25 мая 2026*
+*Last updated: 26 May 2026*
