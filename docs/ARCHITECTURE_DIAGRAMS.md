@@ -7,53 +7,51 @@
 
 ## 1. System Overview
 
-High-level view of all services and their interactions.
-
 ```mermaid
 flowchart TD
     subgraph External
-        IMAP[📧 IMAP Server]
-        SMTP[📤 SMTP Server]
+        IMAP["📧 IMAP Server"]
+        SMTP["📤 SMTP Server"]
     end
 
     subgraph inbox ["inbox service :8080"]
-        Ingestion[EmailIngestionService\nIMAP IDLE listener]
-        Pipeline[TicketProcessingService\nAI pipeline orchestrator]
-        UI[Thymeleaf UI\nOperator interface]
-        Scheduler[RetryScheduler\nevery 2 min]
+        Ingestion["EmailIngestionService<br/>IMAP IDLE listener"]
+        Pipeline["TicketProcessingService<br/>AI pipeline orchestrator"]
+        UI["Thymeleaf UI<br/>Operator interface"]
+        Scheduler["RetryScheduler<br/>every 2 min"]
     end
 
     subgraph PortSystem ["port-service :9000"]
-        PortAPI[ContainerController\nREST API]
-        PortDB[(PostgreSQL\nport_system)]
-        PortScheduler[StatusUpdateScheduler\nevery 5 min + ShedLock]
+        PortAPI["ContainerController<br/>REST API"]
+        PortDB[("PostgreSQL<br/>port_system")]
+        PortScheduler["StatusUpdateScheduler<br/>every 5 min + ShedLock"]
     end
 
     subgraph AI ["Ollama :11434"]
-        Qwen[Qwen 2.5:7b\nextraction]
-        Llama[Llama 3.1:8b\ndrafting]
+        Qwen["Qwen 2.5:7b<br/>extraction"]
+        Llama["Llama 3.1:8b<br/>drafting"]
     end
 
     subgraph Monitoring
-        Prometheus[Prometheus :9090]
-        Grafana[Grafana :3000]
+        Prometheus["Prometheus :9090"]
+        Grafana["Grafana :3000"]
     end
 
-    InboxDB[(PostgreSQL\nsmartfreight)]
+    InboxDB[("PostgreSQL<br/>smartfreight")]
 
-    IMAP -->|IMAP IDLE push| Ingestion
-    Ingestion -->|afterCommit| Pipeline
-    Pipeline <-->|POST /api/generate| Qwen
-    Pipeline <-->|POST /api/generate| Llama
-    Pipeline -->|GET /api/v1/containers/| PortAPI
+    IMAP -->|"IMAP IDLE push"| Ingestion
+    Ingestion -->|"afterCommit"| Pipeline
+    Pipeline <-->|"POST /api/generate"| Qwen
+    Pipeline <-->|"POST /api/generate"| Llama
+    Pipeline -->|"GET /api/v1/containers/"| PortAPI
     Pipeline --> InboxDB
     PortAPI <--> PortDB
     PortScheduler --> PortDB
     UI <--> InboxDB
-    UI -->|SMTP reply| SMTP
+    UI -->|"SMTP reply"| SMTP
     Scheduler --> Pipeline
 
-    inbox -.->|/actuator/prometheus| Prometheus
+    inbox -.->|"/actuator/prometheus"| Prometheus
     Prometheus -.-> Grafana
 ```
 
@@ -61,75 +59,64 @@ flowchart TD
 
 ## 2. Email Processing Pipeline
 
-Step-by-step flow from incoming email to operator review.
-
 ```mermaid
 flowchart TD
-    A([📧 New email arrives\nIMAP IDLE push]) --> B[EmailIngestionService\nprocessIncomingEmail]
+    A(["📧 New email\nIMAP IDLE push"]) --> B["EmailIngestionService"]
 
-    B --> C{System-generated\nemail?}
-    C -->|Yes — our own draft header| Z1([🚫 Ignore\navoid infinite loop])
+    B --> C{"System-generated\nemail?"}
+    C -->|"Yes — draft header"| Z1(["🚫 Ignore\navoid loop"])
+    C -->|"No"| D{"Message-ID\npresent?"}
+    D -->|"No"| Z2(["🚫 Ignore"])
+    D -->|"Yes"| E["Copy to byte array\nguard vs FolderClosedException"]
 
-    C -->|No| D{Message-ID\npresent?}
-    D -->|No — malformed email| Z2([🚫 Ignore])
+    E --> F{"Size > 10 MB?"}
+    F -->|"Yes"| Z3(["🚫 Ignore"])
+    F -->|"No"| G["EmailClassificationService\nQwen 2.5 — up to 30s"]
 
-    D -->|Yes| E[Copy to byte array\nByteArrayOutputStream\nguard against FolderClosedException]
-    E --> F{Size > 10 MB?}
-    F -->|Yes| Z3([🚫 Ignore\nprotect heap])
+    G --> H{"Freight enquiry?"}
+    H -->|"IRRELEVANT"| Z4(["🚫 Ignore"])
+    H -->|"RELEVANT"| I{"Duplicate?\nfindByMessageId"}
+    I -->|"Exists"| Z5(["🚫 Ignore"])
+    I -->|"New"| J["Save EmailTicket\nstatus = NEW"]
 
-    F -->|No| G[EmailClassificationService\nQwen 2.5 — up to 30s\nRELEVANT / IRRELEVANT]
+    J --> K["Register afterCommit hook"]
+    K --> L(["Transaction committed\nDB connection released"])
+    L --> M["TicketProcessingService.process\nREQUIRES_NEW"]
+    M --> N["status = PROCESSING\nsaveAndFlush"]
 
-    G --> H{Relevant\nfreight enquiry?}
-    H -->|IRRELEVANT| Z4([🚫 Ignore\nno DB touch])
-    H -->|fail-open: Ollama down| I
+    N --> O["Step 1 — AiExtractionService\nQwen 2.5:7b — up to 150s"]
+    O --> P{"Container number\nfound?"}
+    P -->|"LLM clean result"| Q["e.g. MSCU1234567"]
+    P -->|"LLM added extra text"| R["Regex in LLM response"] --> Q
+    P -->|"LLM failed"| S["Regex in email body"] --> Q
+    S -->|"Nothing found"| Q2["identifier = empty"]
 
-    H -->|RELEVANT| I{Duplicate?\nfindByMessageId}
-    I -->|Already exists| Z5([🚫 Ignore])
-
-    I -->|New| J[Save EmailTicket\nstatus = NEW\nto PostgreSQL]
-    J --> K[Register afterCommit hook\nTransactionSynchronizationManager]
-    K --> L([Transaction committed\nDB connection released])
-
-    L --> M[TicketProcessingService.process\nREQUIRES_NEW transaction]
-    M --> N[status → PROCESSING\nsaveAndFlush — visible to all threads]
-
-    N --> O["Step 1/3 — AiExtractionService\nQwen 2.5:7b — up to 150s"]
-    O --> P{ISO 6346 number\nfound?}
-    P -->|LLM returned clean result| Q[Container number\ne.g. MSCU1234567]
-    P -->|LLM added extra text| R[Regex search in LLM response\n[A-Z]{4}\d{7}] --> Q
-    P -->|LLM failed| S[Regex search in email body] --> Q
-    S -->|Nothing found| Q2[extractedIdentifier = empty]
-
-    Q --> T["Step 2/3 — ContainerLookupService\nHTTP GET port-service — up to 30s"]
+    Q --> T["Step 2 — ContainerLookupService\nHTTP GET port-service"]
     Q2 --> T
-    T --> U{Container\nfound?}
-    U -->|404 or error| V[container = null\nfail-open: continue]
-    U -->|200 OK| W[Container: status, location, ETA]
+    T --> U{"Container found?"}
+    U -->|"404 or error"| V["container = null\nfail-open: continue"]
+    U -->|"200 OK"| W["Container: status, location, ETA"]
 
-    V --> X["Step 3/3 — AiDraftingService\nLlama 3.1:8b — up to 150s"]
+    V --> X["Step 3 — AiDraftingService\nLlama 3.1:8b — up to 150s"]
     W --> X
 
-    X --> Y{Ollama\nresponded?}
-    Y -->|No| AB[Static fallback draft\nwith DB data]
-    Y -->|Yes| AC[Professional reply draft\nin customer's language]
+    X --> Y{"Ollama\nresponded?"}
+    Y -->|"No"| AB["Static fallback draft"]
+    Y -->|"Yes"| AC["Professional reply draft\nin customer's language"]
 
-    AB --> AD[status = DRAFT_READY\nsave draftReply]
+    AB --> AD["status = DRAFT_READY\nsave draftReply"]
     AC --> AD
 
-    AD --> AE[GmailDraftService\nsave to Drafts folder\nbest-effort]
-    AD --> AF[Micrometer metrics\ndraftReadyCounter++\nprocessingTimer.record]
+    AD --> AG(["👤 Operator reviews\n/tickets UI"])
+    AG --> AH{"Decision"}
+    AH -->|"Send"| AI["EmailReplyService\nSMTP → customer\nstatus = CLOSED"]
+    AH -->|"Close"| AJ(["CLOSED\nno email sent"])
+    AH -->|"Snooze"| AK(["RETRY_LATER"])
 
-    AD --> AG([👤 Operator opens /tickets\nreviews draft])
-
-    AG --> AH{Operator\ndecision}
-    AH -->|Send| AI[EmailReplyService\nSMTP → customer\nIn-Reply-To header\nstatus → CLOSED]
-    AH -->|Close| AJ([status = CLOSED\nno email sent])
-    AH -->|Snooze| AK([status = RETRY_LATER])
-
-    AK --> AL[RetryScheduler\nevery 2 min]
-    AL --> AM{retryCount < 5?}
-    AM -->|Yes| AN[retryCount++\nstatus → NEW\nre-run process] --> M
-    AM -->|No| AO([Stay RETRY_LATER\nmanual intervention needed])
+    AK --> AL["RetryScheduler\nevery 2 min"]
+    AL --> AM{"retryCount < 5?"}
+    AM -->|"Yes"| AN["retryCount++\nstatus = NEW"] --> M
+    AM -->|"No"| AO(["Stay RETRY_LATER\nmanual action needed"])
 ```
 
 ---
@@ -138,143 +125,113 @@ flowchart TD
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NEW : Email received\nand saved to DB
+    [*] --> NEW : Email received and saved
 
-    NEW --> PROCESSING : process() started\nsaveAndFlush
+    NEW --> PROCESSING : process() started
 
-    PROCESSING --> DRAFT_READY : AI successfully\ngenerated draft
+    PROCESSING --> DRAFT_READY : AI generated draft
+    PROCESSING --> FAILED : Error — all attempts exhausted
 
-    PROCESSING --> FAILED : Unexpected error\n(all attempts exhausted)
-
-    DRAFT_READY --> CLOSED : Operator sent reply\nor closed without sending
-
+    DRAFT_READY --> CLOSED : Operator sent or closed
     DRAFT_READY --> RETRY_LATER : Operator snoozed
 
-    RETRY_LATER --> NEW : RetryScheduler\nretryCount < 5
+    RETRY_LATER --> NEW : RetryScheduler — retryCount < 5
+    RETRY_LATER --> RETRY_LATER : retryCount >= 5 — manual action
 
-    RETRY_LATER --> RETRY_LATER : retryCount ≥ 5\nawaiting manual action
-
-    CLOSED --> [*] : Soft delete\ndeleted = true
-
-    note right of PROCESSING
-        saveAndFlush — immediately
-        visible to other threads
-        @Version optimistic lock
-    end note
-
-    note right of RETRY_LATER
-        MAX_RETRIES = 5
-        fixedDelay = 120s
-        initialDelay = 60s
-    end note
+    CLOSED --> [*] : Soft delete — deleted = true
 ```
 
 ---
 
-## 4. inbox — Package & Class Structure
+## 4. inbox — Package Structure
 
 ```mermaid
 flowchart TB
-    subgraph root ["com.smartfreight.inbox"]
-        APP[InboxApplication\n@SpringBootApplication\n@EnableScheduling]
+    subgraph config ["config/"]
+        IC["ImapConfig\nIMAP IDLE → mailChannel"]
+        SC["SecurityConfig\nform login + BCrypt + CSRF"]
+        WC["WebClientConfig\nollamaWebClient\nportServiceWebClient + X-API-Key"]
+        SM["SmtpConfig\nJavaMailSender"]
+        DU["DbUserDetailsService\nloadUserByUsername"]
+    end
 
-        subgraph config ["config/"]
-            IC[ImapConfig\nIMAP IDLE → mailChannel]
-            SC[SecurityConfig\nform login + BCrypt\nCSRF enabled]
-            WC[WebClientConfig\nollamaWebClient\nportServiceWebClient + X-API-Key]
-            SMTP2[SmtpConfig\nJavaMailSender]
-            DU[DbUserDetailsService\nloadUserByUsername]
-        end
+    subgraph integration ["integration/"]
+        EIS["EmailIngestionService\n@ServiceActivator on mailChannel"]
+    end
 
-        subgraph integration ["integration/"]
-            EIS[EmailIngestionService\n@ServiceActivator\nmailChannel → handleEmail]
-        end
+    subgraph service ["service/"]
+        TPS["TicketProcessingService\norchestrates steps 1–3\nREQUIRES_NEW"]
+        AES["AiExtractionService\nQwen 2.5:7b + regex fallback"]
+        ADS["AiDraftingService\nLlama 3.1:8b + static fallback"]
+        CLS["ContainerLookupService\nHTTP GET port-service"]
+        ECS["EmailClassificationService\nRELEVANT / IRRELEVANT — fail-open"]
+        ERS["EmailReplyService\nSMTP + In-Reply-To header"]
+        GDS["GmailDraftService\nIMAP APPEND to Drafts folder"]
+        UMS["UserManagementService\nBCrypt encode + validate"]
+        SS["SettingsService\nAppSetting key-value CRUD"]
+        TAS["TicketAuditService\nimmutable audit trail"]
+        SRL["SendRateLimiter\nper-address throttle"]
+    end
 
-        subgraph service ["service/"]
-            TPS[TicketProcessingService\n@Transactional REQUIRES_NEW\norchestrates steps 1-3]
-            AES[AiExtractionService\nQwen 2.5:7b\nregex fallback]
-            ADS[AiDraftingService\nLlama 3.1:8b\nstatic fallback]
-            CLS[ContainerLookupService\nHTTP GET port-service\nnormalise → uppercase]
-            ERS[EmailReplyService\nSMTP + threading headers]
-            ECS[EmailClassificationService\nQwen 2.5 RELEVANT/IRRELEVANT\nfail-open]
-            GDS[GmailDraftService\nIMAP APPEND → Drafts]
-            UMS[UserManagementService\nBCrypt encode]
-            SS[SettingsService\nAppSetting CRUD]
-            TAS[TicketAuditService\nimmutable audit log]
-            SRL[SendRateLimiter\nper-address throttle]
-        end
+    subgraph controller ["controller/"]
+        TVC["TicketViewController\nGET /tickets\nPOST /tickets/{id}/draft, close, delete"]
+        AC["AdminController\nlocalhost-only reprocess"]
+        UC["UserManagementController\nadmin user CRUD"]
+        SC2["SettingsController\nGET/POST /settings"]
+    end
 
-        subgraph controller ["controller/"]
-            TVC[TicketViewController\nGET /tickets\nPOST /tickets/id/draft\nclose / delete]
-            AC[AdminController\nlocalhost-only\nPOST /admin/reprocess]
-            UC[UserManagementController\nPOST /admin/users]
-            SettC[SettingsController\nGET/POST /settings]
-        end
+    subgraph other ["other"]
+        RS["RetryScheduler\nfixedDelay=120s\nRETRY_LATER → NEW"]
+        OHI["OllamaHealthIndicator\nchecks both models"]
+        TMB["TicketMetricsBinder\nGauge per status\nCounters for draft/fail/retry"]
+        STR["StuckTicketRecovery\nPROCESSING → NEW on restart"]
+    end
 
-        subgraph scheduler ["scheduler/"]
-            RS[RetryScheduler\n@Scheduled fixedDelay=120s\nRETRY_LATER → NEW]
-        end
-
-        subgraph actuator ["actuator/"]
-            OHI[OllamaHealthIndicator\nGET /api/tags\nchecks both models]
-            TMB[TicketMetricsBinder\nGauge per TicketStatus\nCounter draft/failed/retry]
-        end
-
-        subgraph entity ["entity/"]
-            ET[EmailTicket\n@Version optimistic lock\n@SQLDelete soft delete\n@SQLRestriction deleted=false]
-            US[User\nBCrypt password]
-            AS2[AppSetting\nkey-value config]
-            TAL[TicketAuditLog\nimmutable audit trail]
-            TS[enums/TicketStatus\nNEW PROCESSING DRAFT_READY\nFAILED RETRY_LATER CLOSED]
-        end
-
-        subgraph startup ["startup/"]
-            STR[StuckTicketRecovery\n@EventListener ApplicationReady\nPROCESSING → NEW on restart]
-        end
+    subgraph entity ["entity/"]
+        ET["EmailTicket\noptimistic lock @Version\nsoft delete @SQLDelete"]
+        US2["User — BCrypt password"]
+        AS2["AppSetting — key-value config"]
+        TAL["TicketAuditLog — immutable"]
+        TS["TicketStatus enum\nNEW PROCESSING DRAFT_READY\nFAILED RETRY_LATER CLOSED"]
     end
 ```
 
 ---
 
-## 5. port-service — Package & Class Structure
+## 5. port-service — Package Structure
 
 ```mermaid
 flowchart TB
-    subgraph root ["com.smartfreight.port_service"]
-        APP2[PortServiceApplication\n@SpringBootApplication\n@EnableScheduling\n@EnableSchedulerLock]
+    subgraph config2 ["config/"]
+        SC3["SecurityConfig\nstateless REST — CSRF disabled\nApiKeyFilter before password filter"]
+        AKF["ApiKeyFilter\nX-API-Key header\ntiming-safe MessageDigest.isEqual"]
+        AKV["ApiKeyStartupValidator\nfail-fast on default key in prod"]
+        SLC["ShedLockConfig\nJdbcTemplateLockProvider + usingDbTime"]
+    end
 
-        subgraph config2 ["config/"]
-            SC2[SecurityConfig\nstateless REST\nCSRF disabled\nApiKeyFilter before UsernamePasswordFilter]
-            AKF[ApiKeyFilter\nOncePerRequestFilter\nX-API-Key header\ntiming-safe MessageDigest.isEqual]
-            AKV[ApiKeyStartupValidator\nfail-fast on dev-local-key\nin prod profile]
-            SLC[ShedLockConfig\nJdbcTemplateLockProvider\nusingDbTime]
-        end
+    subgraph controller2 ["controller/"]
+        CC["ContainerController\nGET /api/v1/containers/{number}\n200 ContainerResponse / 404 ProblemDetail"]
+    end
 
-        subgraph controller2 ["controller/"]
-            CC[ContainerController\nGET /api/v1/containers/{number}\n200 ContainerResponse\n404 ProblemDetail]
-        end
+    subgraph service2 ["service/"]
+        CS["ContainerService\nnormalise: trim + toUpperCase\nreturns Optional ContainerResponse"]
+    end
 
-        subgraph service2 ["service/"]
-            CS[ContainerService\nnormalise: trim + toUpperCase\nOptional ContainerResponse]
-        end
+    subgraph entity2 ["entity/"]
+        CON["Container — JPA entity"]
+        CST["ContainerStatus enum\nIN_TRANSIT → AT_PORT\nCUSTOMS → RELEASED → DELIVERED"]
+    end
 
-        subgraph entity2 ["entity/"]
-            CON[Container\n@Entity]
-            CST[ContainerStatus enum\nIN_TRANSIT → AT_PORT\nCUSTOMS → RELEASED → DELIVERED]
-        end
+    subgraph dto ["dto/"]
+        CR["ContainerResponse — Java record\nfrom(Container) factory method"]
+    end
 
-        subgraph dto ["dto/"]
-            CR[ContainerResponse\nJava record\n@JsonFormat timestamps\nfrom entity factory method]
-        end
+    subgraph scheduler2 ["scheduler/"]
+        SUS["StatusUpdateScheduler\nfixedDelay=5min\nSchedulerLock lockAtLeast=4min\nrandom 1–2 containers — cyclic advance"]
+    end
 
-        subgraph scheduler2 ["scheduler/"]
-            SUS[StatusUpdateScheduler\n@Scheduled fixedDelay=5min\n@SchedulerLock lockAtLeast=4min\nrandom 1-2 containers\ncyclic status advance]
-        end
-
-        subgraph exception2 ["exception/"]
-            CNF[ContainerNotFoundException]
-            GEH[GlobalExceptionHandler\nRFC 7807 ProblemDetail]
-        end
+    subgraph exception2 ["exception/"]
+        GEH["GlobalExceptionHandler\nRFC 7807 ProblemDetail"]
     end
 ```
 
@@ -289,31 +246,31 @@ sequenceDiagram
     participant DU as DbUserDetailsService
     participant DB as PostgreSQL
 
-    Note over B,DB: Form Login (inbox UI)
+    Note over B,DB: Form Login — inbox UI
 
-    B->>SC: POST /login {email, password}
+    B->>SC: POST /login with email + password
     SC->>DU: loadUserByUsername(email)
-    DU->>DB: SELECT * FROM app_user WHERE email = ?
-    DB-->>DU: User {email, bcrypt_hash, role}
+    DU->>DB: SELECT FROM app_user WHERE email = ?
+    DB-->>DU: User row with BCrypt hash
     DU-->>SC: UserDetails
-    SC->>SC: BCryptPasswordEncoder.matches(raw, hash)
-    SC-->>B: Set-Cookie: JSESSIONID\nRedirect → /tickets
+    SC->>SC: BCryptPasswordEncoder.matches
+    SC-->>B: Set-Cookie JSESSIONID — redirect to /tickets
 
     Note over B,DB: Subsequent requests
 
-    B->>SC: GET /tickets + Cookie: JSESSIONID
-    SC->>SC: Resolve session → authenticated
+    B->>SC: GET /tickets + Cookie JSESSIONID
+    SC->>SC: Resolve session — authenticated
     SC-->>B: 200 tickets.html
 
-    Note over B,DB: Inter-service (inbox → port-service)
+    Note over B,DB: Inter-service — inbox to port-service
 
     participant PS as port-service
     participant AKF as ApiKeyFilter
 
-    B->>PS: GET /api/v1/containers/MSCU1234567\nX-API-Key: <secret>
+    B->>PS: GET /api/v1/containers/MSCU1234567 + X-API-Key header
     PS->>AKF: doFilterInternal
-    AKF->>AKF: MessageDigest.isEqual(provided, configured)\ntiming-safe comparison
-    AKF-->>PS: SecurityContext ← ROLE_API
+    AKF->>AKF: MessageDigest.isEqual — timing-safe
+    AKF-->>PS: SecurityContext = ROLE_API
     PS-->>B: 200 ContainerResponse JSON
 ```
 
@@ -324,24 +281,24 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph App ["inbox :8080"]
-        MB[TicketMetricsBinder\nGauge per status\nCounter draft/fail/retry]
-        TPS2[TicketProcessingService\ntimer.record duration]
-        OHI2[OllamaHealthIndicator\nstatus UP/DOWN]
-        ACT[/actuator/prometheus]
+        MB["TicketMetricsBinder\nGauge per status\nCounter draft/fail/retry"]
+        TPS2["TicketProcessingService\ntimer.record duration"]
+        OHI2["OllamaHealthIndicator\nstatus UP / DOWN"]
+        ACT["/actuator/prometheus"]
         MB --> ACT
         TPS2 --> ACT
         OHI2 --> ACT
     end
 
-    ACT -->|scrape every 15s| PR[Prometheus :9090\ntime-series storage]
-    PR -->|PromQL queries| GF[Grafana :3000\npre-provisioned dashboard]
+    ACT -->|"scrape every 15s"| PR["Prometheus :9090"]
+    PR -->|"PromQL queries"| GF["Grafana :3000\npre-provisioned dashboard"]
 
     subgraph Dashboard ["Grafana panels"]
-        P1[Tickets by status\npie chart]
-        P2[Avg processing time\nNEW → DRAFT_READY]
-        P3[Retry count total]
-        P4[Ollama health\nUP / DOWN]
-        P5[Backlog\nNEW + RETRY_LATER]
+        P1["Tickets by status — pie"]
+        P2["Avg processing time"]
+        P3["Retry count total"]
+        P4["Ollama health UP/DOWN"]
+        P5["Backlog NEW + RETRY_LATER"]
     end
 
     GF --> Dashboard
@@ -352,37 +309,20 @@ flowchart LR
 ## 8. Roadmap — Phase Overview
 
 ```mermaid
-timeline
-    title Universal AI Email Automation Platform — Roadmap
-    section Now
-        Phase 0 : Universalisation
-                : Container → TrackedItem
-                : Configurable statuses from DB
-                : Configurable AI prompts per tenant
-                : Abstract ItemLookupService
-    section Next
-        Phase 1 : Critical Architecture Fixes
-                : RabbitMQ async pipeline
-                : Resilience4j circuit breaker
-                : Keycloak OAuth2/OIDC
-                : Redis cache + rate limiting
-        Phase 2 : Multi-tenancy
-                : PostgreSQL Row-Level Security
-                : Per-tenant mailbox + prompts + LLM
-    section Later
-        Phase 3 : Infrastructure
-                : Kubernetes + Terraform
-                : Loki + Jaeger + Sentry
-                : CI/CD Blue-Green
-        Phase 4 : Product
-                : React/Next.js UI
-                : Webhook API for CRM
-                : Self-service onboarding
-        Phase 5 : Compliance
-                : GDPR/ICO encryption + retention
-                : Audit log
-                : HashiCorp Vault
-                : Penetration testing
+flowchart LR
+    P0["Phase 0 — NOW\nUniversalisation\nTrackedItem\nConfigurable statuses\nConfigurable prompts\nItemLookupService"]
+    P1["Phase 1 — Next\nCritical fixes\nRabbitMQ async pipeline\nResilience4j\nKeycloak OAuth2\nRedis"]
+    P2["Phase 2\nMulti-tenancy\nPostgreSQL RLS\nPer-tenant config"]
+    P3["Phase 3\nInfrastructure\nKubernetes + Terraform\nLoki + Jaeger + Sentry\nCI/CD Blue-Green"]
+    P4["Phase 4\nProduct\nReact/Next.js UI\nWebhook API\nSelf-service onboarding"]
+    P5["Phase 5\nCompliance\nGDPR/ICO\nAudit log\nHashiCorp Vault\nPentest"]
+
+    P0 --> P1 --> P2 --> P4 --> P5
+    P1 --> P3
+    P3 --> P4
+
+    style P0 fill:#ff8c42,color:#fff
+    style P1 fill:#4a9eff,color:#fff
 ```
 
 ---
@@ -393,28 +333,28 @@ timeline
 flowchart TB
     subgraph compose ["Docker Compose — llm_internal network"]
         subgraph app ["Application layer"]
-            BE[backend\ninbox :8080]
-            PS2[port-service\n:9000]
+            BE["backend\ninbox :8080"]
+            PS2["port-service\n:9000"]
         end
 
         subgraph data ["Data layer"]
-            PG[postgres:16\nsmartfreight DB\n:5433]
-            PDB[port-db\npostgres:16\nport_system DB\n:5435]
-            OL[ollama:0.3.14\n:11434\nQwen 2.5 + Llama 3.1]
+            PG["postgres:16\nsmartfreight DB :5433"]
+            PDB["port-db\npostgres:16\nport_system DB :5435"]
+            OL["ollama:0.3.14\n:11434\nQwen 2.5 + Llama 3.1"]
         end
 
         subgraph obs ["Observability layer"]
-            PR2[prometheus\n:9090]
-            GF2[grafana\n:3000\nauto-provisioned]
+            PR2["prometheus :9090"]
+            GF2["grafana :3000\nauto-provisioned"]
         end
     end
 
-    BE -->|depends_on| PG
-    BE -->|depends_on| PS2
-    BE -->|depends_on| OL
-    PS2 -->|depends_on| PDB
-    PR2 -->|scrape :8080/actuator/prometheus| BE
-    GF2 -->|datasource| PR2
+    BE -->|"depends_on"| PG
+    BE -->|"depends_on"| PS2
+    BE -->|"depends_on"| OL
+    PS2 -->|"depends_on"| PDB
+    PR2 -->|"scrape /actuator/prometheus"| BE
+    GF2 -->|"datasource"| PR2
 
     style BE fill:#4a9eff,color:#fff
     style PS2 fill:#4a9eff,color:#fff
