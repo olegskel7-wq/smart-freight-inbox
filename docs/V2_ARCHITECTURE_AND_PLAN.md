@@ -1,205 +1,256 @@
-# Smart Freight Inbox — Version 2 (full architecture & implementation plan)
+# Universal AI Email Automation Platform — Architecture & Roadmap
 
-> **Purpose of this document:** single source of truth for v2. It does not prescribe changes to v1 code here.  
-> **Team decision:** v2 uses **RabbitMQ** (not Kafka). Anywhere the original plan said “RabbitMQ or Kafka”, this project means **RabbitMQ**.
-
----
-
-## 1. Purpose of v2
-
-Version 2 is a **production-grade, scalable, multi-tenant** evolution of Smart Freight Inbox.  
-It extends v1 with:
-
-- **RabbitMQ** message queues
-- **Redis** (cache, rate limiting, distributed locks)
-- **Microsoft Graph API** instead of IMAP for email ingestion
-- **Multi-tenant** architecture
-- **Resilience** (circuit breaker, retry, bulkhead)
-- **SLA monitoring**
-- **Horizontal scaling**
-- A full **DevOps** pipeline
-
-**Development boundaries:**
-
-- **v1 = MVP** (already implemented) — do not break it without an explicit task.
-- **v2 = scale-out extension** — implement separately (e.g. package/module `v2`).
+> **Single source of truth for the product roadmap.**  
+> Phases are sequential; each phase builds on the previous one.  
+> The current codebase is v1 (SmartFreight Inbox MVP) — it is refactored in place, not forked into a separate package.
 
 ---
 
-## 2. Full technology stack (v2)
+## Current State (v1 — Complete)
 
-### Backend
+A working MVP deployed as two microservices:
 
-- Java 17
-- Spring Boot 4.0.5 (keep aligned with the actual Spring Boot version in the repository)
-- Spring Security 6 (JWT + refresh tokens)
-- Spring Data JPA
-- PostgreSQL
-- Redis (cache, rate limiting, distributed locks)
-- **RabbitMQ** (message broker)
-- Microsoft Graph API (email ingestion)
-- Resilience (circuit breaker, retry, bulkhead)
-- Micrometer + Prometheus + Grafana
-- OpenTelemetry (distributed tracing)
+| Service | Port | Description |
+|---------|------|-------------|
+| `inbox` | 8080 | IMAP IDLE ingestion → AI pipeline → Thymeleaf UI |
+| `port-service` | 9000 | Container data backend (freight-specific) |
 
-### AI
-
-- Ollama (on-premise)
-- Qwen 2.5 — extraction
-- Llama 3.1 — drafting
-- Embeddings for semantic search (optional)
-
-### Frontend
-
-- Angular 17
-- Multi-tenant UI
-- Role-based access control
-
-### DevOps
-
-- Docker Compose
-- Kubernetes (optional)
-- CI/CD pipeline
-- Secrets management (HashiCorp Vault / Azure Key Vault)
-
----
-
-## 3. High-level architecture (v2)
-
+**AI pipeline (synchronous):**
 ```
-Microsoft Graph API → Email Ingestion Service
-                           │
-                           ▼
-                         RabbitMQ
-                           │
-                           ▼
-                 Ticket Processing Worker
-        ┌──────────────┬───────────────┬───────────────┐
-        ▼              ▼               ▼
-  Extraction (Qwen)   Container Lookup   Drafting (Llama)
-        │              │               │
-        └──────────────┴───────────────┴───────────────┘
-                           ▼
-                     PostgreSQL + Redis
-                           ▼
-                        Operator UI
+IMAP IDLE → EmailIngestionService → AiExtractionService (Qwen 2.5)
+         → ContainerLookupService → AiDraftingService (Llama 3.1)
+         → operator reviews in UI → SMTP reply
 ```
 
----
-
-## 4. Major changes from v1 → v2
-
-1. **IMAP → Microsoft Graph API**  
-   Webhooks and delta queries; no mailbox polling; avoids IMAP IDLE reconnect issues.
-
-2. **In-process async → RabbitMQ pipeline**  
-   At-least-once delivery, retry/backoff, dead-letter queues, horizontal scaling of consumers.
-
-3. **Redis**  
-   Container caching, rate limiting, distributed locks, refresh-token storage.
-
-4. **Multi-tenancy**  
-   `tenant_id` on tenant-scoped tables, row-level filtering, tenant-aware JWT claims, tenant-scoped cache keys.
-
-5. **Resilience**  
-   Circuit breaker around Ollama calls, retry with backoff, bulkhead isolation for LLM workloads.
-
-6. **Observability**  
-   OpenTelemetry traces, Prometheus metrics, Grafana dashboards.
+**Known limitations to fix:**
+- Synchronous AI pipeline blocks IMAP thread
+- Freight/container terminology hardcoded throughout
+- No Circuit Breaker on inter-service calls
+- Session-based auth doesn't scale horizontally
+- Single tenant only
 
 ---
 
-## 5. Backend module layout (v2)
+## Phase 0 — Universalisation (2–3 weeks) ← NEXT
+
+**Goal:** Remove all freight-specific terminology so the platform can serve any sector (estate agents, transport, legal, NHS, etc.) without code changes.
+
+### Changes
+- `Container` entity → `TrackedItem`
+- `port-service` → `item-service`
+- `ContainerStatus` hardcoded enum → configurable statuses stored in DB per tenant
+- `ContainerLookupService` → `ItemLookupService` interface with pluggable implementations
+- AI prompts (extraction + drafting) → configurable per tenant in DB (not hardcoded strings)
+- `extractedContainerNumber` field → `extractedIdentifier`
+
+### Result
+A single codebase that can be configured for any customer sector via DB settings — no redeploy required.
+
+---
+
+## Phase 1 — Critical Architecture Fixes (4–5 weeks)
+
+**Goal:** Make the platform production-ready before adding tenants.
+
+### 1.1 Async AI Pipeline (RabbitMQ)
+The synchronous pipeline is the biggest architectural risk: one slow LLM call blocks the IMAP thread.
 
 ```
-src/main/java/com/smartfreight/inbox/v2
-│
-├── config/
-│   ├── TenantConfig.java
-│   ├── RedisConfig.java
-│   ├── RabbitConfig.java
-│   ├── GraphApiConfig.java
-│   ├── ResilienceConfig.java
-│   ├── OpenTelemetryConfig.java
-│
-├── ingestion/
-│   ├── GraphWebhookController.java
-│   ├── GraphDeltaService.java
-│   ├── EmailNormalizationService.java
-│
-├── queue/
-│   ├── TicketProducer.java
-│   ├── TicketConsumer.java
-│   ├── DeadLetterHandler.java
-│
-├── processing/
-│   ├── ExtractionWorker.java
-│   ├── DraftingWorker.java
-│   ├── ContainerLookupWorker.java
-│
-├── tenant/
-│   ├── TenantResolver.java
-│   ├── TenantContext.java
-│   ├── TenantFilter.java
-│
-├── security/
-│   ├── JwtTenantFilter.java
-│   ├── RefreshTokenService.java
-│
-└── util/
-    ├── RateLimiter.java
-    ├── DistributedLock.java
+EmailIngestionService → RabbitMQ (ticket.created) → TicketProcessingConsumer
+                                                  → dead-letter queue on failure
+```
+
+- At-least-once delivery with persistent messages
+- Retry/backoff on transient LLM failures
+- Dead-letter queue for permanently failed tickets
+- Horizontal scaling of consumers independent of ingestion
+
+### 1.2 Circuit Breaker (Resilience4j)
+Wrap all external calls (Ollama, item-service):
+- Circuit breaker: open at 50% failures over 10 calls
+- Retry: 3 attempts with exponential backoff (2s → 4s → 8s)
+- Bulkhead: max 4 concurrent Ollama calls
+
+### 1.3 OAuth2/OIDC — Keycloak
+Replace session-based form login with Keycloak:
+- Operator UI: Authorization Code flow (browser-based)
+- Inter-service (inbox → item-service): Client Credentials flow, replace API Key
+- Scales horizontally without sticky sessions
+- Ready for multi-tenant roles in Phase 2
+
+### 1.4 Redis
+- Session store (Keycloak tokens cache)
+- Item/container lookup cache (reduce item-service calls)
+- Rate limiting on AI endpoints
+- Distributed lock (replace ShedLock with Redis-based locking)
+
+### 1.5 Small fixes
+- `findAll()` without pagination → `Page<>` with `Pageable`
+- API versioning consolidated at `/api/v1/` everywhere
+
+---
+
+## Phase 2 — Multi-tenancy (5–6 weeks)
+
+**Goal:** One deployment serves multiple customers (tenants), each fully isolated.
+
+### Data isolation
+- `tenant_id` column on all tenant-scoped tables (`email_ticket`, `tracked_item`, prompts, statuses)
+- **PostgreSQL Row-Level Security (RLS)** — enforced at DB level, not just application layer
+- Per-tenant Flyway schema or schema-per-tenant strategy
+
+### Configuration per tenant
+Each tenant configures independently via admin UI:
+- Mailbox credentials (IMAP/SMTP)
+- AI prompts (extraction + drafting)
+- LLM endpoint (Ollama on-premise or cloud API)
+- Tracked item statuses and their labels
+- Notification settings
+
+### Auth with tenant context
+- Keycloak realm per tenant (or single realm with tenant claim in JWT)
+- `TenantContext` (ThreadLocal) resolved from JWT claim on every request
+- All JPA queries automatically scoped to current tenant via RLS
+
+---
+
+## Phase 3 — Infrastructure (parallel with Phase 2)
+
+### Kubernetes
+- Helm charts for inbox, item-service, RabbitMQ, Redis, Keycloak
+- Horizontal Pod Autoscaler on `TicketProcessingConsumer`
+- Secrets via Kubernetes Secrets + external-secrets operator
+
+### Terraform
+- UK cloud infrastructure as code (AWS London / Azure UK South)
+- VPC, RDS (PostgreSQL), ElastiCache (Redis), EKS/AKS
+
+### Observability stack
+- **Loki** — log aggregation (replaces ad-hoc log reading)
+- **Jaeger** — distributed tracing (end-to-end: email in → SMTP out)
+- **Sentry** — error tracking with stack traces and alerts
+- **OpenTelemetry** SDK wired into all services → exports to Jaeger
+
+### CI/CD
+- GitHub Actions → Blue-Green deployments
+- Automated rollback on health check failure
+
+---
+
+## Phase 4 — Product (5–6 weeks)
+
+### React/Next.js UI
+Replace Thymeleaf with a modern SPA:
+- Server-side rendering for initial load (Next.js)
+- Real-time ticket updates via WebSocket
+- Multi-tenant admin panel (per-tenant config, user management)
+- SLA dashboard (avg processing time, failure rate, queue depth)
+
+### Webhook API
+Allow customers to integrate with their own CRMs:
+```
+POST /api/v1/webhooks
+Events: ticket.created, ticket.draft_ready, ticket.replied, ticket.closed
+```
+
+### Self-service onboarding
+- Tenant registration → Keycloak realm provisioned automatically
+- Guided setup: connect mailbox → configure prompts → test with sample email
+- Subscription management (Stripe integration)
+
+---
+
+## Phase 5 — Compliance (3–4 weeks)
+
+### GDPR / ICO
+- Encryption at rest (PostgreSQL Transparent Data Encryption or column-level)
+- Data retention policy: auto-delete email bodies after configurable period
+- Right to erasure: `DELETE /api/v1/tenants/{id}/data`
+- Data Processing Agreement template in onboarding flow
+
+### Audit log
+- Immutable append-only log: who did what to which ticket and when
+- Exportable by tenant admin (ICO compliance)
+
+### Secrets management
+- HashiCorp Vault for all credentials (DB passwords, SMTP, API keys)
+- Dynamic secrets for DB (short-lived credentials, auto-rotated)
+
+### Penetration testing
+- OWASP ZAP automated scan in CI
+- Annual external pentest before enterprise sales
+
+---
+
+## Target Architecture Diagram
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │         Tenant A / Tenant B / ...        │
+                    │  (isolated by RLS + Keycloak realm)      │
+                    └────────────┬────────────────────────────┘
+                                 │
+              ┌──────────────────▼──────────────────┐
+              │           inbox service              │
+              │                                     │
+   IMAP ──────► EmailIngestionService               │
+              │         │                           │
+              │         ▼                           │
+              │      RabbitMQ                       │
+              │         │                           │
+              │         ▼                           │
+              │  TicketProcessingConsumer           │
+              │    ├─ Resilience4j (CB + retry)    │
+              │    ├─ AiExtractionService (Qwen)   │
+              │    ├─ ItemLookupService             │──► item-service :9000
+              │    └─ AiDraftingService (Llama)    │
+              │         │                           │
+              │         ▼                           │
+              │      PostgreSQL (RLS)               │
+              │      Redis (cache + locks)          │
+              │         │                           │
+              │         ▼                           │
+              │   Next.js UI / Webhook API          │
+              └──────────────────────────────────── ┘
+                                 │
+              ┌──────────────────▼──────────────────┐
+              │            Keycloak                  │
+              │   (OAuth2/OIDC, per-tenant roles)   │
+              └─────────────────────────────────────┘
+                                 │
+              ┌──────────────────▼──────────────────┐
+              │         Observability                │
+              │   Loki + Jaeger + Sentry + Grafana  │
+              └─────────────────────────────────────┘
 ```
 
 ---
 
-## 6. Implementation phases
+## Phase Summary
 
-### Phase 1 — Messaging layer
-
-- **RabbitMQ** configuration  
-- `TicketProducer`, `TicketConsumer`, dead-letter queue handling
-
-### Phase 2 — Microsoft Graph API
-
-- `GraphWebhookController`, `GraphDeltaService`, `EmailNormalizationService`
-
-### Phase 3 — Redis layer
-
-- `RedisConfig`, `DistributedLock`, `RateLimiter`, Redis-backed refresh tokens
-
-### Phase 4 — Multi-tenancy
-
-- `TenantContext`, `TenantResolver`, `TenantFilter`, tenant-aware JPA queries
-
-### Phase 5 — Resilience4j
-
-- Circuit breaker for Ollama, retry policies, bulkhead configuration
-
-### Phase 6 — Observability
-
-- OpenTelemetry wiring, traces across queue → worker → database, Prometheus & Grafana
-
-### Phase 7 — UI
-
-- Multi-tenant login, tenant switching, SLA-oriented dashboards
+| Phase | Focus | Duration | Prerequisite |
+|-------|-------|----------|--------------|
+| **0** | Universalisation (TrackedItem, configurable statuses + prompts) | 2–3 weeks | v1 complete ✅ |
+| **1** | RabbitMQ + Resilience4j + Keycloak + Redis | 4–5 weeks | Phase 0 |
+| **2** | Multi-tenancy (RLS, per-tenant config) | 5–6 weeks | Phase 1 |
+| **3** | Kubernetes + Terraform + Loki/Jaeger/Sentry + CI/CD | parallel with 2 | Phase 1 |
+| **4** | React/Next.js UI + Webhook API + self-service onboarding | 5–6 weeks | Phase 2 |
+| **5** | GDPR/ICO + Audit log + Vault + Pentest | 3–4 weeks | Phase 4 |
 
 ---
 
-## 7. Instructions for Cursor / AI agents (summary)
+## Technology Decisions Log
 
-- This document defines **Smart Freight Inbox v2**.
-- **v1 is implemented** — do not modify v1 code unless there is a separate, explicit task.
-- Implement **v2 in isolation** following the package structure above.
-- Email ingestion: **Microsoft Graph API**.
-- Messaging: **RabbitMQ**.
-- **Redis**: caching, rate limiting, locks.
-- **Multi-tenant**: `tenant_id`, filtering, JWT claims.
-- **Resilience**: circuit breaker, retry, bulkhead.
-- **OpenTelemetry** + **Prometheus/Grafana**.
-
-Before generating code, confirm with the project owner **which phase or package to start from**.
+| Decision | Chosen | Rejected | Reason |
+|----------|--------|----------|--------|
+| Message broker | RabbitMQ | Kafka | Simpler ops, sufficient for expected volume |
+| Email ingestion | IMAP IDLE (keep) | Microsoft Graph API | IMAP works for any provider, Graph is Microsoft-only |
+| Frontend | React / Next.js | Angular | Larger ecosystem, SSR built-in, better hire market in UK |
+| Identity | Keycloak | Auth0 / Cognito | Self-hosted, UK data residency, no per-MAU cost |
+| DB isolation | PostgreSQL RLS | Schema-per-tenant | Simpler migrations, single connection pool |
+| Tracing | Jaeger (via OpenTelemetry) | Zipkin | Better UI, CNCF standard |
+| Secrets | HashiCorp Vault | AWS Secrets Manager | Cloud-agnostic, dynamic secrets |
 
 ---
 
-*This file is the canonical v2 plan stored in the repository.*
+*Last updated: 26 May 2026*
