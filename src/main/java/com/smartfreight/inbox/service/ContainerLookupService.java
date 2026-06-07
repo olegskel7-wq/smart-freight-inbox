@@ -20,7 +20,7 @@ import java.util.Optional;
  * {@link Optional#empty()} is returned and the AI will generate a draft without data.
  */
 @Service
-public class ContainerLookupService {
+public class ContainerLookupService implements ItemLookupService {
 
     private static final Logger log = LoggerFactory.getLogger(ContainerLookupService.class);
 
@@ -49,16 +49,17 @@ public class ContainerLookupService {
      * Network errors (timeout, 5xx) also return an empty Optional —
      * the AI pipeline must work even when port-service is unavailable.
      *
-     * @param containerNumber ISO 6346 container number (e.g. MSCU1234567)
+     * @param identifier ISO 6346 container number (e.g. MSCU1234567)
      * @return container data if found, or an empty Optional
      */
-    public Optional<Container> findByNumber(String containerNumber) {
-        if (containerNumber == null || containerNumber.isBlank()) {
+    @Override
+    public Optional<Container> findByIdentifier(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
             log.warn("Container lookup called with empty number");
             return Optional.empty();
         }
 
-        String normalized = containerNumber.trim().toUpperCase();
+        String normalized = identifier.trim().toUpperCase();
 
         try {
             Container container = portServiceWebClient.get()

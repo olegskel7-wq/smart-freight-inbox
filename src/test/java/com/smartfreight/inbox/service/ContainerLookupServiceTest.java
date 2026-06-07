@@ -53,14 +53,14 @@ class ContainerLookupServiceTest {
 
     // Сценарий 1: port-service вернул контейнер — возвращаем его
     @Test
-    void findByNumber_containerFound_returnsContainer() {
+    void findByIdentifier_containerFound_returnsContainer() {
         Container container = new Container();
         container.setContainerNumber("MSCU1234567");
         container.setStatus("AT_PORT");
         container.setLocation("Felixstowe Terminal 2");
         stubPortService(container);
 
-        Optional<Container> result = service.findByNumber("MSCU1234567");
+        Optional<Container> result = service.findByIdentifier("MSCU1234567");
 
         assertTrue(result.isPresent());
         assertEquals("MSCU1234567", result.get().getContainerNumber());
@@ -69,39 +69,39 @@ class ContainerLookupServiceTest {
 
     // Сценарий 2: Передан пустой номер — возвращаем empty без HTTP-вызова
     @Test
-    void findByNumber_emptyNumber_returnsEmpty() {
-        Optional<Container> result = service.findByNumber("  ");
+    void findByIdentifier_emptyNumber_returnsEmpty() {
+        Optional<Container> result = service.findByIdentifier("  ");
 
         assertFalse(result.isPresent());
     }
 
     // Сценарий 3: Передан null — возвращаем empty без HTTP-вызова
     @Test
-    void findByNumber_nullNumber_returnsEmpty() {
-        Optional<Container> result = service.findByNumber(null);
+    void findByIdentifier_nullNumber_returnsEmpty() {
+        Optional<Container> result = service.findByIdentifier(null);
 
         assertFalse(result.isPresent());
     }
 
     // Сценарий 4: port-service недоступен — возвращаем empty, не бросаем исключение
     @Test
-    void findByNumber_portServiceDown_returnsEmptyGracefully() {
+    void findByIdentifier_portServiceDown_returnsEmptyGracefully() {
         stubPortServiceError();
 
-        Optional<Container> result = service.findByNumber("MSCU1234567");
+        Optional<Container> result = service.findByIdentifier("MSCU1234567");
 
         assertFalse(result.isPresent());
     }
 
     // Сценарий 5: Номер нормализуется к верхнему регистру перед отправкой
     @Test
-    void findByNumber_lowercaseInput_normalizedToUppercase() {
+    void findByIdentifier_lowercaseInput_normalizedToUppercase() {
         Container container = new Container();
         container.setContainerNumber("MSCU1234567");
         container.setStatus("IN_TRANSIT");
         stubPortService(container);
 
-        Optional<Container> result = service.findByNumber("mscu1234567");
+        Optional<Container> result = service.findByIdentifier("mscu1234567");
 
         assertTrue(result.isPresent());
         assertEquals("MSCU1234567", result.get().getContainerNumber());

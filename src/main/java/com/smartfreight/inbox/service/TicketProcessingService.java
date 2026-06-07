@@ -45,7 +45,7 @@ public class TicketProcessingService {
 
     private final EmailTicketRepository emailTicketRepository;
     private final AiExtractionService aiExtractionService;
-    private final ContainerLookupService containerLookupService;
+    private final ItemLookupService itemLookupService;
     private final AiDraftingService aiDraftingService;
     private final GmailDraftService gmailDraftService;
     private final Timer processingTimer;
@@ -63,13 +63,13 @@ public class TicketProcessingService {
 
     public TicketProcessingService(EmailTicketRepository emailTicketRepository,
                                    AiExtractionService aiExtractionService,
-                                   ContainerLookupService containerLookupService,
+                                   ItemLookupService itemLookupService,
                                    AiDraftingService aiDraftingService,
                                    GmailDraftService gmailDraftService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.aiExtractionService = aiExtractionService;
-        this.containerLookupService = containerLookupService;
+        this.itemLookupService = itemLookupService;
         this.aiDraftingService = aiDraftingService;
         this.gmailDraftService = gmailDraftService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
@@ -160,7 +160,7 @@ public class TicketProcessingService {
         log.info("Step 2/3: Looking up container '{}' in database", containerNumber);
         Optional<Container> containerOpt = containerNumber.isEmpty()
                 ? Optional.empty()
-                : containerLookupService.findByNumber(containerNumber);
+                : itemLookupService.findByIdentifier(containerNumber);
 
         Container container = containerOpt.orElse(null);
         if (container == null) {
