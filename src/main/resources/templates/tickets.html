@@ -95,12 +95,12 @@
                                 <span th:unless="${active}" class="small text-white-50">⇅</span>
                             </a>
                         </th>
-                        <th th:with="col='extractedContainerNumber', label='Container', defDir='asc',
+                        <th th:with="col='extractedIdentifier', label='Identifier', defDir='asc',
                                      active=${sort == col},
                                      nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
                             <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
                                class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
-                                <span th:text="${label}">Container</span>
+                                <span th:text="${label}">Identifier</span>
                                 <span th:if="${active}" class="small"
                                       th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
                                 <span th:unless="${active}" class="small text-white-50">⇅</span>
@@ -148,9 +148,9 @@
                         <td th:text="${ticket.senderEmail}">example@mail.com</td>
                         <td th:text="${ticket.subject}">Subject</td>
                         <td>
-                            <code th:if="${ticket.extractedContainerNumber != null}"
-                                  th:text="${ticket.extractedContainerNumber}">MSCU1234567</code>
-                            <span th:if="${ticket.extractedContainerNumber == null}"
+                            <code th:if="${ticket.extractedIdentifier != null}"
+                                  th:text="${ticket.extractedIdentifier}">MSCU1234567</code>
+                            <span th:if="${ticket.extractedIdentifier == null}"
                                   class="text-muted">—</span>
                         </td>
                         <td>

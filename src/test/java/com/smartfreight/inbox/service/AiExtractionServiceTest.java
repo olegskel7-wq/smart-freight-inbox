@@ -99,7 +99,7 @@ class AiExtractionServiceTest {
     void extractContainerNumber_ollamaReturnsCleanNumber_returnsIt() {
         stubOllama(Map.of("response", "MSCU1234567", "done", true));
 
-        String result = service.extractContainerNumber("Please check container MSCU1234567");
+        String result = service.extractIdentifier("Please check container MSCU1234567");
 
         assertEquals("MSCU1234567", result);
     }
@@ -113,7 +113,7 @@ class AiExtractionServiceTest {
     void extractContainerNumber_ollamaReturnsSentence_regexExtractsFromResponse() {
         stubOllama(Map.of("response", "The container number mentioned is MSCU1234567.", "done", true));
 
-        String result = service.extractContainerNumber("Please check container MSCU1234567");
+        String result = service.extractIdentifier("Please check container MSCU1234567");
 
         assertEquals("MSCU1234567", result);
     }
@@ -128,7 +128,7 @@ class AiExtractionServiceTest {
     void extractContainerNumber_ollamaFails_regexFallbackFindsNumberInEmailBody() {
         stubOllamaError();
 
-        String result = service.extractContainerNumber("Hi, any update on HLXU8764321 please?");
+        String result = service.extractIdentifier("Hi, any update on HLXU8764321 please?");
 
         assertEquals("HLXU8764321", result);
     }
@@ -140,7 +140,7 @@ class AiExtractionServiceTest {
      */
     @Test
     void extractContainerNumber_emptyBody_returnsEmpty() {
-        String result = service.extractContainerNumber("   ");
+        String result = service.extractIdentifier("   ");
 
         assertEquals("", result);
     }

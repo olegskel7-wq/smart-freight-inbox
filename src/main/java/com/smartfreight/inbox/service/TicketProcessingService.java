@@ -1,6 +1,6 @@
 package com.smartfreight.inbox.service;
 
-import com.smartfreight.inbox.entity.Container;
+import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
@@ -24,8 +24,8 @@ import java.util.Optional;
  * AI pipeline orchestrator for ticket processing.
  *
  * Coordinates three steps:
- * 1. Container number extraction (Qwen 2.5) from the email body
- * 2. Container lookup in the port-service system
+ * 1. Item identifier extraction (Qwen 2.5) from the email body
+ * 2. Item lookup via the backend ({@link ItemLookupService})
  * 3. Reply draft generation (Llama 3.1)
  *
  * Executed synchronously in the calling thread
@@ -151,24 +151,24 @@ public class TicketProcessingService {
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.saveAndFlush(ticket);
 
-        log.info("Step 1/3: Extracting container number via Qwen 2.5");
-        String containerNumber = aiExtractionService.extractContainerNumber(ticket.getBody());
-        ticket.setExtractedContainerNumber(containerNumber.isEmpty() ? null : containerNumber);
+        log.info("Step 1/3: Extracting item identifier via Qwen 2.5");
+        String identifier = aiExtractionService.extractIdentifier(ticket.getBody());
+        ticket.setExtractedIdentifier(identifier.isEmpty() ? null : identifier);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
 
-        log.info("Step 2/3: Looking up container '{}' in database", containerNumber);
-        Optional<Container> containerOpt = containerNumber.isEmpty()
+        log.info("Step 2/3: Looking up item '{}' via backend", identifier);
+        Optional<TrackedItem> itemOpt = identifier.isEmpty()
                 ? Optional.empty()
-                : itemLookupService.findByIdentifier(containerNumber);
+                : itemLookupService.findByIdentifier(identifier);
 
-        Container container = containerOpt.orElse(null);
-        if (container == null) {
-            log.warn("Container '{}' not found — draft will reflect missing data", containerNumber);
+        TrackedItem item = itemOpt.orElse(null);
+        if (item == null) {
+            log.warn("Item '{}' not found — draft will reflect missing data", identifier);
         }
 
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
-        String draft = aiDraftingService.generateDraft(ticket.getBody(), container);
+        String draft = aiDraftingService.generateDraft(ticket.getBody(), item);
         ticket.setDraftReply(draft);
 
         ticket.setStatus(TicketStatus.DRAFT_READY);

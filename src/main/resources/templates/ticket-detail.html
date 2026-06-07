@@ -49,11 +49,11 @@
                 <dt class="col-sm-3">Subject</dt>
                 <dd class="col-sm-9" th:text="${ticket.subject ?: '—'}">—</dd>
 
-                <dt class="col-sm-3">Container</dt>
+                <dt class="col-sm-3">Identifier</dt>
                 <dd class="col-sm-9">
-                    <code th:if="${ticket.extractedContainerNumber != null}"
-                          th:text="${ticket.extractedContainerNumber}">MSCU1234567</code>
-                    <span th:if="${ticket.extractedContainerNumber == null}"
+                    <code th:if="${ticket.extractedIdentifier != null}"
+                          th:text="${ticket.extractedIdentifier}">MSCU1234567</code>
+                    <span th:if="${ticket.extractedIdentifier == null}"
                           class="text-muted fst-italic">Not extracted</span>
                 </dd>
 

@@ -1,6 +1,6 @@
 package com.smartfreight.inbox.service;
 
-import com.smartfreight.inbox.entity.Container;
+import com.smartfreight.inbox.entity.TrackedItem;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -85,23 +85,23 @@ public class AiDraftingService {
      *
      * Executes POST /api/generate to Ollama with a prompt containing:
      * — the email text (up to 2000 characters)
-     * — container data (if found)
+     * — item data (if found)
      *
      * The model is instructed to reply in the same language as the customer
-     * and not to use information that is not present in the container data.
+     * and not to use information that is not present in the item data.
      *
      * @param emailBody  customer email text
-     * @param container  container data (may be null if not found)
+     * @param item       tracked-item data (may be null if not found)
      * @return generated or fallback draft
      */
-    public String generateDraft(String emailBody, Container container) {
-        String containerContext = buildContainerContext(container);
+    public String generateDraft(String emailBody, TrackedItem item) {
+        String itemContext = buildItemContext(item);
         String truncatedBody = emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
 
         String template = settingsService.getString(
                 SettingsService.KEY_DRAFTING_PROMPT, DEFAULT_DRAFTING_PROMPT);
         String prompt = template
-                .replace("{itemContext}", containerContext)
+                .replace("{itemContext}", itemContext)
                 .replace("{email}", truncatedBody);
 
         try {
@@ -125,13 +125,13 @@ public class AiDraftingService {
 
             if (response == null) {
                 log.warn("Ollama returned null response during drafting");
-                return buildFallbackDraft(container);
+                return buildFallbackDraft(item);
             }
 
             String draft = String.valueOf(response.getOrDefault("response", "")).trim();
             if (draft.isEmpty()) {
                 log.warn("Ollama returned empty draft");
-                return buildFallbackDraft(container);
+                return buildFallbackDraft(item);
             }
 
             log.info("Draft generated successfully ({} chars)", draft.length());
@@ -139,32 +139,32 @@ public class AiDraftingService {
 
         } catch (Exception e) {
             log.error("Drafting call to Ollama failed: {}", e.getMessage());
-            return buildFallbackDraft(container);
+            return buildFallbackDraft(item);
         }
     }
 
     /**
-     * Builds a text block of container data for insertion into the prompt.
+     * Builds a text block of item data for insertion into the prompt.
      *
-     * @param container container data or null
-     * @return formatted text with container information
+     * @param item tracked-item data or null
+     * @return formatted text with item information
      */
-    private String buildContainerContext(Container container) {
-        if (container == null) {
-            return "Container not found in our system.";
+    private String buildItemContext(TrackedItem item) {
+        if (item == null) {
+            return "Item not found in our system.";
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("Container number: ").append(container.getContainerNumber()).append("\n");
-        sb.append("Status: ").append(container.getStatus() != null ? container.getStatus() : "Unknown").append("\n");
+        sb.append("Reference: ").append(item.getIdentifier()).append("\n");
+        sb.append("Status: ").append(item.getStatus() != null ? item.getStatus() : "Unknown").append("\n");
 
-        if (container.getEta() != null) {
-            sb.append("ETA: ").append(container.getEta().format(ETA_FORMATTER)).append("\n");
+        if (item.getEta() != null) {
+            sb.append("ETA: ").append(item.getEta().format(ETA_FORMATTER)).append("\n");
         } else {
             sb.append("ETA: Not available\n");
         }
 
-        sb.append("Location: ").append(container.getLocation() != null ? container.getLocation() : "Unknown");
+        sb.append("Location: ").append(item.getLocation() != null ? item.getLocation() : "Unknown");
         return sb.toString();
     }
 
@@ -172,35 +172,35 @@ public class AiDraftingService {
      * Fallback draft — used when Ollama is unavailable.
      * Provides basic information from the DB without AI generation.
      *
-     * @param container container data or null
+     * @param item tracked-item data or null
      * @return static draft with available data
      */
-    private String buildFallbackDraft(Container container) {
-        if (container == null) {
+    private String buildFallbackDraft(TrackedItem item) {
+        if (item == null) {
             return """
                     Thank you for your enquiry.
-                    Unfortunately, we were unable to locate the container in our system at this time.
-                    Please contact our operations team for further assistance.
+                    Unfortunately, we were unable to locate the reference in our system at this time.
+                    Please contact our team for further assistance.
                     Kind regards,
-                    Freight Operations Team
+                    Customer Service Team
                     """;
         }
 
         return String.format("""
-                Thank you for your enquiry regarding container %s.
-                
+                Thank you for your enquiry regarding %s.
+
                 Current status: %s
                 ETA: %s
                 Location: %s
-                
+
                 Please do not hesitate to contact us if you require further information.
                 Kind regards,
-                Freight Operations Team
+                Customer Service Team
                 """,
-                container.getContainerNumber(),
-                container.getStatus() != null ? container.getStatus() : "N/A",
-                container.getEta() != null ? container.getEta().format(ETA_FORMATTER) : "N/A",
-                container.getLocation() != null ? container.getLocation() : "N/A"
+                item.getIdentifier(),
+                item.getStatus() != null ? item.getStatus() : "N/A",
+                item.getEta() != null ? item.getEta().format(ETA_FORMATTER) : "N/A",
+                item.getLocation() != null ? item.getLocation() : "N/A"
         );
     }
 }

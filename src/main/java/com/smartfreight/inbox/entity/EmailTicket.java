@@ -59,9 +59,9 @@ public class EmailTicket {
     @Column(name = "body", columnDefinition = "TEXT")
     private String body;
 
-    /** Container number extracted by the AI from the email body (e.g. MSCU1234567). */
-    @Column(name = "extracted_container_number")
-    private String extractedContainerNumber;
+    /** Key identifier extracted by the AI from the email body (e.g. MSCU1234567). */
+    @Column(name = "extracted_identifier")
+    private String extractedIdentifier;
 
     /**
      * Ticket lifecycle status.

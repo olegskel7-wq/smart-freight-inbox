@@ -1,6 +1,6 @@
 package com.smartfreight.inbox.service;
 
-import com.smartfreight.inbox.entity.Container;
+import com.smartfreight.inbox.entity.TrackedItem;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,9 +57,9 @@ class AiDraftingServiceTest {
         when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.error(new RuntimeException("Ollama unavailable")));
     }
 
-    private Container buildContainer(String number) {
-        Container c = new Container();
-        c.setContainerNumber(number);
+    private TrackedItem buildItem(String identifier) {
+        TrackedItem c = new TrackedItem();
+        c.setIdentifier(identifier);
         c.setStatus("AT_PORT");
         c.setLocation("Felixstowe Terminal 2");
         c.setEta(LocalDateTime.of(2026, 4, 25, 10, 0));
@@ -72,7 +72,7 @@ class AiDraftingServiceTest {
         String aiDraft = "Dear customer, your container MSCU1234567 is at Felixstowe Terminal 2.";
         stubOllama(Map.of("response", aiDraft, "done", true));
 
-        String result = service.generateDraft("Any updates on MSCU1234567?", buildContainer("MSCU1234567"));
+        String result = service.generateDraft("Any updates on MSCU1234567?", buildItem("MSCU1234567"));
 
         assertEquals(aiDraft, result);
     }
@@ -82,7 +82,7 @@ class AiDraftingServiceTest {
     void generateDraft_ollamaFails_fallbackContainsContainerData() {
         stubOllamaError();
 
-        String result = service.generateDraft("Any updates on MSCU1234567?", buildContainer("MSCU1234567"));
+        String result = service.generateDraft("Any updates on MSCU1234567?", buildItem("MSCU1234567"));
 
         assertNotNull(result);
         assertFalse(result.isBlank(), "Fallback draft must not be empty");

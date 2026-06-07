@@ -1,6 +1,6 @@
 package com.smartfreight.inbox.service;
 
-import com.smartfreight.inbox.entity.Container;
+import com.smartfreight.inbox.entity.TrackedItem;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,7 +11,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.util.Optional;
-import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -19,27 +18,27 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class ContainerLookupServiceTest {
+class PortServiceItemLookupTest {
 
     @Mock private WebClient webClient;
     @Mock private WebClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
     @Mock private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
     @Mock private WebClient.ResponseSpec responseSpec;
 
-    private ContainerLookupService service;
+    private PortServiceItemLookup service;
 
     @BeforeEach
     void setUp() {
-        service = new ContainerLookupService(webClient, new SimpleMeterRegistry());
+        service = new PortServiceItemLookup(webClient, new SimpleMeterRegistry());
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private void stubPortService(Container container) {
+    private void stubPortService(TrackedItem item) {
         when(webClient.get()).thenReturn((WebClient.RequestHeadersUriSpec) requestHeadersUriSpec);
         when(requestHeadersUriSpec.uri(anyString(), (Object) any())).thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpec);
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
         when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
-        when(responseSpec.bodyToMono(Container.class)).thenReturn(Mono.just(container));
+        when(responseSpec.bodyToMono(TrackedItem.class)).thenReturn(Mono.just(item));
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -48,37 +47,37 @@ class ContainerLookupServiceTest {
         when(requestHeadersUriSpec.uri(anyString(), (Object) any())).thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpec);
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
         when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
-        when(responseSpec.bodyToMono(Container.class)).thenReturn(Mono.error(new RuntimeException("port-service unavailable")));
+        when(responseSpec.bodyToMono(TrackedItem.class)).thenReturn(Mono.error(new RuntimeException("port-service unavailable")));
     }
 
-    // Сценарий 1: port-service вернул контейнер — возвращаем его
+    // Сценарий 1: port-service вернул item — возвращаем его
     @Test
-    void findByIdentifier_containerFound_returnsContainer() {
-        Container container = new Container();
-        container.setContainerNumber("MSCU1234567");
-        container.setStatus("AT_PORT");
-        container.setLocation("Felixstowe Terminal 2");
-        stubPortService(container);
+    void findByIdentifier_itemFound_returnsItem() {
+        TrackedItem item = new TrackedItem();
+        item.setIdentifier("MSCU1234567");
+        item.setStatus("AT_PORT");
+        item.setLocation("Felixstowe Terminal 2");
+        stubPortService(item);
 
-        Optional<Container> result = service.findByIdentifier("MSCU1234567");
+        Optional<TrackedItem> result = service.findByIdentifier("MSCU1234567");
 
         assertTrue(result.isPresent());
-        assertEquals("MSCU1234567", result.get().getContainerNumber());
+        assertEquals("MSCU1234567", result.get().getIdentifier());
         assertEquals("AT_PORT", result.get().getStatus());
     }
 
-    // Сценарий 2: Передан пустой номер — возвращаем empty без HTTP-вызова
+    // Сценарий 2: Передан пустой идентификатор — возвращаем empty без HTTP-вызова
     @Test
-    void findByIdentifier_emptyNumber_returnsEmpty() {
-        Optional<Container> result = service.findByIdentifier("  ");
+    void findByIdentifier_emptyIdentifier_returnsEmpty() {
+        Optional<TrackedItem> result = service.findByIdentifier("  ");
 
         assertFalse(result.isPresent());
     }
 
     // Сценарий 3: Передан null — возвращаем empty без HTTP-вызова
     @Test
-    void findByIdentifier_nullNumber_returnsEmpty() {
-        Optional<Container> result = service.findByIdentifier(null);
+    void findByIdentifier_nullIdentifier_returnsEmpty() {
+        Optional<TrackedItem> result = service.findByIdentifier(null);
 
         assertFalse(result.isPresent());
     }
@@ -88,22 +87,22 @@ class ContainerLookupServiceTest {
     void findByIdentifier_portServiceDown_returnsEmptyGracefully() {
         stubPortServiceError();
 
-        Optional<Container> result = service.findByIdentifier("MSCU1234567");
+        Optional<TrackedItem> result = service.findByIdentifier("MSCU1234567");
 
         assertFalse(result.isPresent());
     }
 
-    // Сценарий 5: Номер нормализуется к верхнему регистру перед отправкой
+    // Сценарий 5: Идентификатор нормализуется к верхнему регистру перед отправкой
     @Test
     void findByIdentifier_lowercaseInput_normalizedToUppercase() {
-        Container container = new Container();
-        container.setContainerNumber("MSCU1234567");
-        container.setStatus("IN_TRANSIT");
-        stubPortService(container);
+        TrackedItem item = new TrackedItem();
+        item.setIdentifier("MSCU1234567");
+        item.setStatus("IN_TRANSIT");
+        stubPortService(item);
 
-        Optional<Container> result = service.findByIdentifier("mscu1234567");
+        Optional<TrackedItem> result = service.findByIdentifier("mscu1234567");
 
         assertTrue(result.isPresent());
-        assertEquals("MSCU1234567", result.get().getContainerNumber());
+        assertEquals("MSCU1234567", result.get().getIdentifier());
     }
 }

@@ -22,7 +22,7 @@ public class GlobalExceptionHandler {
     /**
      * Container not found → 404 Not Found.
      *
-     * ContainerLookupService currently returns Optional.empty() instead of throwing,
+     * PortServiceItemLookup currently returns Optional.empty() instead of throwing,
      * but the handler is kept as a safety net.
      */
     @ExceptionHandler(ContainerNotFoundException.class)

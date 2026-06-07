@@ -65,7 +65,7 @@ class TicketProcessingServiceTest {
         System.out.println("  PROCESSING RESULT");
         System.out.println("========================================");
         System.out.println("Status              : " + result.getStatus());
-        System.out.println("Extracted container : " + result.getExtractedContainerNumber());
+        System.out.println("Extracted identifier: " + result.getExtractedIdentifier());
         System.out.println("Retry count         : " + result.getRetryCount());
         System.out.println("----------------------------------------");
         System.out.println("Draft reply:");

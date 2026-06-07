@@ -94,9 +94,9 @@ public class AiExtractionService {
      * 5. Any exception → regex fallback
      *
      * @param emailBody plain-text body of the email
-     * @return container number (e.g. "MSCU1234567") or an empty string
+     * @return extracted identifier (e.g. "MSCU1234567") or an empty string
      */
-    public String extractContainerNumber(String emailBody) {
+    public String extractIdentifier(String emailBody) {
         if (emailBody == null || emailBody.isBlank()) {
             log.warn("Email body is empty, skipping extraction");
             return "";
