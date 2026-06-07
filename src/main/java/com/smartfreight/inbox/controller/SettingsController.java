@@ -43,6 +43,10 @@ public class SettingsController {
         model.addAttribute("smtpPort", smtpPort);
         model.addAttribute("smtpUser", smtpUser);
         model.addAttribute("draftEnabled", settingsService.isDraftEnabled());
+        model.addAttribute("extractionPrompt",
+                settingsService.getString(SettingsService.KEY_EXTRACTION_PROMPT, ""));
+        model.addAttribute("draftingPrompt",
+                settingsService.getString(SettingsService.KEY_DRAFTING_PROMPT, ""));
         return "settings";
     }
 
@@ -52,6 +56,21 @@ public class SettingsController {
         settingsService.setDraftEnabled(draftEnabled);
         redirectAttributes.addFlashAttribute("successMessage",
                 "Notifications " + (draftEnabled ? "enabled" : "disabled") + ".");
+        return "redirect:/settings";
+    }
+
+    /**
+     * Updates the AI prompt templates. Placeholders ({@code {email}}, {@code {itemContext}})
+     * are substituted at request time by the AI services, so editing here re-tunes the pipeline
+     * for a different vertical without a rebuild.
+     */
+    @PostMapping("/prompts")
+    public String savePrompts(@RequestParam("extractionPrompt") String extractionPrompt,
+                              @RequestParam("draftingPrompt") String draftingPrompt,
+                              RedirectAttributes redirectAttributes) {
+        settingsService.setString(SettingsService.KEY_EXTRACTION_PROMPT, extractionPrompt);
+        settingsService.setString(SettingsService.KEY_DRAFTING_PROMPT, draftingPrompt);
+        redirectAttributes.addFlashAttribute("successMessage", "AI prompts saved.");
         return "redirect:/settings";
     }
 }

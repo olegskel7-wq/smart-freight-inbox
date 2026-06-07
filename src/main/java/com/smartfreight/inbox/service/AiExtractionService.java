@@ -45,17 +45,33 @@ public class AiExtractionService {
     /** Ollama generate-call timeout — generous enough for slow LLM responses on CPU. */
     private static final Duration OLLAMA_TIMEOUT = Duration.ofSeconds(150);
 
+    /**
+     * Fallback prompt template used when the DB-backed {@code ai.extraction-prompt} row is
+     * missing or blank. Kept in sync with migration V9. {@code {email}} is replaced with the
+     * (truncated) email body at request time.
+     */
+    private static final String DEFAULT_EXTRACTION_PROMPT = """
+            You are a logistics assistant. Extract the shipping container number from the email below.
+            Container numbers follow ISO 6346 format: exactly 4 uppercase letters followed by 7 digits (e.g. MSCU1234567).
+            Return ONLY the container number, nothing else. If no container number is found, return "NOT_FOUND".
+
+            Email:
+            {email}""";
+
     /** Extraction model name — read from application.yaml. */
     private final String extractionModel;
 
     private final WebClient ollamaWebClient;
+    private final SettingsService settingsService;
     private final Counter fallbackCounter;
     private final Timer ollamaTimer;
 
     public AiExtractionService(WebClient ollamaWebClient,
+                               SettingsService settingsService,
                                MeterRegistry meterRegistry,
                                @Value("${ollama.extraction-model:qwen2.5:7b}") String extractionModel) {
         this.ollamaWebClient = ollamaWebClient;
+        this.settingsService = settingsService;
         this.extractionModel = extractionModel;
         this.fallbackCounter = Counter.builder("smartfreight_extraction_fallback_total")
                 .description("Times regex fallback was used instead of LLM for container extraction")
@@ -86,13 +102,10 @@ public class AiExtractionService {
             return "";
         }
 
-        String prompt = """
-                You are a logistics assistant. Extract the shipping container number from the email below.
-                Container numbers follow ISO 6346 format: exactly 4 uppercase letters followed by 7 digits (e.g. MSCU1234567).
-                Return ONLY the container number, nothing else. If no container number is found, return "NOT_FOUND".
-
-                Email:
-                """ + emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
+        String template = settingsService.getString(
+                SettingsService.KEY_EXTRACTION_PROMPT, DEFAULT_EXTRACTION_PROMPT);
+        String truncatedBody = emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
+        String prompt = template.replace("{email}", truncatedBody);
 
         try {
             Map<String, Object> requestBody = new HashMap<>();

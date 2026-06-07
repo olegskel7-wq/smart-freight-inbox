@@ -39,16 +39,39 @@ public class AiDraftingService {
     /** Ollama generate-call timeout. */
     private static final Duration OLLAMA_TIMEOUT = Duration.ofSeconds(150);
 
+    /**
+     * Fallback prompt template used when the DB-backed {@code ai.drafting-prompt} row is missing
+     * or blank. Kept in sync with migration V9. At request time {@code {itemContext}} is replaced
+     * with the looked-up item data and {@code {email}} with the (truncated) email body.
+     */
+    private static final String DEFAULT_DRAFTING_PROMPT = """
+            You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
+            Write a concise, professional email reply to the customer's inquiry below.
+            Use the container information provided. Be helpful, polite, and factual.
+            Do NOT make up information that is not in the container data.
+            Reply in the same language as the customer's email.
+
+            Container information:
+            {itemContext}
+
+            Customer's email:
+            {email}
+
+            Write only the email reply body (no subject line, no "Dear..." header unless natural).""";
+
     /** Draft generation model name — read from application.yaml. */
     private final String draftingModel;
 
     private final WebClient ollamaWebClient;
+    private final SettingsService settingsService;
     private final Timer ollamaTimer;
 
     public AiDraftingService(WebClient ollamaWebClient,
+                             SettingsService settingsService,
                              MeterRegistry meterRegistry,
                              @Value("${ollama.drafting-model:llama3.1:8b}") String draftingModel) {
         this.ollamaWebClient = ollamaWebClient;
+        this.settingsService = settingsService;
         this.draftingModel = draftingModel;
         this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
                 .description("Ollama response time per model")
@@ -73,22 +96,13 @@ public class AiDraftingService {
      */
     public String generateDraft(String emailBody, Container container) {
         String containerContext = buildContainerContext(container);
+        String truncatedBody = emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
 
-        String prompt = """
-                You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
-                Write a concise, professional email reply to the customer's inquiry below.
-                Use the container information provided. Be helpful, polite, and factual.
-                Do NOT make up information that is not in the container data.
-                Reply in the same language as the customer's email.
-
-                Container information:
-                """ + containerContext + """
-
-                Customer's email:
-                """ + emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS)) + """
-
-                Write only the email reply body (no subject line, no "Dear..." header unless natural).
-                """;
+        String template = settingsService.getString(
+                SettingsService.KEY_DRAFTING_PROMPT, DEFAULT_DRAFTING_PROMPT);
+        String prompt = template
+                .replace("{itemContext}", containerContext)
+                .replace("{email}", truncatedBody);
 
         try {
             Map<String, Object> requestBody = new HashMap<>();

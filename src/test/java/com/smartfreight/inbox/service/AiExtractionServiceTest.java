@@ -14,6 +14,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -38,12 +39,16 @@ class AiExtractionServiceTest {
     @Mock private WebClient.RequestBodySpec requestBodySpec;
     @Mock private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
     @Mock private WebClient.ResponseSpec responseSpec;
+    @Mock private SettingsService settingsService;
 
     private AiExtractionService service;
 
     @BeforeEach
     void setUp() {
-        service = new AiExtractionService(webClient, new SimpleMeterRegistry(), "qwen2.5:7b");
+        // Return the code-level default prompt so behaviour matches the un-customised pipeline.
+        lenient().when(settingsService.getString(anyString(), anyString()))
+                .thenAnswer(inv -> inv.getArgument(1));
+        service = new AiExtractionService(webClient, settingsService, new SimpleMeterRegistry(), "qwen2.5:7b");
     }
 
     /**

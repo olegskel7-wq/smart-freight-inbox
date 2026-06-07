@@ -68,6 +68,45 @@
         </div>
     </div>
 
+    <!-- AI Prompts (editable) -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold">AI Prompts</div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                Tune the prompts sent to the local LLM for each pipeline step. Changes take effect
+                immediately — no restart needed. Use the placeholders below; they are filled in at
+                request time:
+            </p>
+            <ul class="text-muted small mb-3">
+                <li><code>{email}</code> — the customer's email body</li>
+                <li><code>{itemContext}</code> — looked-up item data (drafting prompt only)</li>
+            </ul>
+            <form method="post" th:action="@{/settings/prompts}">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="extractionPrompt">
+                        Extraction prompt
+                    </label>
+                    <p class="text-muted small mb-2">
+                        Instructs the model to pull the key identifier out of the email.
+                    </p>
+                    <textarea class="form-control font-monospace small" id="extractionPrompt"
+                              name="extractionPrompt" rows="8" th:text="${extractionPrompt}"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="draftingPrompt">
+                        Drafting prompt
+                    </label>
+                    <p class="text-muted small mb-2">
+                        Instructs the model to write the reply draft using the looked-up data.
+                    </p>
+                    <textarea class="form-control font-monospace small" id="draftingPrompt"
+                              name="draftingPrompt" rows="12" th:text="${draftingPrompt}"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Save prompts</button>
+            </form>
+        </div>
+    </div>
+
     <!-- How to change env vars -->
     <div class="card shadow-sm border-0 bg-light">
         <div class="card-body">

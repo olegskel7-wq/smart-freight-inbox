@@ -16,6 +16,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,12 +27,16 @@ class AiDraftingServiceTest {
     @Mock private WebClient.RequestBodySpec requestBodySpec;
     @Mock private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
     @Mock private WebClient.ResponseSpec responseSpec;
+    @Mock private SettingsService settingsService;
 
     private AiDraftingService service;
 
     @BeforeEach
     void setUp() {
-        service = new AiDraftingService(webClient, new SimpleMeterRegistry(), "llama3.1:8b");
+        // Return the code-level default prompt so behaviour matches the un-customised pipeline.
+        lenient().when(settingsService.getString(anyString(), anyString()))
+                .thenAnswer(inv -> inv.getArgument(1));
+        service = new AiDraftingService(webClient, settingsService, new SimpleMeterRegistry(), "llama3.1:8b");
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
