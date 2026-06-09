@@ -75,7 +75,10 @@ New schema changes — only via a new migration (V7, V8, ...).
 - ✅ Removed duplicate index idx_container_number (migration V6)
 - ⚠️ Prometheus cannot send a custom X-API-Key → /actuator/prometheus is protected by network isolation in prod, not by key
 
-## Next Step (Phase 0)
-Rename Container → TrackedItem, make statuses configurable from DB
+## Phase 0 decision (07 Jun 2026)
+**port-service stays as-is — the freight reference backend.** It simulates a real client TMS, so it
+is intentionally freight-specific (Container, ContainerStatus). Universalisation happened on the inbox
+side, which now talks to this service through the `ItemLookupService` abstraction. A new vertical means
+a new `ItemLookupService` implementation in inbox, NOT a rewrite of port-service. No rename needed here.
 
 *Last updated: 26 May 2026*
