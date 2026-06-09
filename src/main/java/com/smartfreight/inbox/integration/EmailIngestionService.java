@@ -5,6 +5,7 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.DraftNotificationService;
 import com.smartfreight.inbox.service.EmailClassificationService;
+import com.smartfreight.inbox.service.SettingsService;
 import com.smartfreight.inbox.service.TicketProcessingService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -52,10 +53,17 @@ public class EmailIngestionService {
     /** Hard cap on email size — protects heap from runaway IMAP messages. */
     private static final int MAX_EMAIL_BYTES = 10 * 1024 * 1024;
 
+    /**
+     * Feature flag for attachment parsing (Phase 1.1). Plan-based gating seam: today a global
+     * {@code app_setting} row, per-tenant under multi-tenancy (Phase 2). Missing row = enabled.
+     */
+    private static final String FEATURE_ATTACHMENT_PARSING = "feature.attachment-parsing";
+
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
     private final EmailClassificationService emailClassificationService;
     private final AttachmentParserService attachmentParserService;
+    private final SettingsService settingsService;
     private final TaskExecutor taskExecutor;
     private final Counter receivedCounter;
 
@@ -63,12 +71,14 @@ public class EmailIngestionService {
                                  TicketProcessingService ticketProcessingService,
                                  EmailClassificationService emailClassificationService,
                                  AttachmentParserService attachmentParserService,
+                                 SettingsService settingsService,
                                  @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor,
                                  MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.emailClassificationService = emailClassificationService;
         this.attachmentParserService = attachmentParserService;
+        this.settingsService = settingsService;
         this.taskExecutor = taskExecutor;
         this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
                 .description("Total emails received and successfully ingested as tickets")
@@ -126,7 +136,10 @@ public class EmailIngestionService {
 
             // Phase 1.1: pull text from PDF/Excel attachments. Fed to the classifier too, so an RFQ
             // whose body is just "please see attached" is judged on the attachment, not dropped.
-            String attachmentText = attachmentParserService.extractAttachmentText(mimeMessage);
+            // Behind a feature flag (plan-gating seam) — disabled tenants skip parsing entirely.
+            String attachmentText = settingsService.isFeatureEnabled(FEATURE_ATTACHMENT_PARSING, true)
+                    ? attachmentParserService.extractAttachmentText(mimeMessage)
+                    : "";
             String classificationInput = attachmentText.isBlank() ? body : body + "\n\n" + attachmentText;
 
             String senderEmail = "";

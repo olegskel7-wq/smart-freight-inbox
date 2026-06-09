@@ -62,6 +62,29 @@ public class SettingsService {
     }
 
     /**
+     * Generic feature-flag check. Reads a boolean {@code feature.*} setting, treating a missing
+     * or blank row as {@code defaultValue} so a fresh deployment keeps working unchanged.
+     *
+     * <p>This is the seam for plan-based feature gating. Today flags are global {@code app_setting}
+     * rows; under multi-tenancy (Phase 2) the same keys move to a per-tenant scope (e.g. a
+     * {@code tenant_setting} table keyed by tenant + plan), so call sites can stay identical —
+     * only this lookup gains a tenant dimension. New features should hide behind a {@code feature.*}
+     * flag rather than a hardcoded {@code if}, to keep that migration mechanical.
+     *
+     * @param featureKey   the flag key, conventionally prefixed {@code feature.}
+     *                     (e.g. {@code "feature.attachment-parsing"})
+     * @param defaultValue value returned when the row is absent or blank
+     * @return whether the feature is enabled
+     */
+    public boolean isFeatureEnabled(String featureKey, boolean defaultValue) {
+        return repo.findById(featureKey)
+                .map(AppSetting::getValue)
+                .filter(v -> !v.isBlank())
+                .map(v -> "true".equalsIgnoreCase(v.trim()))
+                .orElse(defaultValue);
+    }
+
+    /**
      * Returns whether operator draft notifications are enabled.
      * Defaults to {@code true} when the row is missing so a fresh deployment behaves predictably.
      */

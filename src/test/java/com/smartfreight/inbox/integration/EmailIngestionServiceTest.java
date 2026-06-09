@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.EmailClassificationService;
+import com.smartfreight.inbox.service.SettingsService;
 import com.smartfreight.inbox.service.TicketProcessingService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.Session;
@@ -59,6 +60,9 @@ class EmailIngestionServiceTest {
     @Mock
     private TaskExecutor taskExecutor;
 
+    @Mock
+    private SettingsService settingsService;
+
     private EmailIngestionService emailIngestionService;
 
     /** Jakarta Mail sesija be jokių savybių – naudojama MimeMessage kūrimui testams. */
@@ -72,11 +76,13 @@ class EmailIngestionServiceTest {
 
         emailIngestionService = new EmailIngestionService(
                 emailTicketRepository, ticketProcessingService, emailClassificationService,
-                new AttachmentParserService(new SimpleMeterRegistry()),
+                new AttachmentParserService(new SimpleMeterRegistry()), settingsService,
                 taskExecutor, new SimpleMeterRegistry());
         mailSession = Session.getInstance(new Properties());
         // Default: treat all emails as freight-relevant; individual tests override when needed.
         when(emailClassificationService.isFreightInquiry(any(), any())).thenReturn(true);
+        // Default: attachment-parsing feature on, so existing tests keep their behaviour.
+        when(settingsService.isFeatureEnabled(any(), anyBoolean())).thenReturn(true);
     }
 
     /**
