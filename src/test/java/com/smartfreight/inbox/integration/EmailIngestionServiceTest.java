@@ -2,6 +2,7 @@ package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.TicketProcessingService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -71,6 +72,7 @@ class EmailIngestionServiceTest {
 
         emailIngestionService = new EmailIngestionService(
                 emailTicketRepository, ticketProcessingService, emailClassificationService,
+                new AttachmentParserService(new SimpleMeterRegistry()),
                 taskExecutor, new SimpleMeterRegistry());
         mailSession = Session.getInstance(new Properties());
         // Default: treat all emails as freight-relevant; individual tests override when needed.

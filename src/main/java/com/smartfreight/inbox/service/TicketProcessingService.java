@@ -151,8 +151,11 @@ public class TicketProcessingService {
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.saveAndFlush(ticket);
 
+        // Phase 1.1: the AI sees the email body plus any parsed attachment text as one input.
+        String aiInput = buildAiInput(ticket);
+
         log.info("Step 1/3: Extracting item identifier via Qwen 2.5");
-        String identifier = aiExtractionService.extractIdentifier(ticket.getBody());
+        String identifier = aiExtractionService.extractIdentifier(aiInput);
         ticket.setExtractedIdentifier(identifier.isEmpty() ? null : identifier);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
@@ -168,7 +171,7 @@ public class TicketProcessingService {
         }
 
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
-        String draft = aiDraftingService.generateDraft(ticket.getBody(), item);
+        String draft = aiDraftingService.generateDraft(aiInput, item);
         ticket.setDraftReply(draft);
 
         ticket.setStatus(TicketStatus.DRAFT_READY);
@@ -180,6 +183,23 @@ public class TicketProcessingService {
         log.info("Ticket processing finished: DRAFT_READY");
 
         gmailDraftService.saveDraft(ticket);
+    }
+
+    /**
+     * Builds the text the AI models work on: the email body plus any parsed attachment text
+     * (Phase 1.1). When the email has no attachments this is just the body, preserving the
+     * previous behaviour.
+     *
+     * @param ticket the ticket being processed
+     * @return combined body + attachment text
+     */
+    private String buildAiInput(EmailTicket ticket) {
+        String body = ticket.getBody() != null ? ticket.getBody() : "";
+        String attachments = ticket.getAttachmentText();
+        if (attachments == null || attachments.isBlank()) {
+            return body;
+        }
+        return body + "\n\n" + attachments;
     }
 
     /**

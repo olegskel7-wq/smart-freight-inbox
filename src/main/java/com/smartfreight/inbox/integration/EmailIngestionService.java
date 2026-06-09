@@ -2,6 +2,7 @@ package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.DraftNotificationService;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.TicketProcessingService;
@@ -54,17 +55,20 @@ public class EmailIngestionService {
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
     private final EmailClassificationService emailClassificationService;
+    private final AttachmentParserService attachmentParserService;
     private final TaskExecutor taskExecutor;
     private final Counter receivedCounter;
 
     public EmailIngestionService(EmailTicketRepository emailTicketRepository,
                                  TicketProcessingService ticketProcessingService,
                                  EmailClassificationService emailClassificationService,
+                                 AttachmentParserService attachmentParserService,
                                  @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor,
                                  MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.emailClassificationService = emailClassificationService;
+        this.attachmentParserService = attachmentParserService;
         this.taskExecutor = taskExecutor;
         this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
                 .description("Total emails received and successfully ingested as tickets")
@@ -120,12 +124,17 @@ public class EmailIngestionService {
             String body = extractBody(mimeMessage);
             String subject = mimeMessage.getSubject() != null ? mimeMessage.getSubject() : "";
 
+            // Phase 1.1: pull text from PDF/Excel attachments. Fed to the classifier too, so an RFQ
+            // whose body is just "please see attached" is judged on the attachment, not dropped.
+            String attachmentText = attachmentParserService.extractAttachmentText(mimeMessage);
+            String classificationInput = attachmentText.isBlank() ? body : body + "\n\n" + attachmentText;
+
             String senderEmail = "";
             if (mimeMessage.getFrom() != null && mimeMessage.getFrom().length > 0) {
                 senderEmail = mimeMessage.getFrom()[0].toString();
             }
 
-            if (!emailClassificationService.isFreightInquiry(subject, body)) {
+            if (!emailClassificationService.isFreightInquiry(subject, classificationInput)) {
                 log.info("Non-freight email ignored (no DB record created): subject='{}'", subject);
                 return;
             }
@@ -140,6 +149,7 @@ public class EmailIngestionService {
                     .subject(mimeMessage.getSubject())
                     .senderEmail(senderEmail)
                     .body(body)
+                    .attachmentText(attachmentText.isBlank() ? null : attachmentText)
                     .build();
 
             try {

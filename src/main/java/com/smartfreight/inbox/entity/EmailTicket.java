@@ -59,6 +59,15 @@ public class EmailTicket {
     @Column(name = "body", columnDefinition = "TEXT")
     private String body;
 
+    /**
+     * Text extracted from PDF/Excel attachments (Phase 1.1), if any.
+     * Stored separately from {@link #body} so the operator UI can distinguish email text from
+     * attachment content; the AI pipeline combines both when building extraction/drafting prompts.
+     * Null when the email had no parseable attachments.
+     */
+    @Column(name = "attachment_text", columnDefinition = "TEXT")
+    private String attachmentText;
+
     /** Key identifier extracted by the AI from the email body (e.g. MSCU1234567). */
     @Column(name = "extracted_identifier")
     private String extractedIdentifier;
