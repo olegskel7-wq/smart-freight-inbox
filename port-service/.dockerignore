@@ -1,0 +1,4 @@
+# Whitelist style: the Dockerfile only COPYs pom.xml and src/ (see ../.dockerignore).
+*
+!pom.xml
+!src
