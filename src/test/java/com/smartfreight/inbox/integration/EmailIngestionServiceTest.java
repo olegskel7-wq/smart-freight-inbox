@@ -1,11 +1,11 @@
 package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.SettingsService;
-import com.smartfreight.inbox.service.TicketProcessingService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
@@ -18,14 +18,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.task.TaskExecutor;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Optional;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.*;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -37,12 +36,12 @@ import org.mockito.quality.Strictness;
  * – sėkmingą laiško priėmimą ir bilieto kūrimą
  * – dublikatų tikrinimą pagal Message-ID antraštę
  * – laiškų be Message-ID antraštės praleidimą
- * – per didelių laiškų praleidimą
  * – paprasto teksto ir multipart laiškų turinio ištraukimą
+ * – outbox įvykio („ticket.created") registravimą toje pačioje transakcijoje (Phase 1.3)
  *
- * TransactionSynchronizationManager inicializuojamas rankiniu būdu,
- * nes paslaugos metodas registruoja afterCommit() callback'ą –
- * be aktyvios sinchronizacijos būtų išmesta IllegalStateException.
+ * Nuo Phase 1.3 AI konvejeris nebevyksta tiesiogiai: paslauga tik įrašo įvykį
+ * per TicketEventPublisher (transactional outbox), o vartotojas (RabbitMQ consumer)
+ * apdoroja bilietą asinchroniškai. Todėl testuose tikrinamas publisher kvietimas.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -52,13 +51,10 @@ class EmailIngestionServiceTest {
     private EmailTicketRepository emailTicketRepository;
 
     @Mock
-    private TicketProcessingService ticketProcessingService;
+    private TicketEventPublisher ticketEventPublisher;
 
     @Mock
     private EmailClassificationService emailClassificationService;
-
-    @Mock
-    private TaskExecutor taskExecutor;
 
     @Mock
     private SettingsService settingsService;
@@ -70,14 +66,10 @@ class EmailIngestionServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Run submitted Runnables immediately so process() calls are synchronous in tests
-        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
-                .when(taskExecutor).execute(any());
-
         emailIngestionService = new EmailIngestionService(
-                emailTicketRepository, ticketProcessingService, emailClassificationService,
+                emailTicketRepository, ticketEventPublisher, emailClassificationService,
                 new AttachmentParserService(new SimpleMeterRegistry()), settingsService,
-                taskExecutor, new SimpleMeterRegistry());
+                new SimpleMeterRegistry());
         mailSession = Session.getInstance(new Properties());
         // Default: treat all emails as freight-relevant; individual tests override when needed.
         when(emailClassificationService.isFreightInquiry(any(), any())).thenReturn(true);
@@ -139,7 +131,6 @@ class EmailIngestionServiceTest {
      * Tikrinama:
      * – emailTicketRepository.save() iškviečiamas vieną kartą
      * – biliete teisingai užfiksuotas siuntėjas, tema, Message-ID
-     * – po transakcijos įvykdymo process() bus iškviestas per afterCommit()
      */
     @Test
     void processIncomingEmail_newEmail_savesTicketWithCorrectFields() throws Exception {
@@ -158,12 +149,7 @@ class EmailIngestionServiceTest {
                 .build();
         when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
 
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            emailIngestionService.processIncomingEmail(email);
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        emailIngestionService.processIncomingEmail(email);
 
         ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
         verify(emailTicketRepository).save(captor.capture());
@@ -195,7 +181,7 @@ class EmailIngestionServiceTest {
         emailIngestionService.processIncomingEmail(email);
 
         verify(emailTicketRepository, never()).save(any());
-        verifyNoInteractions(ticketProcessingService);
+        verifyNoInteractions(ticketEventPublisher);
     }
 
     /**
@@ -237,12 +223,7 @@ class EmailIngestionServiceTest {
                 .messageId("<multipart-001@example.com>").build();
         when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
 
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            emailIngestionService.processIncomingEmail(email);
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        emailIngestionService.processIncomingEmail(email);
 
         ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
         verify(emailTicketRepository).save(captor.capture());
@@ -250,16 +231,16 @@ class EmailIngestionServiceTest {
     }
 
     /**
-     * Testas: po sėkmingo išsaugojimo afterCommit() registruoja process() kvietimą.
+     * Testas: po sėkmingo išsaugojimo registruojamas „ticket.created" outbox įvykis.
      *
-     * AI konvejeris turi prasidėti TIK ĮVYKDŽIUS transakciją –
-     * tai garantuoja, kad process() matys išsaugotą biletą duomenų bazėje.
-     * Testas rankiniu būdu inicializuoja sinchronizaciją ir iššaukia afterCommit() callbacks.
+     * Phase 1.3: vietoj tiesioginio process() kvietimo paslauga įrašo įvykį per
+     * TicketEventPublisher TOJE PAČIOJE transakcijoje kaip ir bilietas — atominis
+     * „bilietas + įvykis" įrašas yra transactional outbox šablono esmė.
      */
     @Test
-    void processIncomingEmail_afterCommit_callsTicketProcessingService() throws Exception {
+    void processIncomingEmail_newEmail_publishesTicketCreatedEvent() throws Exception {
         MimeMessage email = buildSimpleEmail(
-                "<aftercommit-001@example.com>",
+                "<outbox-001@example.com>",
                 "test@example.com",
                 "Test subject",
                 "Test body");
@@ -267,21 +248,12 @@ class EmailIngestionServiceTest {
         when(emailTicketRepository.findByMessageId(any())).thenReturn(Optional.empty());
 
         EmailTicket savedTicket = EmailTicket.builder().id(99L)
-                .messageId("<aftercommit-001@example.com>").build();
+                .messageId("<outbox-001@example.com>").build();
         when(emailTicketRepository.save(any())).thenReturn(savedTicket);
 
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email);
 
-            // Rankiniu būdu iššaukiame afterCommit – imituoja Spring transakcijos užbaigimą
-            TransactionSynchronizationManager.getSynchronizations()
-                    .forEach(sync -> sync.afterCommit());
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
-
-        verify(ticketProcessingService).process(99L);
+        verify(ticketEventPublisher).publishTicketCreated(99L);
     }
 
     /**
@@ -304,6 +276,6 @@ class EmailIngestionServiceTest {
 
         verify(emailTicketRepository, never()).save(any());
         verify(emailTicketRepository, never()).findByMessageId(any());
-        verifyNoInteractions(ticketProcessingService);
+        verifyNoInteractions(ticketEventPublisher);
     }
 }

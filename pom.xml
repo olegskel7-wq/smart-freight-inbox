@@ -91,6 +91,12 @@
 			<artifactId>spring-integration-mail</artifactId>
 		</dependency>
 
+		<!-- Async AI pipeline (Phase 1.3): RabbitMQ + transactional outbox -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-amqp</artifactId>
+		</dependency>
+
 		<!-- Attachment parsing (Phase 1.1): extract text from PDF + Excel attachments -->
 		<dependency>
 			<groupId>org.apache.pdfbox</groupId>
@@ -140,6 +146,12 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>postgresql</artifactId>
+			<version>${testcontainers.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>rabbitmq</artifactId>
 			<version>${testcontainers.version}</version>
 			<scope>test</scope>
 		</dependency>

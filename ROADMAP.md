@@ -47,7 +47,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 |---|------|-----------|--------|--------|
 | 1.1 | **PDF/Excel attachment parsing** ✅ DONE (09.06.2026) | 🔴 ВЫСОКИЙ | M | `AttachmentParserService`: PDFBox 3.0.3 (PDF) + POI 5.3.0 (Excel), отказоустойчиво. Колонка `attachment_text` (V11), хранится отдельно от body. Текст вложений идёт и в классификатор (RFQ «see attached» не отбрасывается), и в обе AI-модели (склейка в `TicketProcessingService`). Ветка `phase1/attachment-parsing`. |
 | 1.2 | **Rate sheet в БД** ✅ DONE (10.06.2026) | 🔴 ВЫСОКИЙ | M | Таблица `carrier_rate` (V13) + UI `/rates` с загрузкой CSV (upsert по carrier+маршрут, построчный отчёт об ошибках). `RateSheetService.buildRateContext()`: детерминированный подбор — ставка попадает в драфт-промпт, если origin и destination упомянуты в письме (включая текст вложений); просроченные не котируются. В промпт идёт только sell price (rate+маржа), сама маржа LLM не видна. Плейсхолдер `{rateContext}`; если его нет в сохранённом промпте — блок ставок дописывается в конец. Флаг `feature.rate-sheets`. AI-извлечение маршрута — отложено до 1.4. Ветка `phase1/rate-sheets`. |
-| 1.3 | **Async AI pipeline** | 🔴 ВЫСОКИЙ | L | RabbitMQ или Spring Events. Главная архитектурная проблема — синхронный pipeline блокирует масштабирование и auto-send. |
+| 1.3 | **Async AI pipeline** 🔶 Сессия 1/3 (10.06.2026) | 🔴 ВЫСОКИЙ | L | Решение: **RabbitMQ** + transactional outbox (`outbox_event`, V14). OutboxRelay (FOR UPDATE SKIP LOCKED + publisher confirms), topic exchange `ticket.events` → `q.ticket.process` + DLQ, идемпотентный consumer 2×prefetch=1 (= OLLAMA_NUM_PARALLEL). Ingestion/RetryScheduler/admin на seam `TicketEventPublisher`. Осталось: sweep зависших PROCESSING (сессия 2), классификация с IMAP-потока (сессия 3). Ветка `phase1/async-pipeline`. |
 | 1.4 | **Email classification (расширенный)** | 🔴 ВЫСОКИЙ | S | Типы: RFQ / STATUS_UPDATE / BOOKING_CONFIRM / INVOICE_QUERY / DOCUMENT_REQUEST. Маршрутизация в правильный workflow. Поле `ticketType` на EmailTicket. |
 | 1.5 | **SLA таймер на тикетах** | 🟡 СРЕДНИЙ | S | Поля `slaDeadlineAt` + `slaBreached` на EmailTicket. Вычислять при ingest по типу письма (RFQ=2ч, Booking=30мин, General=8ч). Красная метка в UI. Продаётся клиенту как гарантия ответа. |
 | 1.6 | **Auto-send threshold** | 🟡 СРЕДНИЙ | S | Поле `autoSendThreshold` (0.0–1.0) в настройках тенанта. Если `aiConfidence >= threshold` → отправить автоматически минуя оператора. Открывает "24/7 без оператора". |
@@ -145,15 +145,23 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 
 ---
 
-## Следующий шаг — 1.3 Async AI pipeline
+## Следующий шаг — 1.3 Async AI pipeline (сессии 2–3)
 
-> 1.2 (rate sheets) завершён 10.06.2026. Драфт умеет котировать реальные цены — теперь убираем
-> главный архитектурный долг.
+> Решение 10.06.2026: **RabbitMQ**, выбран осознанно вместо Spring Events — ради
+> multi-instance готовности (Phase 2) и обучающей ценности. Цена выбора — transactional
+> outbox против dual-write и DLQ против poison messages — оплачена в сессии 1.
 
-**1.3 — Async AI pipeline:**
-- RabbitMQ или Spring Events — решить на старте (Spring Events проще, RabbitMQ честнее для масштаба)
-- Сейчас pipeline синхронный в потоке IMAP — блокирует масштабирование и auto-send (1.6)
-- Известный долг, который 1.3 разблокирует: Circuit Breaker (1.7), SLA-таймер (1.5)
+**Сделано (сессия 1, ветка `phase1/async-pipeline`):**
+- Transactional outbox: тикет и событие пишутся в одной транзакции — рассинхрон БД/брокер невозможен;
+  упавший брокер не блокирует приём почты (события копятся в outbox)
+- OutboxRelay: поллер с `FOR UPDATE SKIP LOCKED` (multi-instance safe) + publisher confirms
+- Топология: `ticket.events` (topic) → `q.ticket.process`; 3 попытки → DLX → `q.ticket.process.dlq`
+- Consumer: 2 потребителя × prefetch=1 = backpressure к Ollama (= OLLAMA_NUM_PARALLEL в compose)
+- Ingestion, RetryScheduler и /admin/reprocess переведены на seam `TicketEventPublisher`
+
+**Сессия 2:** sweep зависших PROCESSING/NEW (после краша mid-process redelivery скипается
+status-guard'ом — тикет виснет), метрики глубины очередей в Prometheus/Grafana, admin-обработка DLQ.
+**Сессия 3:** классификация с IMAP-потока в consumer (статус RECEIVED) — задел под 1.4 ticketType.
 
 _Подробности: `C:\Users\olegs\Documents\smartfreight-wiki\wiki\analysis\Master Roadmap.md`_
 

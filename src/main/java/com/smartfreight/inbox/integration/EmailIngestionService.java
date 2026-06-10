@@ -1,12 +1,12 @@
 package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.DraftNotificationService;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.SettingsService;
-import com.smartfreight.inbox.service.TicketProcessingService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.BodyPart;
@@ -16,14 +16,10 @@ import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -42,8 +38,10 @@ import java.io.IOException;
  * 4. LLM classification (Qwen) — BEFORE the first DB query, so the JDBC connection is not held.
  *    Unrelated emails (non-freight inquiries) are rejected here with no DB record created.
  * 5. Duplicate check by Message-ID — IMAP may deliver the same message twice.
- * 6. A ticket is created and persisted.
- * 7. After transaction commit (afterCommit) the AI pipeline is started.
+ * 6. A ticket is created and persisted, and a "ticket.created" event is written to the
+ *    transactional outbox IN THE SAME transaction (Phase 1.3).
+ * 7. OutboxRelay publishes the event to RabbitMQ; TicketEventConsumer runs the AI pipeline.
+ *    A broker outage therefore never blocks ingestion — events wait in the outbox.
  */
 @Service
 public class EmailIngestionService {
@@ -60,26 +58,23 @@ public class EmailIngestionService {
     private static final String FEATURE_ATTACHMENT_PARSING = "feature.attachment-parsing";
 
     private final EmailTicketRepository emailTicketRepository;
-    private final TicketProcessingService ticketProcessingService;
+    private final TicketEventPublisher ticketEventPublisher;
     private final EmailClassificationService emailClassificationService;
     private final AttachmentParserService attachmentParserService;
     private final SettingsService settingsService;
-    private final TaskExecutor taskExecutor;
     private final Counter receivedCounter;
 
     public EmailIngestionService(EmailTicketRepository emailTicketRepository,
-                                 TicketProcessingService ticketProcessingService,
+                                 TicketEventPublisher ticketEventPublisher,
                                  EmailClassificationService emailClassificationService,
                                  AttachmentParserService attachmentParserService,
                                  SettingsService settingsService,
-                                 @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor,
                                  MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
-        this.ticketProcessingService = ticketProcessingService;
+        this.ticketEventPublisher = ticketEventPublisher;
         this.emailClassificationService = emailClassificationService;
         this.attachmentParserService = attachmentParserService;
         this.settingsService = settingsService;
-        this.taskExecutor = taskExecutor;
         this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
                 .description("Total emails received and successfully ingested as tickets")
                 .register(meterRegistry);
@@ -91,8 +86,8 @@ public class EmailIngestionService {
      * @ServiceActivator — Spring Integration automatically invokes this method
      * when a new message arrives on the mailChannel channel.
      *
-     * @Transactional — ticket persistence and AI startup are atomic.
-     * If save() throws an exception, no ticket is created and processing does not begin.
+     * @Transactional — ticket persistence and the outbox event are atomic.
+     * If save() throws an exception, no ticket is created and no event is recorded.
      *
      * @param mimeMessage received Jakarta Mail message object
      */
@@ -171,13 +166,8 @@ public class EmailIngestionService {
                 MDC.put("ticketId", String.valueOf(saved.getId()));
                 log.info("Email ingested: ticket ID={}, subject='{}'", saved.getId(), saved.getSubject());
 
-                final Long ticketId = saved.getId();
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        taskExecutor.execute(() -> ticketProcessingService.process(ticketId));
-                    }
-                });
+                // Same transaction as the ticket insert: either both become durable or neither.
+                ticketEventPublisher.publishTicketCreated(saved.getId());
 
             } catch (DataIntegrityViolationException e) {
                 log.info("Duplicate email on concurrent save, skipping: {}", messageId);

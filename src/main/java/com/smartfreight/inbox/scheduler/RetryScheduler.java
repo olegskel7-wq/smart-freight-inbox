@@ -2,17 +2,16 @@ package com.smartfreight.inbox.scheduler;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.service.TicketProcessingService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -20,7 +19,7 @@ import java.util.List;
  * Scheduler for reprocessing stuck tickets.
  *
  * Periodically (every 2 minutes) searches for tickets with RETRY_LATER status
- * and automatically restarts the AI pipeline.
+ * and re-enqueues them for the AI pipeline via the transactional outbox (Phase 1.3).
  *
  * Use cases:
  * — Automatic retry on transient Ollama errors
@@ -28,8 +27,9 @@ import java.util.List;
  *
  * Pipeline:
  * 1. Find RETRY_LATER tickets with retryCount &lt; MAX_RETRIES (5)
- * 2. For each: increment retryCount, reset status to NEW
- * 3. Invoke TicketProcessingService.process() synchronously
+ * 2. For each: increment retryCount, reset status to NEW, write a
+ *    "ticket.retry-requested" outbox event — all in one transaction
+ * 3. OutboxRelay publishes the event; TicketEventConsumer runs the pipeline
  * 4. Success → DRAFT_READY, failure → RETRY_LATER again or FAILED
  *
  * MAX_RETRIES protects against infinite loops with "broken" tickets.
@@ -46,45 +46,43 @@ public class RetryScheduler {
     private static final int MAX_RETRIES = 5;
 
     /**
-     * Maximum tickets processed per scheduler run.
-     * Prevents overloading Ollama when many tickets accumulate (each LLM call takes up to 150 s).
+     * Maximum tickets re-enqueued per scheduler run.
+     * Prevents flooding the queue when many tickets accumulate; actual concurrency
+     * towards Ollama is capped by the RabbitMQ consumer (2 consumers, prefetch=1).
      * Configurable via {@code retry.batch-size} (default: 10).
      */
     @Value("${retry.batch-size:10}")
     private int batchSize = 10;
 
     private final EmailTicketRepository emailTicketRepository;
-    private final TicketProcessingService ticketProcessingService;
-    private final TaskExecutor taskExecutor;
+    private final TicketEventPublisher ticketEventPublisher;
     private final Counter retryCounter;
 
     public RetryScheduler(EmailTicketRepository emailTicketRepository,
-                          TicketProcessingService ticketProcessingService,
-                          @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor,
+                          TicketEventPublisher ticketEventPublisher,
                           MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
-        this.ticketProcessingService = ticketProcessingService;
-        this.taskExecutor = taskExecutor;
+        this.ticketEventPublisher = ticketEventPublisher;
         this.retryCounter = Counter.builder("smartfreight_tickets_retry_count_total")
                 .description("Total number of retry processing attempts for tickets")
                 .register(meterRegistry);
     }
 
     /**
-     * Periodically executed task to reprocess stuck tickets.
+     * Periodically executed task to re-enqueue stuck tickets.
      *
      * Schedule:
      * — {@code fixedDelay = 120_000 ms} (2 minutes) — pause BETWEEN the end of one execution and the start of the next
      * — {@code initialDelay = 60_000 ms} (1 minute) — pause before the FIRST execution
      *   (gives the application time to initialize after startup)
      *
-     * fixedDelay is used instead of fixedRate to avoid accumulated concurrent executions:
-     * — fixedRate: fires every 2 minutes regardless of method duration
-     * — fixedDelay: if the method ran for 5 minutes, the next run starts 2 minutes after it finishes
-     *
-     * Ollama may take up to 150 s per ticket, so fixedDelay is more appropriate.
+     * @Transactional — the status reset and the outbox event are atomic per run:
+     * a ticket can never be reset to NEW without its retry event being recorded,
+     * and vice versa. The method itself is fast (no LLM calls) — heavy lifting
+     * happens in the RabbitMQ consumer.
      */
     @Scheduled(fixedDelay = 120_000, initialDelay = 60_000)
+    @Transactional
     public void retryFailedTickets() {
         List<EmailTicket> allEligible = emailTicketRepository
                 .findByStatusAndRetryCountLessThan(TicketStatus.RETRY_LATER, MAX_RETRIES);
@@ -97,7 +95,7 @@ public class RetryScheduler {
                 ? allEligible.subList(0, batchSize)
                 : allEligible;
 
-        log.info("RetryScheduler: found {} eligible ticket(s), processing {} (batch limit {})",
+        log.info("RetryScheduler: found {} eligible ticket(s), re-enqueueing {} (batch limit {})",
                 allEligible.size(), toRetry.size(), batchSize);
 
         for (EmailTicket ticket : toRetry) {
@@ -105,12 +103,11 @@ public class RetryScheduler {
             ticket.setStatus(TicketStatus.NEW);
             emailTicketRepository.save(ticket);
 
-            log.info("Retrying ticket ID={} (attempt {} of {})",
+            log.info("Re-enqueueing ticket ID={} (attempt {} of {})",
                     ticket.getId(), ticket.getRetryCount(), MAX_RETRIES);
 
             retryCounter.increment();
-            final Long ticketId = ticket.getId();
-            taskExecutor.execute(() -> ticketProcessingService.process(ticketId));
+            ticketEventPublisher.publishRetryRequested(ticket.getId());
         }
     }
 }

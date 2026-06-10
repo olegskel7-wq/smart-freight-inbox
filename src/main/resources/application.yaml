@@ -33,6 +33,14 @@ spring:
     connect-retries: 5
     ignore-migration-patterns: "*:missing"
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:smartfreight}
+    password: ${RABBITMQ_PASSWORD:smartfreight}
+    # Publisher confirms: OutboxRelay marks an event published only after the broker acks it.
+    publisher-confirm-type: correlated
+
   mail:
     host: ${IMAP_HOST:imap.example.com}
     port: ${IMAP_PORT:993}
@@ -56,6 +64,16 @@ ollama:
   base-url: ${OLLAMA_URL:http://localhost:11434}
   extraction-model: qwen2.5:7b
   drafting-model: llama3.1:8b
+
+# Async AI pipeline (Phase 1.3)
+ai-pipeline:
+  # Concurrent RabbitMQ consumers = max AI pipelines in flight.
+  # Keep in sync with OLLAMA_NUM_PARALLEL in docker-compose.yml.
+  consumer-concurrency: 2
+
+outbox:
+  poll-interval-ms: 2000
+  batch-size: 50
 
 port:
   service:

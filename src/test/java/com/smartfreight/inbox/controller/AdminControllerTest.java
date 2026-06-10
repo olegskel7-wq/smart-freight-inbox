@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,7 +11,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -29,14 +29,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * – Tickets are queued for reprocessing and the response reports the count.
  * – prepareForRetry() is called before findIdsByStatusIn().
  * – When no tickets are found, a descriptive "no tickets" response is returned.
- * – Each ticket ID is dispatched via the task executor.
+ * – Each ticket ID is re-enqueued via the outbox event publisher (Phase 1.3) —
+ *   the AI pipeline itself runs in the RabbitMQ consumer, not here.
  *
  * Access control (ROLE_OPERATOR requirement) is enforced by Spring Security's
  * filter chain, not by the controller itself — covered by the SecurityConfig.
  * The standalone MockMvc here tests only controller logic.
- *
- * TaskExecutor is stubbed to run Runnables synchronously so process() calls
- * can be verified immediately with Mockito verify().
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -49,17 +47,14 @@ class AdminControllerTest {
     private TicketProcessingService ticketProcessingService;
 
     @Mock
-    private TaskExecutor taskExecutor;
+    private TicketEventPublisher ticketEventPublisher;
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
-                .when(taskExecutor).execute(any());
-
         AdminController controller = new AdminController(
-                emailTicketRepository, ticketProcessingService, taskExecutor);
+                emailTicketRepository, ticketProcessingService, ticketEventPublisher);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -72,8 +67,8 @@ class AdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("2 tickets")));
 
-        verify(ticketProcessingService).process(1L);
-        verify(ticketProcessingService).process(2L);
+        verify(ticketEventPublisher).publishRetryRequested(1L);
+        verify(ticketEventPublisher).publishRetryRequested(2L);
     }
 
     @Test
@@ -85,7 +80,7 @@ class AdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("No tickets to reprocess")));
 
-        verify(ticketProcessingService, never()).process(any());
+        verifyNoInteractions(ticketEventPublisher);
     }
 
     @Test

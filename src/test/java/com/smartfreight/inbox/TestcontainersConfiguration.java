@@ -4,6 +4,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.RabbitMQContainer;
 
 /**
  * Конфигурация Testcontainers для интеграционных тестов.
@@ -41,6 +42,22 @@ public class TestcontainersConfiguration {
 	@ServiceConnection
 	public PostgreSQLContainer<?> postgresContainer() {
 		return new PostgreSQLContainer<>("postgres:16-alpine");
+	}
+
+	/**
+	 * RabbitMQ контейнер для асинхронного AI-пайплайна (Phase 1.3).
+	 *
+	 * Smoke-тест с реальным брокером проверяет всю messaging-инфраструктуру:
+	 * декларацию топологии (exchange, очереди, DLQ-биндинги) и старт
+	 * listener-контейнера TicketEventConsumer.
+	 *
+	 * @ServiceConnection — Spring Boot подставляет host/port/credentials контейнера
+	 *                      в spring.rabbitmq.* автоматически.
+	 */
+	@Bean
+	@ServiceConnection
+	public RabbitMQContainer rabbitContainer() {
+		return new RabbitMQContainer("rabbitmq:3.13-alpine");
 	}
 
 }

@@ -2,8 +2,8 @@ package com.smartfreight.inbox.scheduler;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.service.TicketProcessingService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,7 +13,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.core.task.TaskExecutor;
 
 import java.util.List;
 
@@ -26,14 +25,14 @@ import static org.mockito.Mockito.*;
  * Unit tests for RetryScheduler.
  *
  * Verifies:
- * - RETRY_LATER tickets with retryCount < MAX_RETRIES are processed
- * - retryCount and status are updated before process() is called
+ * - RETRY_LATER tickets with retryCount < MAX_RETRIES are re-enqueued
+ * - retryCount and status are updated before the retry event is published
  * - Micrometer counter is incremented per ticket
  * - Correct behaviour when no tickets are eligible
  *
- * Uses SimpleMeterRegistry — a real in-memory registry suitable for tests.
- * TaskExecutor is mocked with doAnswer so async calls run synchronously,
- * keeping assertions straightforward.
+ * Since Phase 1.3 the scheduler no longer runs the pipeline itself — it records a
+ * "ticket.retry-requested" event via TicketEventPublisher (transactional outbox)
+ * and the RabbitMQ consumer does the heavy lifting. Tests assert the publisher call.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -43,10 +42,7 @@ class RetrySchedulerTest {
     private EmailTicketRepository emailTicketRepository;
 
     @Mock
-    private TicketProcessingService ticketProcessingService;
-
-    @Mock
-    private TaskExecutor taskExecutor;
+    private TicketEventPublisher ticketEventPublisher;
 
     private RetryScheduler retryScheduler;
     private SimpleMeterRegistry meterRegistry;
@@ -56,11 +52,8 @@ class RetrySchedulerTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        // Run submitted Runnables immediately so process() is called synchronously in tests
-        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
-                .when(taskExecutor).execute(any());
         retryScheduler = new RetryScheduler(
-                emailTicketRepository, ticketProcessingService, taskExecutor, meterRegistry);
+                emailTicketRepository, ticketEventPublisher, meterRegistry);
     }
 
     private EmailTicket buildRetryTicket(Long id, int retryCount) {
@@ -73,10 +66,11 @@ class RetrySchedulerTest {
     }
 
     /**
-     * Single RETRY_LATER ticket — retryCount incremented, status set to NEW, process() called.
+     * Single RETRY_LATER ticket — retryCount incremented, status set to NEW,
+     * retry event published.
      */
     @Test
-    void retryFailedTickets_oneEligibleTicket_processesAndUpdatesFields() {
+    void retryFailedTickets_oneEligibleTicket_reEnqueuesAndUpdatesFields() {
         EmailTicket ticket = buildRetryTicket(1L, 2);
         when(emailTicketRepository.findByStatusAndRetryCountLessThan(
                 TicketStatus.RETRY_LATER, MAX_RETRIES))
@@ -91,14 +85,14 @@ class RetrySchedulerTest {
         assertThat(saved.getRetryCount()).isEqualTo(3);
         assertThat(saved.getStatus()).isEqualTo(TicketStatus.NEW);
 
-        verify(ticketProcessingService).process(1L);
+        verify(ticketEventPublisher).publishRetryRequested(1L);
     }
 
     /**
-     * Multiple tickets — all processed, counter matches ticket count.
+     * Multiple tickets — all re-enqueued, counter matches ticket count.
      */
     @Test
-    void retryFailedTickets_multipleTickets_processesAllAndIncrementsCounter() {
+    void retryFailedTickets_multipleTickets_reEnqueuesAllAndIncrementsCounter() {
         EmailTicket t1 = buildRetryTicket(1L, 0);
         EmailTicket t2 = buildRetryTicket(2L, 1);
         EmailTicket t3 = buildRetryTicket(3L, 3);
@@ -109,9 +103,9 @@ class RetrySchedulerTest {
 
         retryScheduler.retryFailedTickets();
 
-        verify(ticketProcessingService).process(1L);
-        verify(ticketProcessingService).process(2L);
-        verify(ticketProcessingService).process(3L);
+        verify(ticketEventPublisher).publishRetryRequested(1L);
+        verify(ticketEventPublisher).publishRetryRequested(2L);
+        verify(ticketEventPublisher).publishRetryRequested(3L);
 
         double counterValue = meterRegistry.counter("smartfreight_tickets_retry_count_total").count();
         assertThat(counterValue).isEqualTo(3.0);
@@ -128,7 +122,7 @@ class RetrySchedulerTest {
 
         retryScheduler.retryFailedTickets();
 
-        verifyNoInteractions(ticketProcessingService);
+        verifyNoInteractions(ticketEventPublisher);
         verify(emailTicketRepository, never()).save(any());
     }
 
@@ -148,21 +142,21 @@ class RetrySchedulerTest {
     }
 
     /**
-     * retryCount is persisted BEFORE process() is invoked — protects against infinite loops
-     * if process() throws and the ticket ends up back in RETRY_LATER.
+     * retryCount is persisted BEFORE the retry event is published — protects against
+     * infinite loops if processing fails and the ticket ends up back in RETRY_LATER.
      */
     @Test
-    void retryFailedTickets_incrementsRetryCountBeforeCallingProcess() {
+    void retryFailedTickets_incrementsRetryCountBeforePublishing() {
         EmailTicket ticket = buildRetryTicket(5L, 1);
         when(emailTicketRepository.findByStatusAndRetryCountLessThan(
                 TicketStatus.RETRY_LATER, MAX_RETRIES))
                 .thenReturn(List.of(ticket));
 
-        var inOrder = inOrder(emailTicketRepository, ticketProcessingService);
+        var inOrder = inOrder(emailTicketRepository, ticketEventPublisher);
 
         retryScheduler.retryFailedTickets();
 
         inOrder.verify(emailTicketRepository).save(any(EmailTicket.class));
-        inOrder.verify(ticketProcessingService).process(5L);
+        inOrder.verify(ticketEventPublisher).publishRetryRequested(5L);
     }
 }
