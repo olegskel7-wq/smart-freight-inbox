@@ -69,6 +69,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 | 2.5 | **Quote follow-up automation** | 🟡 СРЕДНИЙ | S | Отправил квоту → нет ответа через N часов → автоматический friendly follow-up. Wisor делает это. |
 | 2.6 | **Redis** | 🟡 СРЕДНИЙ | S | Session store + кэш rate sheets + rate limiting API. |
 | 2.7 | **Document request handling** | 🟢 НИЗКИЙ | M | Таможня/партнёр просит документ → AI определяет что нужно → отвечает с вложением или эскалирует. |
+| 2.8 | **NL-запросы к данным inbox** | 🟡 СРЕДНИЙ | M | «Спроси свой inbox» на естественном языке: сколько RFQ за месяц, где узкие места, avg response time. Local LLM уже в стеке → почти бесплатно поверх Analytics Dashboard (2.1). Levity делает это («Control Tower»). Killer-демо для onboarding. |
 
 ---
 
