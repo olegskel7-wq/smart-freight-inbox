@@ -46,7 +46,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 | # | Фича | Приоритет | Усилие | Детали |
 |---|------|-----------|--------|--------|
 | 1.1 | **PDF/Excel attachment parsing** ✅ DONE (09.06.2026) | 🔴 ВЫСОКИЙ | M | `AttachmentParserService`: PDFBox 3.0.3 (PDF) + POI 5.3.0 (Excel), отказоустойчиво. Колонка `attachment_text` (V11), хранится отдельно от body. Текст вложений идёт и в классификатор (RFQ «see attached» не отбрасывается), и в обе AI-модели (склейка в `TicketProcessingService`). Ветка `phase1/attachment-parsing`. |
-| 1.2 | **Rate sheet в БД** | 🔴 ВЫСОКИЙ | M | Новая таблица `carrier_rates` (carrier, origin, destination, rate, currency, margin_percent, valid_until). UI для загрузки CSV. В AiDraftingService — lookup ставки → вставить реальную цену в промпт. Разница между "черновик" и "готовая квота". |
+| 1.2 | **Rate sheet в БД** ✅ DONE (10.06.2026) | 🔴 ВЫСОКИЙ | M | Таблица `carrier_rate` (V13) + UI `/rates` с загрузкой CSV (upsert по carrier+маршрут, построчный отчёт об ошибках). `RateSheetService.buildRateContext()`: детерминированный подбор — ставка попадает в драфт-промпт, если origin и destination упомянуты в письме (включая текст вложений); просроченные не котируются. В промпт идёт только sell price (rate+маржа), сама маржа LLM не видна. Плейсхолдер `{rateContext}`; если его нет в сохранённом промпте — блок ставок дописывается в конец. Флаг `feature.rate-sheets`. AI-извлечение маршрута — отложено до 1.4. Ветка `phase1/rate-sheets`. |
 | 1.3 | **Async AI pipeline** | 🔴 ВЫСОКИЙ | L | RabbitMQ или Spring Events. Главная архитектурная проблема — синхронный pipeline блокирует масштабирование и auto-send. |
 | 1.4 | **Email classification (расширенный)** | 🔴 ВЫСОКИЙ | S | Типы: RFQ / STATUS_UPDATE / BOOKING_CONFIRM / INVOICE_QUERY / DOCUMENT_REQUEST. Маршрутизация в правильный workflow. Поле `ticketType` на EmailTicket. |
 | 1.5 | **SLA таймер на тикетах** | 🟡 СРЕДНИЙ | S | Поля `slaDeadlineAt` + `slaBreached` на EmailTicket. Вычислять при ingest по типу письма (RFQ=2ч, Booking=30мин, General=8ч). Красная метка в UI. Продаётся клиенту как гарантия ответа. |
@@ -145,19 +145,19 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 
 ---
 
-## Следующий шаг — 1.2 Rate sheet в БД
+## Следующий шаг — 1.3 Async AI pipeline
 
-> 1.1 (attachment parsing) завершён 09.06.2026. Парсинг вложений готов — теперь ставки.
+> 1.2 (rate sheets) завершён 10.06.2026. Драфт умеет котировать реальные цены — теперь убираем
+> главный архитектурный долг.
 
-**1.2 — Rate sheet в БД:**
-- Таблица `carrier_rates` (carrier, origin, destination, rate, currency, margin_percent, valid_until) + миграция
-- UI для загрузки CSV
-- В `AiDraftingService` — lookup ставки по маршруту → вставить реальную цену в промпт
-- Превращает «черновик ответа» в «готовую квоту» — главная ценность для freight-клиента
+**1.3 — Async AI pipeline:**
+- RabbitMQ или Spring Events — решить на старте (Spring Events проще, RabbitMQ честнее для масштаба)
+- Сейчас pipeline синхронный в потоке IMAP — блокирует масштабирование и auto-send (1.6)
+- Известный долг, который 1.3 разблокирует: Circuit Breaker (1.7), SLA-таймер (1.5)
 
 _Подробности: `C:\Users\olegs\Documents\smartfreight-wiki\wiki\analysis\Master Roadmap.md`_
 
 ---
 
 *Создан: 27 May 2026*  
-*Последнее обновление: 09 Jun 2026 — Phase 1.1 завершён, следующий шаг 1.2*
+*Последнее обновление: 10 Jun 2026 — Phase 1.2 завершён, следующий шаг 1.3*

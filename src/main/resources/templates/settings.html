@@ -80,6 +80,8 @@
             <ul class="text-muted small mb-3">
                 <li><code>{email}</code> — the customer's email body</li>
                 <li><code>{itemContext}</code> — looked-up item data (drafting prompt only)</li>
+                <li><code>{rateContext}</code> — matched carrier rates with sell prices (drafting prompt only);
+                    without this placeholder matched rates are appended to the end of the prompt</li>
             </ul>
             <form method="post" th:action="@{/settings/prompts}">
                 <div class="mb-3">

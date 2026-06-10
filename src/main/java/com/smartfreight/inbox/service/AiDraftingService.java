@@ -29,9 +29,10 @@ public class AiDraftingService {
 
     private static final Logger log = LoggerFactory.getLogger(AiDraftingService.class);
 
-    /** ETA date formatter for display (e.g. "15 Apr 2025, 14:30"). */
+    /** ETA date formatter for display (e.g. "15 Apr 2025, 14:30"). English locale — month names
+     * must not follow the server's default locale, drafts are quoted to UK customers. */
     private static final DateTimeFormatter ETA_FORMATTER =
-            DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm");
+            DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm", java.util.Locale.ENGLISH);
 
     /** Maximum email body length sent to the LLM. */
     private static final int MAX_PROMPT_BODY_CHARS = 2000;
@@ -54,10 +55,16 @@ public class AiDraftingService {
             Container information:
             {itemContext}
 
+            Rate information (prices already include our margin — quote them as-is, never mention margin):
+            {rateContext}
+
             Customer's email:
             {email}
 
             Write only the email reply body (no subject line, no "Dear..." header unless natural).""";
+
+    /** Substituted for {@code {rateContext}} when no rates matched the enquiry. */
+    private static final String NO_RATES_NOTE = "No rate information available for this enquiry. Do not quote any price.";
 
     /** Draft generation model name — read from application.yaml. */
     private final String draftingModel;
@@ -95,14 +102,39 @@ public class AiDraftingService {
      * @return generated or fallback draft
      */
     public String generateDraft(String emailBody, TrackedItem item) {
+        return generateDraft(emailBody, item, "");
+    }
+
+    /**
+     * Generates a reply draft with carrier rate context (Phase 1.2).
+     *
+     * <p>Rate placement is defensive about prompt history: the {@code ai.drafting-prompt} row
+     * seeded by V9 predates {@code {rateContext}}, so when the stored template lacks the
+     * placeholder but rates matched, the rate block is appended to the prompt instead of being
+     * silently dropped.
+     *
+     * @param emailBody   customer email text (body + parsed attachments)
+     * @param item        tracked-item data (may be null if not found)
+     * @param rateContext matched rate lines from {@link RateSheetService}, or empty
+     * @return generated or fallback draft
+     */
+    public String generateDraft(String emailBody, TrackedItem item, String rateContext) {
         String itemContext = buildItemContext(item);
         String truncatedBody = emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
+        String rates = rateContext == null ? "" : rateContext.trim();
 
         String template = settingsService.getString(
                 SettingsService.KEY_DRAFTING_PROMPT, DEFAULT_DRAFTING_PROMPT);
         String prompt = template
                 .replace("{itemContext}", itemContext)
                 .replace("{email}", truncatedBody);
+
+        if (template.contains("{rateContext}")) {
+            prompt = prompt.replace("{rateContext}", rates.isEmpty() ? NO_RATES_NOTE : rates);
+        } else if (!rates.isEmpty()) {
+            prompt = prompt + "\n\nRate information (prices already include our margin — quote them as-is, "
+                    + "never mention margin):\n" + rates;
+        }
 
         try {
             Map<String, Object> requestBody = new HashMap<>();

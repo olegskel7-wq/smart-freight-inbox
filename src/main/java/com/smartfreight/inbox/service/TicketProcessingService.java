@@ -47,6 +47,7 @@ public class TicketProcessingService {
     private final AiExtractionService aiExtractionService;
     private final ItemLookupService itemLookupService;
     private final AiDraftingService aiDraftingService;
+    private final RateSheetService rateSheetService;
     private final GmailDraftService gmailDraftService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
@@ -65,12 +66,14 @@ public class TicketProcessingService {
                                    AiExtractionService aiExtractionService,
                                    ItemLookupService itemLookupService,
                                    AiDraftingService aiDraftingService,
+                                   RateSheetService rateSheetService,
                                    GmailDraftService gmailDraftService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.aiExtractionService = aiExtractionService;
         this.itemLookupService = itemLookupService;
         this.aiDraftingService = aiDraftingService;
+        this.rateSheetService = rateSheetService;
         this.gmailDraftService = gmailDraftService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
@@ -171,7 +174,9 @@ public class TicketProcessingService {
         }
 
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
-        String draft = aiDraftingService.generateDraft(aiInput, item);
+        // Phase 1.2: matched carrier rates (if any) let the model quote a real price.
+        String rateContext = rateSheetService.buildRateContext(aiInput);
+        String draft = aiDraftingService.generateDraft(aiInput, item, rateContext);
         ticket.setDraftReply(draft);
 
         ticket.setStatus(TicketStatus.DRAFT_READY);
