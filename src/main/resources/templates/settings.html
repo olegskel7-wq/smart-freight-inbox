@@ -17,6 +17,11 @@
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 
+    <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show">
+        <span th:text="${errorMessage}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
     <h5 class="mb-4">Settings</h5>
 
     <!-- Email Integration (read-only) -->
@@ -64,6 +69,60 @@
                     Disable if you prefer to check drafts directly in the UI.
                 </p>
                 <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Auto-send (editable) -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold d-flex align-items-center gap-2">
+            Auto-send
+            <span th:if="${autoSendEnabled}" class="badge bg-success small">ON</span>
+            <span th:unless="${autoSendEnabled}" class="badge bg-secondary small">OFF</span>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                When the pipeline is confident enough in a draft, send it <strong>without operator
+                review</strong>. Confidence is computed from verifiable facts (type classified,
+                identifier found in the backend, rate matched) and is shown on every ticket —
+                watch the scores for a while before switching this on.
+            </p>
+            <form method="post" th:action="@{/settings/autosend}">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="autoSendEnabled" name="autoSendEnabled" value="true"
+                           th:checked="${autoSendEnabled}">
+                    <label class="form-check-label" for="autoSendEnabled">
+                        Enable automatic sending (no human in the loop for matching tickets)
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="autoSendThreshold">Confidence threshold</label>
+                    <input type="number" class="form-control" style="max-width: 160px;"
+                           id="autoSendThreshold" name="autoSendThreshold"
+                           min="0" max="1" step="0.05" th:value="${autoSendThreshold}">
+                    <div class="form-text">
+                        0.0–1.0. A draft is auto-sent only when its confidence is at or above this value.
+                        Default 0.8 = identifier found in the backend AND a specific type assigned.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <span class="form-label fw-semibold d-block">Allowed ticket types</span>
+                    <div class="form-check form-check-inline" th:each="t : ${allTicketTypes}">
+                        <input class="form-check-input" type="checkbox"
+                               th:id="'autoType_' + ${t.name()}"
+                               name="autoSendTypes" th:value="${t.name()}"
+                               th:checked="${#strings.contains(',' + autoSendTypes + ',', ',' + t.name() + ',')}">
+                        <label class="form-check-label small" th:for="'autoType_' + ${t.name()}"
+                               th:text="${t.name()}">RFQ</label>
+                    </div>
+                    <div class="form-text">
+                        Only these types may be auto-sent. STATUS_UPDATE is the safe default —
+                        factual answers backed by TMS data. Think twice before adding RFQ: that
+                        sends prices without a human check.
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Save auto-send settings</button>
             </form>
         </div>
     </div>

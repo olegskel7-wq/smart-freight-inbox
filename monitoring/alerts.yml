@@ -93,6 +93,28 @@ groups:
             being ingested but the AI pipeline is not seeing them. Check RabbitMQ
             health and backend logs for OutboxRelay warnings.
 
+      - alert: SlaBreaches
+        expr: increase(smartfreight_sla_breached_total[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tickets are missing their reply-by SLA"
+          description: >-
+            {{ $value }} ticket(s) crossed their SLA deadline in the last 15 minutes
+            while still open. Check the /tickets list sorted by SLA — the operator
+            queue may be overloaded or the pipeline may be stuck.
+
+      - alert: AutoSendFailures
+        expr: increase(smartfreight_autosend_total{result="failed"}[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Automatic reply sends are failing"
+          description: >-
+            Auto-send attempted to reply without an operator and SMTP failed.
+            The tickets remain DRAFT_READY but nobody was notified (auto-send skips
+            the Gmail draft) — review them in the UI and check SMTP connectivity.
+
       - alert: RabbitMQDown
         expr: up{job="rabbitmq"} == 0
         for: 2m

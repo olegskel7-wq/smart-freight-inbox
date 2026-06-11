@@ -28,6 +28,7 @@ public class TicketAuditService {
 
     /** Action codes — kept as constants to avoid magic strings at call sites. */
     public static final String ACTION_SEND       = "SEND";
+    public static final String ACTION_AUTO_SEND  = "AUTO_SEND";
     public static final String ACTION_CLOSE      = "CLOSE";
     public static final String ACTION_DELETE     = "DELETE";
     public static final String ACTION_DRAFT_EDIT = "DRAFT_EDIT";

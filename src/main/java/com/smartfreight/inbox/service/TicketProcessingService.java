@@ -55,6 +55,7 @@ public class TicketProcessingService {
     private final RateSheetService rateSheetService;
     private final GmailDraftService gmailDraftService;
     private final SlaService slaService;
+    private final AutoSendService autoSendService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
@@ -76,6 +77,7 @@ public class TicketProcessingService {
                                    RateSheetService rateSheetService,
                                    GmailDraftService gmailDraftService,
                                    SlaService slaService,
+                                   AutoSendService autoSendService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailClassificationService = emailClassificationService;
@@ -85,6 +87,7 @@ public class TicketProcessingService {
         this.rateSheetService = rateSheetService;
         this.gmailDraftService = gmailDraftService;
         this.slaService = slaService;
+        this.autoSendService = autoSendService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -120,7 +123,13 @@ public class TicketProcessingService {
 
             for (int attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
                 try {
-                    self.processAttempt(ticketId, startTime);
+                    boolean autoSendEligible = self.processAttempt(ticketId, startTime);
+                    // Phase 1.6: the SMTP send happens strictly AFTER the pipeline transaction
+                    // committed — an optimistic-lock retry of the attempt can therefore never
+                    // repeat a send, and a crash here leaves a safe DRAFT_READY ticket.
+                    if (autoSendEligible) {
+                        autoSendService.autoSend(ticketId);
+                    }
                     return;
                 } catch (ObjectOptimisticLockingFailureException e) {
                     log.warn("Optimistic lock conflict on attempt {}/{}, retrying",
@@ -149,9 +158,11 @@ public class TicketProcessingService {
      * @param ticketId  identifier of the ticket to process
      * @param startTime {@code System.nanoTime()} captured at the start of {@link #process}
      *                  for end-to-end duration measurement
+     * @return whether the ticket reached DRAFT_READY and qualifies for auto-send (Phase 1.6) —
+     *         the caller performs the actual send after this transaction commits
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void processAttempt(Long ticketId, long startTime) {
+    public boolean processAttempt(Long ticketId, long startTime) {
         EmailTicket ticket = emailTicketRepository.findById(ticketId)
                 .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketId));
 
@@ -159,7 +170,7 @@ public class TicketProcessingService {
                 && ticket.getStatus() != TicketStatus.NEW
                 && ticket.getStatus() != TicketStatus.RETRY_LATER) {
             log.warn("Ticket already in state {}, skipping", ticket.getStatus());
-            return;
+            return false;
         }
 
         // Phase 1.3 session 3: classification happens here, off the IMAP thread. Only for
@@ -178,7 +189,7 @@ public class TicketProcessingService {
                 ticket.setUpdatedAt(LocalDateTime.now());
                 emailTicketRepository.save(ticket);
                 log.info("Ticket classified as IRRELEVANT — pipeline stopped, kept for audit");
-                return;
+                return false;
             }
             // Persisted together with the PROCESSING transition below — no extra UPDATE.
             ticket.setTicketType(classification.type());
@@ -218,15 +229,30 @@ public class TicketProcessingService {
         String draft = aiDraftingService.generateDraft(aiInput, item, rateContext);
         ticket.setDraftReply(draft);
 
+        // Phase 1.6: confidence is computed and stored on every run (even with auto-send off)
+        // so the score distribution accumulates for threshold tuning.
+        ticket.setAiConfidence(autoSendService.confidenceFor(
+                ticket.getTicketType(),
+                ticket.getExtractedIdentifier() != null,
+                item != null,
+                rateContext != null && !rateContext.isBlank()));
+
         ticket.setStatus(TicketStatus.DRAFT_READY);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
 
         draftReadyCounter.increment();
         processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
-        log.info("Ticket processing finished: DRAFT_READY");
+        log.info("Ticket processing finished: DRAFT_READY (confidence {})", ticket.getAiConfidence());
 
-        gmailDraftService.saveDraft(ticket);
+        // The auto-send decision is made here (one settings read, one log line), but the SMTP
+        // call belongs to the caller — after this transaction commits. An eligible ticket also
+        // skips the Gmail draft: it is about to be answered, a lingering draft would be noise.
+        boolean autoSendEligible = autoSendService.shouldAutoSend(ticket);
+        if (!autoSendEligible) {
+            gmailDraftService.saveDraft(ticket);
+        }
+        return autoSendEligible;
     }
 
     /**

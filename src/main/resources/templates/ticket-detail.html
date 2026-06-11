@@ -34,6 +34,7 @@
                                ticket.status.name() == 'FAILED'        ? 'bg-danger'   :
                                ticket.status.name() == 'RETRY_LATER'   ? 'bg-warning text-dark' :
                                ticket.status.name() == 'CLOSED'        ? 'bg-secondary':
+                               ticket.status.name() == 'AUTO_SENT'     ? 'bg-secondary':
                                ticket.status.name() == 'RECEIVED'      ? 'bg-info text-dark' :
                                ticket.status.name() == 'IRRELEVANT'    ? 'bg-dark' :
                                                                          'bg-primary'}"
@@ -65,6 +66,15 @@
                           th:text="${ticket.extractedIdentifier}">MSCU1234567</code>
                     <span th:if="${ticket.extractedIdentifier == null}"
                           class="text-muted fst-italic">Not extracted</span>
+                </dd>
+
+                <dt class="col-sm-3">AI confidence</dt>
+                <dd class="col-sm-9">
+                    <span th:if="${ticket.aiConfidence != null}"
+                          th:classappend="${ticket.aiConfidence >= 0.8 ? 'text-success fw-semibold' : ''}"
+                          th:text="${#numbers.formatDecimal(ticket.aiConfidence, 1, 2)}">0.90</span>
+                    <span th:if="${ticket.aiConfidence == null}"
+                          class="text-muted fst-italic">Not scored</span>
                 </dd>
 
                 <dt class="col-sm-3">SLA deadline</dt>
@@ -100,7 +110,8 @@
     </div>
 
     <!-- AI Draft Reply (editable) -->
-    <div class="card mb-4 shadow-sm" th:if="${ticket.status.name() != 'CLOSED'}">
+    <div class="card mb-4 shadow-sm"
+         th:if="${ticket.status.name() != 'CLOSED' and ticket.status.name() != 'AUTO_SENT'}">
         <div class="card-header fw-semibold d-flex align-items-center gap-2">
             AI Draft Reply
             <span th:if="${ticket.draftReply != null}" class="badge bg-success small">Ready to send</span>
@@ -137,11 +148,16 @@
         </div>
     </div>
 
-    <!-- Read-only view for closed tickets -->
-    <div class="card mb-4 shadow-sm" th:if="${ticket.status.name() == 'CLOSED'}">
+    <!-- Read-only view for closed / auto-sent tickets -->
+    <div class="card mb-4 shadow-sm"
+         th:if="${ticket.status.name() == 'CLOSED' or ticket.status.name() == 'AUTO_SENT'}">
         <div class="card-header fw-semibold d-flex align-items-center gap-2">
             Final Reply
-            <span class="badge bg-secondary small">Closed</span>
+            <span th:if="${ticket.status.name() == 'CLOSED'}" class="badge bg-secondary small">Closed</span>
+            <span th:if="${ticket.status.name() == 'AUTO_SENT'}" class="badge bg-secondary small"
+                  th:title="'Sent automatically, confidence ' + ${ticket.aiConfidence}">
+                Sent automatically &#9889;
+            </span>
         </div>
         <div class="card-body bg-light">
             <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.875rem;"
@@ -153,7 +169,7 @@
     <div class="d-flex gap-2 flex-wrap">
         <a href="/tickets" class="btn btn-outline-secondary">← Back to list</a>
 
-        <form th:if="${ticket.status.name() != 'CLOSED'}"
+        <form th:if="${ticket.status.name() != 'CLOSED' and ticket.status.name() != 'AUTO_SENT'}"
               method="post"
               th:action="@{/tickets/{id}/close(id=${ticket.id})}">
             <button type="submit" class="btn btn-outline-secondary"

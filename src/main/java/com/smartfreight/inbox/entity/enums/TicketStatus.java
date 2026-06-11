@@ -6,6 +6,7 @@ package com.smartfreight.inbox.entity.enums;
  * Transition diagram:
  *   RECEIVED → IRRELEVANT                              (classifier rejected — terminal)
  *   RECEIVED → PROCESSING → DRAFT_READY → CLOSED
+ *                                       ↘ AUTO_SENT    (Phase 1.6 — sent without operator)
  *                         ↘ FAILED
  *                         ↘ RETRY_LATER → NEW → PROCESSING (via RetryScheduler)
  *
@@ -39,5 +40,12 @@ public enum TicketStatus {
     IRRELEVANT,
 
     /** Ticket closed by the operator — reply sent or issue resolved without a reply. */
-    CLOSED
+    CLOSED,
+
+    /**
+     * Reply sent automatically without operator review (Phase 1.6): confidence reached the
+     * autosend.threshold and the type was in the autosend.types allowlist. Terminal, kept
+     * distinct from CLOSED so automated sends stay visible and filterable.
+     */
+    AUTO_SENT
 }

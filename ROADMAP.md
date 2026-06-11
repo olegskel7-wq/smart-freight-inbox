@@ -50,7 +50,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 | 1.3 | **Async AI pipeline** ✅ DONE (11.06.2026) | 🔴 ВЫСОКИЙ | L | Решение: **RabbitMQ** + transactional outbox (`outbox_event`, V14). OutboxRelay (FOR UPDATE SKIP LOCKED + publisher confirms), topic exchange `ticket.events` → `q.ticket.process` + DLQ, идемпотентный consumer 2×prefetch=1 (= OLLAMA_NUM_PARALLEL). Ingestion/RetryScheduler/admin на seam `TicketEventPublisher`. Сессия 2: `StuckTicketSweeper` (RECEIVED/NEW/PROCESSING старше 30 мин → RETRY_LATER), outbox-гейджи, метрики очередей в Grafana, DLQ-админка (`/admin/dlq*`). Сессия 3: классификация (Qwen) с IMAP-потока в consumer — статусы `RECEIVED`/`IRRELEVANT`; на IMAP-потоке LLM-вызовов больше нет, нерелевантные письма сохраняются (аудит фильтра). Ветка `phase1/async-pipeline`. |
 | 1.4 | **Email classification (расширенный)** ✅ DONE (11.06.2026) | 🔴 ВЫСОКИЙ | S | Enum `TicketType`: RFQ / STATUS_UPDATE / BOOKING_CONFIRM / INVOICE_QUERY / DOCUMENT_REQUEST / GENERAL. Один вызов Qwen решает и релевантность, и тип (расширен шаг 0 в consumer — второго LLM-вызова нет): ответ IRRELEVANT либо тип. Fail-open → GENERAL. Колонка `ticket_type` (V15, nullable — retry-путь и старые тикеты без типа). Флаг `feature.ticket-type` (выкл → бинарный промпт 1.3). Колонка Type в `/tickets` (сортируемая) и в деталях. Метрика `smartfreight_tickets_type_total{type}`. Тип — seam для 1.5 (SLA по типу) и 1.6. Ветка `phase1/ticket-type`. |
 | 1.5 | **SLA таймер на тикетах** ✅ DONE (11.06.2026) | 🟡 СРЕДНИЙ | S | `sla_deadline_at` + `sla_breached` (V16, частичный индекс). Дедлайн = createdAt + окно типа (`sla.minutes.*`: RFQ=2ч, BOOKING_CONFIRM=30мин, STATUS_UPDATE=4ч, default=8ч): при ingest — окно GENERAL (тип неизвестен), после классификации уточняется, у IRRELEVANT снимается. `SlaBreachScheduler` (раз в минуту, bulk UPDATE, updatedAt не трогает — не сбивает sweeper). DRAFT_READY/FAILED = открытые (SLA про ответ). Флаг не сбрасывается (история для отчётов). `feature.sla-timer`, метрика `smartfreight_sla_breached_total`, красный бейдж Breached + сортируемая колонка SLA. Ветка `phase1/sla-timer`. |
-| 1.6 | **Auto-send threshold** | 🟡 СРЕДНИЙ | S | Поле `autoSendThreshold` (0.0–1.0) в настройках тенанта. Если `aiConfidence >= threshold` → отправить автоматически минуя оператора. Открывает "24/7 без оператора". |
+| 1.6 | **Auto-send threshold** ✅ DONE (11.06.2026) | 🟡 СРЕДНИЙ | S | Решение: confidence = **детерминированная эвристика**, не LLM self-score (7B-модели некалиброваны): +0.3 тип ≠ GENERAL, +0.2 идентификатор извлечён, +0.4 item найден в backend, +0.1 rate подобран. `ai_confidence` (V17) пишется на каждом драфте даже при выключенной фиче — копится статистика для калибровки порога. Три гейта в настройках: `feature.auto-send` (**первый default-OFF флаг** — фича шлёт письма клиентам), `autosend.types` (allowlist, старт = только STATUS_UPDATE: факты из TMS; RFQ с ценами — через оператора), `autosend.threshold` (0.8). SMTP-вызов строго ПОСЛЕ коммита транзакции пайплайна (нет двойной отправки на optimistic-lock retry); провал SMTP оставляет DRAFT_READY (fallback = оператор). Терминальный статус `AUTO_SENT` (отличим от CLOSED), audit `AUTO_SEND`, метрика `smartfreight_autosend_total{result}` + панель и алерт. UI: секция на `/settings`, сортируемая колонка Conf., read-only детали. Ветка `phase1/auto-send`. |
 | 1.7 | **Circuit Breaker (Resilience4j)** | 🟡 СРЕДНИЙ | S | На вызовы item-service и Ollama. Сейчас нет fallback — при падении Ollama всё зависает. |
 | 1.8 | **Pagination** | 🟡 СРЕДНИЙ | S | Заменить findAll() на Page<> в StatusUpdateScheduler и TicketViewController. Падёт на реальных данных. |
 
@@ -206,12 +206,21 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 - Флаг `feature.sla-timer`, метрика `smartfreight_sla_breached_total`,
   UI: сортируемая колонка SLA + красный бейдж Breached (список и детали)
 
-**Следующий шаг — 1.6 Auto-send threshold** (либо 1.7 Circuit Breaker, если discovery call
-сместит приоритеты).
+### Что сделано в 1.6 (11.06.2026)
+- Confidence — детерминированная эвристика из проверяемых фактов пайплайна, НЕ self-score
+  модели; пишется на каждом DRAFT_READY независимо от флага (статистика для порога)
+- Гейты: флаг (default OFF — единственный такой), allowlist типов (STATUS_UPDATE),
+  порог 0.8; всё редактируется на /settings без рестарта
+- Отправка после коммита транзакции пайплайна; провал SMTP → тикет остаётся DRAFT_READY
+  (+ алерт AutoSendFailures, т.к. Gmail-драфт для eligible-тикетов не создаётся)
+- Закрыт хвост 1.5: панель SLA Breaches + алерт SlaBreaches в Grafana/Prometheus
+
+**Следующий шаг — 1.7 Circuit Breaker** (либо 1.8 Pagination; discovery call может
+сместить приоритеты).
 
 _Подробности: `C:\Users\olegs\Documents\smartfreight-wiki\wiki\analysis\Master Roadmap.md`_
 
 ---
 
 *Создан: 27 May 2026*  
-*Последнее обновление: 11 Jun 2026 — 1.3 Async AI pipeline завершена целиком (сессия 3: классификация в consumer, статусы RECEIVED/IRRELEVANT)*
+*Последнее обновление: 11 Jun 2026 — 1.6 Auto-send threshold готова (эвристический confidence, гейты на /settings, статус AUTO_SENT); добавлены панель/алерт SLA Breaches*

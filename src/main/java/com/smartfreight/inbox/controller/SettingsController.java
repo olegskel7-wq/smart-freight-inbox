@@ -1,5 +1,7 @@
 package com.smartfreight.inbox.controller;
 
+import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.SettingsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
@@ -47,7 +49,60 @@ public class SettingsController {
                 settingsService.getString(SettingsService.KEY_EXTRACTION_PROMPT, ""));
         model.addAttribute("draftingPrompt",
                 settingsService.getString(SettingsService.KEY_DRAFTING_PROMPT, ""));
+        model.addAttribute("autoSendEnabled",
+                settingsService.isFeatureEnabled(AutoSendService.FEATURE_KEY, false));
+        model.addAttribute("autoSendThreshold",
+                settingsService.getString(AutoSendService.KEY_THRESHOLD, "0.8"));
+        model.addAttribute("autoSendTypes",
+                settingsService.getString(AutoSendService.KEY_TYPES, "STATUS_UPDATE"));
+        model.addAttribute("allTicketTypes", TicketType.values());
         return "settings";
+    }
+
+    /**
+     * Updates the auto-send gates (Phase 1.6). The threshold is clamped to [0,1] here so the
+     * stored value is always sane; the type list is normalised against {@link TicketType} —
+     * unknown names are dropped rather than rejected, mirroring the tolerant read path in
+     * {@link AutoSendService#allowedTypes}.
+     */
+    @PostMapping("/autosend")
+    public String saveAutoSend(@RequestParam(name = "autoSendEnabled", defaultValue = "false") boolean enabled,
+                               @RequestParam("autoSendThreshold") String threshold,
+                               @RequestParam(name = "autoSendTypes", required = false) java.util.List<String> types,
+                               RedirectAttributes redirectAttributes) {
+        double parsed;
+        try {
+            parsed = Math.min(1.0, Math.max(0.0, Double.parseDouble(threshold.trim())));
+        } catch (NumberFormatException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "Threshold must be a number between 0 and 1 — settings not saved.");
+            return "redirect:/settings";
+        }
+
+        java.util.List<String> validTypes = (types == null ? java.util.List.<String>of() : types).stream()
+                .map(t -> t.trim().toUpperCase())
+                .filter(t -> {
+                    try {
+                        TicketType.valueOf(t);
+                        return true;
+                    } catch (IllegalArgumentException e) {
+                        return false;
+                    }
+                })
+                .toList();
+
+        settingsService.setString(AutoSendService.FEATURE_KEY, enabled ? "true" : "false");
+        settingsService.setString(AutoSendService.KEY_THRESHOLD, String.valueOf(parsed));
+        settingsService.setString(AutoSendService.KEY_TYPES, String.join(",", validTypes));
+
+        if (enabled && validTypes.isEmpty()) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "Auto-send is on but no ticket types are allowed — nothing will be sent automatically.");
+        } else {
+            redirectAttributes.addFlashAttribute("successMessage",
+                    "Auto-send settings saved" + (enabled ? "" : " (feature is off)") + ".");
+        }
+        return "redirect:/settings";
     }
 
     @PostMapping("/notifications")

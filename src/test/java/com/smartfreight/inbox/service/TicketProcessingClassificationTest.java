@@ -16,6 +16,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -60,6 +61,9 @@ class TicketProcessingClassificationTest {
     @Mock
     private SlaService slaService;
 
+    @Mock
+    private AutoSendService autoSendService;
+
     private TicketProcessingService service;
 
     @BeforeEach
@@ -67,7 +71,7 @@ class TicketProcessingClassificationTest {
         service = new TicketProcessingService(
                 emailTicketRepository, emailClassificationService, aiExtractionService,
                 itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
-                slaService, new SimpleMeterRegistry());
+                slaService, autoSendService, new SimpleMeterRegistry());
     }
 
     private EmailTicket ticket(TicketStatus status) {
@@ -155,10 +159,47 @@ class TicketProcessingClassificationTest {
         EmailTicket ticket = ticket(TicketStatus.DRAFT_READY);
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
-        service.processAttempt(1L, System.nanoTime());
+        boolean eligible = service.processAttempt(1L, System.nanoTime());
 
+        assertThat(eligible).isFalse();
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
         verify(emailTicketRepository, never()).save(any());
         verifyNoInteractions(emailClassificationService, aiExtractionService, aiDraftingService);
+    }
+
+    // ---- Phase 1.6: confidence + auto-send wiring -------------------------------------
+
+    @Test
+    void draftReady_confidenceStored_notEligible_savesGmailDraft() {
+        EmailTicket ticket = ticket(TicketStatus.NEW);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        stubHappyPipeline();
+        when(autoSendService.confidenceFor(any(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(0.5);
+        when(autoSendService.shouldAutoSend(ticket)).thenReturn(false);
+
+        boolean eligible = service.processAttempt(1L, System.nanoTime());
+
+        assertThat(eligible).isFalse();
+        assertThat(ticket.getAiConfidence()).isEqualTo(0.5);
+        verify(gmailDraftService).saveDraft(ticket);
+    }
+
+    @Test
+    void draftReady_eligible_skipsGmailDraft_andReportsToCaller() {
+        EmailTicket ticket = ticket(TicketStatus.NEW);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        stubHappyPipeline();
+        when(autoSendService.confidenceFor(any(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(0.9);
+        when(autoSendService.shouldAutoSend(ticket)).thenReturn(true);
+
+        boolean eligible = service.processAttempt(1L, System.nanoTime());
+
+        assertThat(eligible).isTrue();
+        assertThat(ticket.getAiConfidence()).isEqualTo(0.9);
+        // The SMTP send itself must NOT happen inside the pipeline transaction.
+        verify(autoSendService, never()).autoSend(any());
+        verify(gmailDraftService, never()).saveDraft(any());
     }
 }

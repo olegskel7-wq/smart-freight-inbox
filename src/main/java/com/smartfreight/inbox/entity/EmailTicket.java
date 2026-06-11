@@ -114,6 +114,16 @@ public class EmailTicket {
     private String draftReply;
 
     /**
+     * Heuristic confidence score 0.0–1.0 (Phase 1.6), computed from verifiable pipeline facts
+     * (type classified, identifier extracted, item found, rate matched) — deliberately NOT an
+     * LLM self-assessment, which small models cannot calibrate. Written on every drafting run
+     * even when feature.auto-send is off, so the score distribution accumulates for threshold
+     * tuning. Null for pre-1.6 tickets and tickets that never reached drafting.
+     */
+    @Column(name = "ai_confidence")
+    private Double aiConfidence;
+
+    /**
      * Retry attempt counter.
      * When AI is temporarily unavailable the ticket receives RETRY_LATER status
      * and this counter is incremented for each attempt.

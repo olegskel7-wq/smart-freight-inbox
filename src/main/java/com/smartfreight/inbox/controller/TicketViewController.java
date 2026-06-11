@@ -76,7 +76,7 @@ public class TicketViewController {
      */
     private static final Set<String> SORTABLE_COLUMNS = Set.of(
             "id", "senderEmail", "subject", "extractedIdentifier",
-            "status", "ticketType", "slaDeadlineAt", "createdAt", "updatedAt"
+            "status", "ticketType", "slaDeadlineAt", "aiConfidence", "createdAt", "updatedAt"
     );
     private static final String DEFAULT_SORT = "createdAt";
 
@@ -202,6 +202,9 @@ public class TicketViewController {
     @PostMapping("/tickets/{id}/close")
     public String closeTicket(@PathVariable Long id) {
         emailTicketRepository.findById(id).ifPresent(ticket -> {
+            if (ticket.getStatus() == TicketStatus.AUTO_SENT) {
+                return; // terminal — "closing" would erase the auto-sent record
+            }
             ticket.setStatus(TicketStatus.CLOSED);
             ticket.setUpdatedAt(LocalDateTime.now());
             emailTicketRepository.save(ticket);
@@ -235,7 +238,9 @@ public class TicketViewController {
         EmailTicket ticket = emailTicketRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Ticket not found: " + id));
 
-        if (ticket.getStatus() == TicketStatus.CLOSED) {
+        // CLOSED and AUTO_SENT are terminal — the reply already went out (or the ticket was
+        // resolved); editing or re-sending the draft is not allowed.
+        if (ticket.getStatus() == TicketStatus.CLOSED || ticket.getStatus() == TicketStatus.AUTO_SENT) {
             return "redirect:/tickets/" + id;
         }
 
