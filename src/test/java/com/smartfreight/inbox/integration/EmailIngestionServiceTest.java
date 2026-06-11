@@ -25,6 +25,7 @@ import java.util.Properties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -60,6 +61,9 @@ class EmailIngestionServiceTest {
     @Mock
     private SettingsService settingsService;
 
+    @Mock
+    private com.smartfreight.inbox.service.SlaService slaService;
+
     private EmailIngestionService emailIngestionService;
 
     /** Jakarta Mail sesija be jokių savybių – naudojama MimeMessage kūrimui testams. */
@@ -70,7 +74,7 @@ class EmailIngestionServiceTest {
         emailIngestionService = new EmailIngestionService(
                 emailTicketRepository, ticketEventPublisher,
                 new AttachmentParserService(new SimpleMeterRegistry()), settingsService,
-                new SimpleMeterRegistry());
+                slaService, new SimpleMeterRegistry());
         mailSession = Session.getInstance(new Properties());
         // Default: attachment-parsing feature on, so existing tests keep their behaviour.
         when(settingsService.isFeatureEnabled(any(), anyBoolean())).thenReturn(true);
@@ -161,6 +165,44 @@ class EmailIngestionServiceTest {
         // Phase 1.3 session 3: ingestion persists as RECEIVED — classification happens
         // later in the RabbitMQ consumer, never on the IMAP thread.
         assertThat(captured.getStatus()).isEqualTo(TicketStatus.RECEIVED);
+    }
+
+    /**
+     * Phase 1.5: ingestion sets a provisional SLA deadline (GENERAL window — the type
+     * is unknown until the consumer classifies). Off when feature.sla-timer is disabled.
+     */
+    @Test
+    void processIncomingEmail_slaEnabled_setsProvisionalDeadline() throws Exception {
+        MimeMessage email = buildSimpleEmail(
+                "<sla-001@example.com>", "customer@freight.com", "Inquiry", "Where is my box?");
+        when(emailTicketRepository.findByMessageId("<sla-001@example.com>")).thenReturn(Optional.empty());
+        when(emailTicketRepository.save(any(EmailTicket.class)))
+                .thenAnswer(inv -> inv.getArgument(0, EmailTicket.class));
+        java.time.LocalDateTime deadline = java.time.LocalDateTime.now().plusHours(8);
+        when(slaService.isEnabled()).thenReturn(true);
+        when(slaService.deadlineFor(isNull(), any())).thenReturn(deadline);
+
+        emailIngestionService.processIncomingEmail(email);
+
+        ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
+        verify(emailTicketRepository).save(captor.capture());
+        assertThat(captor.getValue().getSlaDeadlineAt()).isEqualTo(deadline);
+    }
+
+    @Test
+    void processIncomingEmail_slaDisabled_leavesDeadlineNull() throws Exception {
+        MimeMessage email = buildSimpleEmail(
+                "<sla-002@example.com>", "customer@freight.com", "Inquiry", "Where is my box?");
+        when(emailTicketRepository.findByMessageId("<sla-002@example.com>")).thenReturn(Optional.empty());
+        when(emailTicketRepository.save(any(EmailTicket.class)))
+                .thenAnswer(inv -> inv.getArgument(0, EmailTicket.class));
+        when(slaService.isEnabled()).thenReturn(false);
+
+        emailIngestionService.processIncomingEmail(email);
+
+        ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
+        verify(emailTicketRepository).save(captor.capture());
+        assertThat(captor.getValue().getSlaDeadlineAt()).isNull();
     }
 
     /**

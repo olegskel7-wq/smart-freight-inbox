@@ -57,6 +57,9 @@ class TicketProcessingClassificationTest {
     @Mock
     private GmailDraftService gmailDraftService;
 
+    @Mock
+    private SlaService slaService;
+
     private TicketProcessingService service;
 
     @BeforeEach
@@ -64,7 +67,7 @@ class TicketProcessingClassificationTest {
         service = new TicketProcessingService(
                 emailTicketRepository, emailClassificationService, aiExtractionService,
                 itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
-                new SimpleMeterRegistry());
+                slaService, new SimpleMeterRegistry());
     }
 
     private EmailTicket ticket(TicketStatus status) {
@@ -85,8 +88,9 @@ class TicketProcessingClassificationTest {
     }
 
     @Test
-    void receivedTicket_classifiedIrrelevant_parkedWithoutPipeline() {
+    void receivedTicket_classifiedIrrelevant_parkedWithoutPipeline_andSlaCleared() {
         EmailTicket ticket = ticket(TicketStatus.RECEIVED);
+        ticket.setSlaDeadlineAt(ticket.getCreatedAt().plusHours(8)); // provisional, set at ingest
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(emailClassificationService.classify(any(), any()))
                 .thenReturn(new ClassificationResult(false, null));
@@ -95,22 +99,27 @@ class TicketProcessingClassificationTest {
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IRRELEVANT);
         assertThat(ticket.getTicketType()).isNull();
+        assertThat(ticket.getSlaDeadlineAt()).isNull();
         verify(emailTicketRepository).save(ticket);
         verifyNoInteractions(aiExtractionService, itemLookupService, aiDraftingService, gmailDraftService);
     }
 
     @Test
-    void receivedTicket_classifiedRelevant_runsFullPipelineToDraftReady() {
+    void receivedTicket_classifiedRelevant_runsFullPipelineToDraftReady_andSlaRefined() {
         EmailTicket ticket = ticket(TicketStatus.RECEIVED);
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(emailClassificationService.classify(eq("Container inquiry"), anyString()))
                 .thenReturn(new ClassificationResult(true, TicketType.STATUS_UPDATE));
+        when(slaService.isEnabled()).thenReturn(true);
+        when(slaService.deadlineFor(TicketType.STATUS_UPDATE, ticket.getCreatedAt()))
+                .thenReturn(ticket.getCreatedAt().plusHours(4));
         stubHappyPipeline();
 
         service.processAttempt(1L, System.nanoTime());
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
         assertThat(ticket.getTicketType()).isEqualTo(TicketType.STATUS_UPDATE);
+        assertThat(ticket.getSlaDeadlineAt()).isEqualTo(ticket.getCreatedAt().plusHours(4));
         assertThat(ticket.getDraftReply()).isNotBlank();
         verify(emailClassificationService).classify(eq("Container inquiry"), anyString());
     }

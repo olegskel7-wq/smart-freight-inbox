@@ -76,7 +76,7 @@ public class TicketViewController {
      */
     private static final Set<String> SORTABLE_COLUMNS = Set.of(
             "id", "senderEmail", "subject", "extractedIdentifier",
-            "status", "ticketType", "createdAt", "updatedAt"
+            "status", "ticketType", "slaDeadlineAt", "createdAt", "updatedAt"
     );
     private static final String DEFAULT_SORT = "createdAt";
 

@@ -49,7 +49,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 | 1.2 | **Rate sheet в БД** ✅ DONE (10.06.2026) | 🔴 ВЫСОКИЙ | M | Таблица `carrier_rate` (V13) + UI `/rates` с загрузкой CSV (upsert по carrier+маршрут, построчный отчёт об ошибках). `RateSheetService.buildRateContext()`: детерминированный подбор — ставка попадает в драфт-промпт, если origin и destination упомянуты в письме (включая текст вложений); просроченные не котируются. В промпт идёт только sell price (rate+маржа), сама маржа LLM не видна. Плейсхолдер `{rateContext}`; если его нет в сохранённом промпте — блок ставок дописывается в конец. Флаг `feature.rate-sheets`. AI-извлечение маршрута — отложено до 1.4. Ветка `phase1/rate-sheets`. |
 | 1.3 | **Async AI pipeline** ✅ DONE (11.06.2026) | 🔴 ВЫСОКИЙ | L | Решение: **RabbitMQ** + transactional outbox (`outbox_event`, V14). OutboxRelay (FOR UPDATE SKIP LOCKED + publisher confirms), topic exchange `ticket.events` → `q.ticket.process` + DLQ, идемпотентный consumer 2×prefetch=1 (= OLLAMA_NUM_PARALLEL). Ingestion/RetryScheduler/admin на seam `TicketEventPublisher`. Сессия 2: `StuckTicketSweeper` (RECEIVED/NEW/PROCESSING старше 30 мин → RETRY_LATER), outbox-гейджи, метрики очередей в Grafana, DLQ-админка (`/admin/dlq*`). Сессия 3: классификация (Qwen) с IMAP-потока в consumer — статусы `RECEIVED`/`IRRELEVANT`; на IMAP-потоке LLM-вызовов больше нет, нерелевантные письма сохраняются (аудит фильтра). Ветка `phase1/async-pipeline`. |
 | 1.4 | **Email classification (расширенный)** ✅ DONE (11.06.2026) | 🔴 ВЫСОКИЙ | S | Enum `TicketType`: RFQ / STATUS_UPDATE / BOOKING_CONFIRM / INVOICE_QUERY / DOCUMENT_REQUEST / GENERAL. Один вызов Qwen решает и релевантность, и тип (расширен шаг 0 в consumer — второго LLM-вызова нет): ответ IRRELEVANT либо тип. Fail-open → GENERAL. Колонка `ticket_type` (V15, nullable — retry-путь и старые тикеты без типа). Флаг `feature.ticket-type` (выкл → бинарный промпт 1.3). Колонка Type в `/tickets` (сортируемая) и в деталях. Метрика `smartfreight_tickets_type_total{type}`. Тип — seam для 1.5 (SLA по типу) и 1.6. Ветка `phase1/ticket-type`. |
-| 1.5 | **SLA таймер на тикетах** | 🟡 СРЕДНИЙ | S | Поля `slaDeadlineAt` + `slaBreached` на EmailTicket. Вычислять при ingest по типу письма (RFQ=2ч, Booking=30мин, General=8ч). Красная метка в UI. Продаётся клиенту как гарантия ответа. |
+| 1.5 | **SLA таймер на тикетах** ✅ DONE (11.06.2026) | 🟡 СРЕДНИЙ | S | `sla_deadline_at` + `sla_breached` (V16, частичный индекс). Дедлайн = createdAt + окно типа (`sla.minutes.*`: RFQ=2ч, BOOKING_CONFIRM=30мин, STATUS_UPDATE=4ч, default=8ч): при ingest — окно GENERAL (тип неизвестен), после классификации уточняется, у IRRELEVANT снимается. `SlaBreachScheduler` (раз в минуту, bulk UPDATE, updatedAt не трогает — не сбивает sweeper). DRAFT_READY/FAILED = открытые (SLA про ответ). Флаг не сбрасывается (история для отчётов). `feature.sla-timer`, метрика `smartfreight_sla_breached_total`, красный бейдж Breached + сортируемая колонка SLA. Ветка `phase1/sla-timer`. |
 | 1.6 | **Auto-send threshold** | 🟡 СРЕДНИЙ | S | Поле `autoSendThreshold` (0.0–1.0) в настройках тенанта. Если `aiConfidence >= threshold` → отправить автоматически минуя оператора. Открывает "24/7 без оператора". |
 | 1.7 | **Circuit Breaker (Resilience4j)** | 🟡 СРЕДНИЙ | S | На вызовы item-service и Ollama. Сейчас нет fallback — при падении Ollama всё зависает. |
 | 1.8 | **Pagination** | 🟡 СРЕДНИЙ | S | Заменить findAll() на Page<> в StatusUpdateScheduler и TicketViewController. Падёт на реальных данных. |
@@ -194,8 +194,20 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 - UI: сортируемая колонка Type в `/tickets`, строка Type в деталях тикета
 - Метрика `smartfreight_tickets_type_total{type}`; парсинг ответа модели покрыт unit-тестами
 
-**Следующий шаг — 1.5 SLA таймер:** `slaDeadlineAt`/`slaBreached`, дедлайн по `ticketType`
-(RFQ=2ч, BOOKING_CONFIRM=30мин, GENERAL=8ч) — тип уже на тикете.
+**Сделано (1.5, 11.06.2026):**
+- `sla_deadline_at`/`sla_breached` (V16) + частичный индекс под опрос шедулера
+- Дедлайн всегда от createdAt (часы клиента тикают с получения письма): ingest ставит
+  окно GENERAL, шаг 0 после классификации уточняет по типу, IRRELEVANT — снимает
+- Окна конфигурируемы: `sla.minutes.*` (RFQ=120, BOOKING_CONFIRM=30, STATUS_UPDATE=240,
+  default-minutes=480)
+- `SlaBreachScheduler`: раз в минуту bulk UPDATE открытых тикетов с прошедшим дедлайном;
+  updatedAt сознательно не трогается (иначе сбивался бы staleness-фильтр sweeper'а);
+  флаг не сбрасывается — история для SLA-отчётов. DRAFT_READY/FAILED считаются открытыми
+- Флаг `feature.sla-timer`, метрика `smartfreight_sla_breached_total`,
+  UI: сортируемая колонка SLA + красный бейдж Breached (список и детали)
+
+**Следующий шаг — 1.6 Auto-send threshold** (либо 1.7 Circuit Breaker, если discovery call
+сместит приоритеты).
 
 _Подробности: `C:\Users\olegs\Documents\smartfreight-wiki\wiki\analysis\Master Roadmap.md`_
 

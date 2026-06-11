@@ -7,6 +7,7 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.DraftNotificationService;
 import com.smartfreight.inbox.service.SettingsService;
+import com.smartfreight.inbox.service.SlaService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.BodyPart;
@@ -66,17 +67,20 @@ public class EmailIngestionService {
     private final TicketEventPublisher ticketEventPublisher;
     private final AttachmentParserService attachmentParserService;
     private final SettingsService settingsService;
+    private final SlaService slaService;
     private final Counter receivedCounter;
 
     public EmailIngestionService(EmailTicketRepository emailTicketRepository,
                                  TicketEventPublisher ticketEventPublisher,
                                  AttachmentParserService attachmentParserService,
                                  SettingsService settingsService,
+                                 SlaService slaService,
                                  MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketEventPublisher = ticketEventPublisher;
         this.attachmentParserService = attachmentParserService;
         this.settingsService = settingsService;
+        this.slaService = slaService;
         this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
                 .description("Total emails received and successfully ingested as tickets")
                 .register(meterRegistry);
@@ -158,6 +162,13 @@ public class EmailIngestionService {
                     // IRRELEVANT vs pipeline. NEW is reserved for the retry re-entry path.
                     .status(TicketStatus.RECEIVED)
                     .build();
+
+            // Phase 1.5: provisional SLA deadline with the GENERAL window — the type is not
+            // known yet (no LLM here) and the customer's clock starts now, not at
+            // classification. The consumer refines it to the per-type window in step 0.
+            if (slaService.isEnabled()) {
+                ticket.setSlaDeadlineAt(slaService.deadlineFor(null, ticket.getCreatedAt()));
+            }
 
             try {
                 EmailTicket saved = emailTicketRepository.save(ticket);

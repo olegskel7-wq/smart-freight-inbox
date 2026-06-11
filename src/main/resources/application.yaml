@@ -81,6 +81,18 @@ sweep:
   poll-interval-ms: 300000
   stuck-after-minutes: 30
 
+# SLA reply windows per ticket type, minutes (Phase 1.5). Deadline = createdAt + window.
+# Types missing from the map (incl. GENERAL) fall back to default-minutes.
+sla:
+  breach-check-interval-ms: 60000
+  default-minutes: 480           # 8h — GENERAL and anything unlisted
+  minutes:
+    rfq: 120                     # quotes go cold fast
+    booking-confirm: 30          # operational, time-critical
+    status-update: 240
+    invoice-query: 480
+    document-request: 480
+
 port:
   service:
     url: ${PORT_SERVICE_URL:http://localhost:9000}

@@ -67,6 +67,15 @@
                           class="text-muted fst-italic">Not extracted</span>
                 </dd>
 
+                <dt class="col-sm-3">SLA deadline</dt>
+                <dd class="col-sm-9">
+                    <span th:if="${ticket.slaDeadlineAt != null}"
+                          th:text="${#temporals.format(ticket.slaDeadlineAt, 'dd.MM.yyyy HH:mm')}">—</span>
+                    <span th:if="${ticket.slaDeadlineAt == null}"
+                          class="text-muted fst-italic">No SLA</span>
+                    <span th:if="${ticket.slaBreached}" class="badge bg-danger ms-2">Breached</span>
+                </dd>
+
                 <dt class="col-sm-3">Retry count</dt>
                 <dd class="col-sm-9" th:text="${ticket.retryCount}">0</dd>
 

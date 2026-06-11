@@ -54,6 +54,7 @@ public class TicketProcessingService {
     private final AiDraftingService aiDraftingService;
     private final RateSheetService rateSheetService;
     private final GmailDraftService gmailDraftService;
+    private final SlaService slaService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
@@ -74,6 +75,7 @@ public class TicketProcessingService {
                                    AiDraftingService aiDraftingService,
                                    RateSheetService rateSheetService,
                                    GmailDraftService gmailDraftService,
+                                   SlaService slaService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailClassificationService = emailClassificationService;
@@ -82,6 +84,7 @@ public class TicketProcessingService {
         this.aiDraftingService = aiDraftingService;
         this.rateSheetService = rateSheetService;
         this.gmailDraftService = gmailDraftService;
+        this.slaService = slaService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -170,6 +173,8 @@ public class TicketProcessingService {
                     emailClassificationService.classify(ticket.getSubject(), buildAiInput(ticket));
             if (!classification.relevant()) {
                 ticket.setStatus(TicketStatus.IRRELEVANT);
+                // Phase 1.5: spam carries no SLA — drop the provisional deadline set at ingest.
+                ticket.setSlaDeadlineAt(null);
                 ticket.setUpdatedAt(LocalDateTime.now());
                 emailTicketRepository.save(ticket);
                 log.info("Ticket classified as IRRELEVANT — pipeline stopped, kept for audit");
@@ -177,6 +182,11 @@ public class TicketProcessingService {
             }
             // Persisted together with the PROCESSING transition below — no extra UPDATE.
             ticket.setTicketType(classification.type());
+            // Phase 1.5: refine the provisional (GENERAL) deadline to the per-type window.
+            // Still anchored to createdAt — the customer's clock started at receipt.
+            if (slaService.isEnabled()) {
+                ticket.setSlaDeadlineAt(slaService.deadlineFor(classification.type(), ticket.getCreatedAt()));
+            }
         }
 
         ticket.setStatus(TicketStatus.PROCESSING);

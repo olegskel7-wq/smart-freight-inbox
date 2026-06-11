@@ -164,4 +164,26 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     int bulkTransitionStaleStatus(@Param("fromStatuses") Collection<TicketStatus> fromStatuses,
                                   @Param("toStatus") TicketStatus toStatus,
                                   @Param("cutoff") java.time.LocalDateTime cutoff);
+
+    /**
+     * Flags open tickets whose SLA deadline has passed (Phase 1.5). Used by
+     * {@link com.smartfreight.inbox.scheduler.SlaBreachScheduler}.
+     *
+     * Deliberately does NOT touch updatedAt: the breach flag is reporting metadata,
+     * not pipeline activity — bumping updatedAt here would reset the staleness clock
+     * the StuckTicketSweeper relies on and keep genuinely stuck tickets unswept.
+     *
+     * @param now              breach cutoff (deadlines strictly before this are overdue)
+     * @param exemptStatuses   statuses outside the SLA clock (CLOSED, IRRELEVANT)
+     * @return number of tickets newly flagged
+     */
+    @Modifying
+    @Query("UPDATE EmailTicket t " +
+           "   SET t.slaBreached = true " +
+           " WHERE t.slaBreached = false " +
+           "   AND t.slaDeadlineAt IS NOT NULL " +
+           "   AND t.slaDeadlineAt < :now " +
+           "   AND t.status NOT IN :exemptStatuses")
+    int markSlaBreached(@Param("now") java.time.LocalDateTime now,
+                        @Param("exemptStatuses") Collection<TicketStatus> exemptStatuses);
 }
