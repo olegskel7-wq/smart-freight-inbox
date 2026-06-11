@@ -2,6 +2,8 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.service.EmailClassificationService.ClassificationResult;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,11 +88,13 @@ class TicketProcessingClassificationTest {
     void receivedTicket_classifiedIrrelevant_parkedWithoutPipeline() {
         EmailTicket ticket = ticket(TicketStatus.RECEIVED);
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
-        when(emailClassificationService.isFreightInquiry(any(), any())).thenReturn(false);
+        when(emailClassificationService.classify(any(), any()))
+                .thenReturn(new ClassificationResult(false, null));
 
         service.processAttempt(1L, System.nanoTime());
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IRRELEVANT);
+        assertThat(ticket.getTicketType()).isNull();
         verify(emailTicketRepository).save(ticket);
         verifyNoInteractions(aiExtractionService, itemLookupService, aiDraftingService, gmailDraftService);
     }
@@ -99,15 +103,30 @@ class TicketProcessingClassificationTest {
     void receivedTicket_classifiedRelevant_runsFullPipelineToDraftReady() {
         EmailTicket ticket = ticket(TicketStatus.RECEIVED);
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
-        when(emailClassificationService.isFreightInquiry(eq("Container inquiry"), anyString()))
-                .thenReturn(true);
+        when(emailClassificationService.classify(eq("Container inquiry"), anyString()))
+                .thenReturn(new ClassificationResult(true, TicketType.STATUS_UPDATE));
         stubHappyPipeline();
 
         service.processAttempt(1L, System.nanoTime());
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
+        assertThat(ticket.getTicketType()).isEqualTo(TicketType.STATUS_UPDATE);
         assertThat(ticket.getDraftReply()).isNotBlank();
-        verify(emailClassificationService).isFreightInquiry(eq("Container inquiry"), anyString());
+        verify(emailClassificationService).classify(eq("Container inquiry"), anyString());
+    }
+
+    @Test
+    void receivedTicket_relevantWithoutType_featureOff_typeStaysNull() {
+        EmailTicket ticket = ticket(TicketStatus.RECEIVED);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(emailClassificationService.classify(any(), any()))
+                .thenReturn(new ClassificationResult(true, null));
+        stubHappyPipeline();
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
+        assertThat(ticket.getTicketType()).isNull();
     }
 
     @Test

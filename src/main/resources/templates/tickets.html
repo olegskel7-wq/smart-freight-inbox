@@ -106,6 +106,17 @@
                                 <span th:unless="${active}" class="small text-white-50">⇅</span>
                             </a>
                         </th>
+                        <th th:with="col='ticketType', label='Type', defDir='asc',
+                                     active=${sort == col},
+                                     nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
+                            <a th:href="@{/tickets(sort=${col}, dir=${nextDir}, status=${statusFilter})}"
+                               class="text-white text-decoration-none d-inline-flex align-items-center gap-1">
+                                <span th:text="${label}">Type</span>
+                                <span th:if="${active}" class="small"
+                                      th:text="${dir == 'asc' ? '▲' : '▼'}">▼</span>
+                                <span th:unless="${active}" class="small text-white-50">⇅</span>
+                            </a>
+                        </th>
                         <th th:with="col='status', label='Status', defDir='asc',
                                      active=${sort == col},
                                      nextDir=${active ? (dir == 'asc' ? 'desc' : 'asc') : defDir}">
@@ -154,6 +165,11 @@
                                   class="text-muted">—</span>
                         </td>
                         <td>
+                            <span th:if="${ticket.ticketType != null}" class="badge bg-light text-dark border"
+                                  th:text="${ticket.ticketType}">RFQ</span>
+                            <span th:if="${ticket.ticketType == null}" class="text-muted">—</span>
+                        </td>
+                        <td>
                             <span class="badge"
                                   th:classappend="${ticket.status.name() == 'DRAFT_READY'  ? 'bg-success'  :
                                                    ticket.status.name() == 'PROCESSING'    ? 'bg-warning text-dark' :
@@ -184,7 +200,7 @@
                         </td>
                     </tr>
                     <tr th:if="${#lists.isEmpty(tickets)}">
-                        <td colspan="8" class="text-center text-muted py-5">
+                        <td colspan="9" class="text-center text-muted py-5">
                             No tickets match the current filter.
                         </td>
                     </tr>

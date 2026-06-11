@@ -24,8 +24,9 @@ import java.util.Optional;
  * AI pipeline orchestrator for ticket processing.
  *
  * Coordinates the pipeline steps:
- * 0. Relevance classification (Qwen 2.5) for RECEIVED tickets — non-freight mail is
- *    parked as IRRELEVANT and never reaches the heavier steps (Phase 1.3 session 3)
+ * 0. Relevance + type classification (Qwen 2.5) for RECEIVED tickets — non-freight mail is
+ *    parked as IRRELEVANT and never reaches the heavier steps (Phase 1.3 session 3);
+ *    relevant mail gets its business type (RFQ/STATUS_UPDATE/…) in the same call (Phase 1.4)
  * 1. Item identifier extraction (Qwen 2.5) from the email body
  * 2. Item lookup via the backend ({@link ItemLookupService})
  * 3. Reply draft generation (Llama 3.1)
@@ -162,15 +163,20 @@ public class TicketProcessingService {
         // RECEIVED — the retry path (NEW / RETRY_LATER) has already passed it, and a swept
         // RECEIVED ticket re-entering as NEW deliberately skips it (fail-open: when in
         // doubt, run the pipeline rather than risk dropping a real customer request).
+        // Phase 1.4: the same call also assigns the business type (RFQ/STATUS_UPDATE/…).
         if (ticket.getStatus() == TicketStatus.RECEIVED) {
-            log.info("Step 0: Classifying email relevance via Qwen 2.5");
-            if (!emailClassificationService.isFreightInquiry(ticket.getSubject(), buildAiInput(ticket))) {
+            log.info("Step 0: Classifying email relevance and type via Qwen 2.5");
+            EmailClassificationService.ClassificationResult classification =
+                    emailClassificationService.classify(ticket.getSubject(), buildAiInput(ticket));
+            if (!classification.relevant()) {
                 ticket.setStatus(TicketStatus.IRRELEVANT);
                 ticket.setUpdatedAt(LocalDateTime.now());
                 emailTicketRepository.save(ticket);
                 log.info("Ticket classified as IRRELEVANT — pipeline stopped, kept for audit");
                 return;
             }
+            // Persisted together with the PROCESSING transition below — no extra UPDATE.
+            ticket.setTicketType(classification.type());
         }
 
         ticket.setStatus(TicketStatus.PROCESSING);

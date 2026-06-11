@@ -51,6 +51,14 @@
                 <dt class="col-sm-3">Subject</dt>
                 <dd class="col-sm-9" th:text="${ticket.subject ?: '—'}">—</dd>
 
+                <dt class="col-sm-3">Type</dt>
+                <dd class="col-sm-9">
+                    <span th:if="${ticket.ticketType != null}" class="badge bg-light text-dark border"
+                          th:text="${ticket.ticketType}">RFQ</span>
+                    <span th:if="${ticket.ticketType == null}"
+                          class="text-muted fst-italic">Not classified</span>
+                </dd>
+
                 <dt class="col-sm-3">Identifier</dt>
                 <dd class="col-sm-9">
                     <code th:if="${ticket.extractedIdentifier != null}"
