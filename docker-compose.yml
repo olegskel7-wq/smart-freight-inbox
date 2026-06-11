@@ -98,8 +98,15 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+      # Prometheus scrape endpoint (rabbitmq_prometheus plugin) — exposed to the
+      # host only for debugging; Prometheus scrapes it over the compose network.
+      - "15692:15692"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      # Declarative plugin list (adds rabbitmq_prometheus to what the -management
+      # image enables) + per-queue metric granularity for Grafana panels.
+      - ./monitoring/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./monitoring/rabbitmq/20-prometheus.conf:/etc/rabbitmq/conf.d/20-prometheus.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 15s

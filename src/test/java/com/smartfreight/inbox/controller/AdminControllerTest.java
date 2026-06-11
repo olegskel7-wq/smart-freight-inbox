@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.messaging.DlqAdminService;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
@@ -19,6 +20,7 @@ import java.util.List;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -49,12 +51,15 @@ class AdminControllerTest {
     @Mock
     private TicketEventPublisher ticketEventPublisher;
 
+    @Mock
+    private DlqAdminService dlqAdminService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         AdminController controller = new AdminController(
-                emailTicketRepository, ticketProcessingService, ticketEventPublisher);
+                emailTicketRepository, ticketProcessingService, ticketEventPublisher, dlqAdminService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -104,5 +109,45 @@ class AdminControllerTest {
         var inOrder = inOrder(ticketProcessingService, emailTicketRepository);
         inOrder.verify(ticketProcessingService).prepareForRetry();
         inOrder.verify(emailTicketRepository).findIdsByStatusIn(any());
+    }
+
+    @Test
+    void dlqStatus_reportsMessageCount() throws Exception {
+        when(dlqAdminService.messageCount()).thenReturn(4L);
+
+        mockMvc.perform(get("/admin/dlq"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("4 message(s)")));
+    }
+
+    @Test
+    void dlqRequeue_defaultLimit_movesMessagesAndReportsCount() throws Exception {
+        when(dlqAdminService.requeue(100)).thenReturn(2);
+
+        mockMvc.perform(post("/admin/dlq/requeue"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Requeued 2")));
+
+        verify(dlqAdminService).requeue(100);
+    }
+
+    @Test
+    void dlqRequeue_customLimit_passedThrough() throws Exception {
+        when(dlqAdminService.requeue(5)).thenReturn(5);
+
+        mockMvc.perform(post("/admin/dlq/requeue").param("limit", "5"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Requeued 5")));
+
+        verify(dlqAdminService).requeue(5);
+    }
+
+    @Test
+    void dlqPurge_reportsPurgedCount() throws Exception {
+        when(dlqAdminService.purge()).thenReturn(3);
+
+        mockMvc.perform(post("/admin/dlq/purge"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Purged 3")));
     }
 }

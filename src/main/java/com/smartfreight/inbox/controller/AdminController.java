@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.messaging.DlqAdminService;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
@@ -8,8 +9,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -28,13 +31,16 @@ public class AdminController {
     private final EmailTicketRepository emailTicketRepository;
     private final TicketProcessingService ticketProcessingService;
     private final TicketEventPublisher ticketEventPublisher;
+    private final DlqAdminService dlqAdminService;
 
     public AdminController(EmailTicketRepository emailTicketRepository,
                            TicketProcessingService ticketProcessingService,
-                           TicketEventPublisher ticketEventPublisher) {
+                           TicketEventPublisher ticketEventPublisher,
+                           DlqAdminService dlqAdminService) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.ticketEventPublisher = ticketEventPublisher;
+        this.dlqAdminService = dlqAdminService;
     }
 
     /**
@@ -74,5 +80,43 @@ public class AdminController {
         ids.forEach(ticketEventPublisher::publishRetryRequested);
 
         return ResponseEntity.ok("Queued " + ids.size() + " tickets for reprocessing (reset " + reset + " from FAILED).");
+    }
+
+    /**
+     * GET /admin/dlq — current dead-letter queue depth.
+     *
+     * Non-zero means poison messages: payloads the consumer rejected 3 times.
+     * Inspect them in the RabbitMQ management UI (:15672), then either fix the
+     * cause and requeue, or purge.
+     */
+    @GetMapping("/dlq")
+    public ResponseEntity<String> dlqStatus() {
+        return ResponseEntity.ok("DLQ contains " + dlqAdminService.messageCount() + " message(s).");
+    }
+
+    /**
+     * POST /admin/dlq/requeue — move messages from the DLQ back to the work queue.
+     *
+     * Use after deploying a fix for whatever made them poison. Still-broken
+     * messages bounce back to the DLQ after 3 attempts, so this is safe to call
+     * speculatively. {@code limit} caps one invocation (default 100).
+     */
+    @PostMapping("/dlq/requeue")
+    public ResponseEntity<String> dlqRequeue(@RequestParam(defaultValue = "100") int limit) {
+        int moved = dlqAdminService.requeue(limit);
+        return ResponseEntity.ok("Requeued " + moved + " message(s) from the DLQ.");
+    }
+
+    /**
+     * POST /admin/dlq/purge — irreversibly drop all DLQ messages.
+     *
+     * The ticket rows behind them are NOT touched: a stuck ticket is later swept
+     * to RETRY_LATER by StuckTicketSweeper, so purging never strands data —
+     * PostgreSQL, not the broker, is the source of truth.
+     */
+    @PostMapping("/dlq/purge")
+    public ResponseEntity<String> dlqPurge() {
+        int purged = dlqAdminService.purge();
+        return ResponseEntity.ok("Purged " + purged + " message(s) from the DLQ.");
     }
 }

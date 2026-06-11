@@ -67,3 +67,40 @@ groups:
         annotations:
           summary: "Unprocessed ticket backlog exceeds 50"
           description: "The AI pipeline is not keeping up with incoming volume."
+
+      - alert: DeadLetterQueueNotEmpty
+        expr: rabbitmq_queue_messages{queue="q.ticket.process.dlq"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Poison messages in the AI pipeline DLQ"
+          description: >-
+            {{ $value }} message(s) were rejected 3 times by the consumer and dead-lettered.
+            Inspect via the RabbitMQ UI (:15672) or GET /admin/dlq, then fix the cause and
+            POST /admin/dlq/requeue — or /admin/dlq/purge if the payloads are garbage.
+
+      - alert: OutboxRelayStalled
+        expr: smartfreight_outbox_oldest_pending_age_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox events are not reaching RabbitMQ"
+          description: >-
+            The oldest unpublished outbox event has been waiting over 5 minutes —
+            the relay is failing or the broker is rejecting publishes. Tickets keep
+            being ingested but the AI pipeline is not seeing them. Check RabbitMQ
+            health and backend logs for OutboxRelay warnings.
+
+      - alert: RabbitMQDown
+        expr: up{job="rabbitmq"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ metrics endpoint is unreachable"
+          description: >-
+            The broker (or its prometheus plugin) is down. Ingestion still works —
+            events accumulate in the outbox — but no AI processing happens until
+            the broker returns.

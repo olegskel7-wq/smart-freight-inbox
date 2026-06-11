@@ -75,6 +75,12 @@ outbox:
   poll-interval-ms: 2000
   batch-size: 50
 
+# Runtime sweep for tickets stuck in NEW/PROCESSING (lost pipeline message).
+# stuck-after-minutes must exceed worst-case healthy wait: queue backlog + one pipeline run.
+sweep:
+  poll-interval-ms: 300000
+  stuck-after-minutes: 30
+
 port:
   service:
     url: ${PORT_SERVICE_URL:http://localhost:9000}

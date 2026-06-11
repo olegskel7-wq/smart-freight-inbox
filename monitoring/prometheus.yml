@@ -19,3 +19,9 @@ scrape_configs:
     metrics_path: '/actuator/prometheus'
     static_configs:
       - targets: ['host.docker.internal:9000']
+
+  # RabbitMQ always runs inside compose (unlike backend, which may run from
+  # IntelliJ on the host), so it is scraped by service name, not host.docker.internal.
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']

@@ -139,4 +139,29 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
            " WHERE t.status = :fromStatus")
     int bulkTransitionStatus(@Param("fromStatus") TicketStatus fromStatus,
                              @Param("toStatus") TicketStatus toStatus);
+
+    /**
+     * Bulk transition for tickets STUCK in the given statuses: only rows whose
+     * updatedAt is older than the cutoff are touched, so tickets legitimately
+     * in-flight (recently updated) are left alone.
+     *
+     * Used by {@link com.smartfreight.inbox.scheduler.StuckTicketSweeper} to unstick
+     * tickets whose pipeline message was lost (DLQ'd poison payload, consumer crash
+     * without a JVM restart) — the time filter is what makes this safe to run
+     * continuously, unlike the unconditional startup variant above.
+     *
+     * @param fromStatuses statuses considered potentially stuck (NEW, PROCESSING)
+     * @param toStatus     target status (RETRY_LATER — picked up by RetryScheduler)
+     * @param cutoff       only rows last updated BEFORE this moment are transitioned
+     * @return number of rows updated
+     */
+    @Modifying
+    @Query("UPDATE EmailTicket t " +
+           "   SET t.status = :toStatus, " +
+           "       t.updatedAt = CURRENT_TIMESTAMP " +
+           " WHERE t.status IN :fromStatuses " +
+           "   AND t.updatedAt < :cutoff")
+    int bulkTransitionStaleStatus(@Param("fromStatuses") Collection<TicketStatus> fromStatuses,
+                                  @Param("toStatus") TicketStatus toStatus,
+                                  @Param("cutoff") java.time.LocalDateTime cutoff);
 }

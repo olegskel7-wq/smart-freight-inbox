@@ -30,4 +30,19 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     List<OutboxEvent> lockUnpublishedBatch(@Param("batchSize") int batchSize);
+
+    /**
+     * Number of events waiting to be relayed. Exposed as a Prometheus gauge —
+     * a growing value means the relay is down or the broker is rejecting publishes.
+     * Covered by the partial index, so the count is O(pending), not O(history).
+     */
+    long countByPublishedAtIsNull();
+
+    /**
+     * Creation time of the OLDEST unpublished event, or null when the outbox is
+     * drained. Exposed as an age gauge: pending count alone cannot distinguish
+     * "steady small backlog" from "one event stuck for an hour".
+     */
+    @Query("SELECT MIN(e.createdAt) FROM OutboxEvent e WHERE e.publishedAt IS NULL")
+    java.time.LocalDateTime findOldestUnpublishedCreatedAt();
 }
