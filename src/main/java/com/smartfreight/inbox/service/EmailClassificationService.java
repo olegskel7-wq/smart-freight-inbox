@@ -25,8 +25,10 @@ import java.util.Map;
  * Fail-open principle: if Ollama is unavailable the email is treated as RELEVANT
  * so that no real customer request is lost due to an AI outage.
  *
- * Execution context: called from EmailIngestionService before the first DB query,
- * so the HikariCP JDBC connection is not yet held during this LLM call.
+ * Execution context (Phase 1.3 session 3): called from TicketProcessingService inside
+ * the RabbitMQ consumer for tickets in RECEIVED status — never on the IMAP thread.
+ * Irrelevant emails end up as persisted IRRELEVANT tickets (auditable), not silently
+ * dropped as before.
  */
 @Service
 public class EmailClassificationService {

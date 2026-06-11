@@ -23,13 +23,16 @@ import java.util.Optional;
 /**
  * AI pipeline orchestrator for ticket processing.
  *
- * Coordinates three steps:
+ * Coordinates the pipeline steps:
+ * 0. Relevance classification (Qwen 2.5) for RECEIVED tickets — non-freight mail is
+ *    parked as IRRELEVANT and never reaches the heavier steps (Phase 1.3 session 3)
  * 1. Item identifier extraction (Qwen 2.5) from the email body
  * 2. Item lookup via the backend ({@link ItemLookupService})
  * 3. Reply draft generation (Llama 3.1)
  *
- * Executed synchronously in the calling thread
- * ({@link com.smartfreight.inbox.integration.EmailIngestionService} / {@link com.smartfreight.inbox.scheduler.RetryScheduler}).
+ * Executed synchronously in the calling thread — since Phase 1.3 that is the RabbitMQ
+ * consumer ({@link com.smartfreight.inbox.messaging.TicketEventConsumer}), never the
+ * IMAP thread.
  *
  * Protection against optimistic lock conflicts: automatically retries up to MAX_RETRY_ATTEMPTS
  * (3 times). Each attempt runs in its own REQUIRES_NEW transaction so that a failed attempt's
@@ -44,6 +47,7 @@ public class TicketProcessingService {
     private static final int MAX_RETRY_ATTEMPTS = 3;
 
     private final EmailTicketRepository emailTicketRepository;
+    private final EmailClassificationService emailClassificationService;
     private final AiExtractionService aiExtractionService;
     private final ItemLookupService itemLookupService;
     private final AiDraftingService aiDraftingService;
@@ -63,6 +67,7 @@ public class TicketProcessingService {
     private TicketProcessingService self;
 
     public TicketProcessingService(EmailTicketRepository emailTicketRepository,
+                                   EmailClassificationService emailClassificationService,
                                    AiExtractionService aiExtractionService,
                                    ItemLookupService itemLookupService,
                                    AiDraftingService aiDraftingService,
@@ -70,6 +75,7 @@ public class TicketProcessingService {
                                    GmailDraftService gmailDraftService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
+        this.emailClassificationService = emailClassificationService;
         this.aiExtractionService = aiExtractionService;
         this.itemLookupService = itemLookupService;
         this.aiDraftingService = aiDraftingService;
@@ -145,9 +151,26 @@ public class TicketProcessingService {
         EmailTicket ticket = emailTicketRepository.findById(ticketId)
                 .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketId));
 
-        if (ticket.getStatus() != TicketStatus.NEW && ticket.getStatus() != TicketStatus.RETRY_LATER) {
+        if (ticket.getStatus() != TicketStatus.RECEIVED
+                && ticket.getStatus() != TicketStatus.NEW
+                && ticket.getStatus() != TicketStatus.RETRY_LATER) {
             log.warn("Ticket already in state {}, skipping", ticket.getStatus());
             return;
+        }
+
+        // Phase 1.3 session 3: classification happens here, off the IMAP thread. Only for
+        // RECEIVED — the retry path (NEW / RETRY_LATER) has already passed it, and a swept
+        // RECEIVED ticket re-entering as NEW deliberately skips it (fail-open: when in
+        // doubt, run the pipeline rather than risk dropping a real customer request).
+        if (ticket.getStatus() == TicketStatus.RECEIVED) {
+            log.info("Step 0: Classifying email relevance via Qwen 2.5");
+            if (!emailClassificationService.isFreightInquiry(ticket.getSubject(), buildAiInput(ticket))) {
+                ticket.setStatus(TicketStatus.IRRELEVANT);
+                ticket.setUpdatedAt(LocalDateTime.now());
+                emailTicketRepository.save(ticket);
+                log.info("Ticket classified as IRRELEVANT — pipeline stopped, kept for audit");
+                return;
+            }
         }
 
         ticket.setStatus(TicketStatus.PROCESSING);

@@ -69,8 +69,10 @@ public class AdminController {
     public ResponseEntity<String> reprocessAll() {
         int reset = ticketProcessingService.prepareForRetry();
 
+        // RECEIVED included as a manual unstick path: its consumer re-runs classification,
+        // so re-enqueueing a ticket whose original event is still in flight stays idempotent.
         List<Long> ids = emailTicketRepository.findIdsByStatusIn(
-                List.of(TicketStatus.NEW, TicketStatus.RETRY_LATER));
+                List.of(TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.RETRY_LATER));
 
         if (ids.isEmpty()) {
             return ResponseEntity.ok("No tickets to reprocess (reset " + reset + " from FAILED).");

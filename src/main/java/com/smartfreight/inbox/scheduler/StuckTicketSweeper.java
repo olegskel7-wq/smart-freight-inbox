@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Runtime sweep for tickets stuck in NEW / PROCESSING (Phase 1.3, session 2).
+ * Runtime sweep for tickets stuck in RECEIVED / NEW / PROCESSING (Phase 1.3, session 2).
  *
  * Why this exists when {@link com.smartfreight.inbox.startup.StuckTicketRecovery}
  * already runs at startup: that recovery only fires on a JVM restart. A RUNNING
@@ -43,9 +43,14 @@ public class StuckTicketSweeper {
 
     private static final Logger log = LoggerFactory.getLogger(StuckTicketSweeper.class);
 
-    /** Statuses a ticket can silently hang in when its pipeline message is lost. */
+    /**
+     * Statuses a ticket can silently hang in when its pipeline message is lost.
+     * RECEIVED (Phase 1.3 session 3): a ticket whose "ticket.created" message went poison
+     * before classification. Sweeping sends it down the RETRY_LATER → NEW path, which
+     * skips classification — intentional fail-open, same as a classifier outage.
+     */
     static final List<TicketStatus> SWEEPABLE_STATUSES =
-            List.of(TicketStatus.NEW, TicketStatus.PROCESSING);
+            List.of(TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.PROCESSING);
 
     private final EmailTicketRepository emailTicketRepository;
     private final Counter sweptCounter;
@@ -57,7 +62,7 @@ public class StuckTicketSweeper {
                               MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.sweptCounter = Counter.builder("smartfreight_tickets_swept_total")
-                .description("Stuck NEW/PROCESSING tickets moved to RETRY_LATER by the sweeper")
+                .description("Stuck RECEIVED/NEW/PROCESSING tickets moved to RETRY_LATER by the sweeper")
                 .register(meterRegistry);
     }
 
@@ -75,7 +80,7 @@ public class StuckTicketSweeper {
 
         if (swept > 0) {
             sweptCounter.increment(swept);
-            log.warn("StuckTicketSweeper: {} ticket(s) stuck in NEW/PROCESSING for over {} min " +
+            log.warn("StuckTicketSweeper: {} ticket(s) stuck in RECEIVED/NEW/PROCESSING for over {} min " +
                     "moved to RETRY_LATER", swept, stuckAfterMinutes);
         }
     }

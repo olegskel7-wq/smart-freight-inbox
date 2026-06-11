@@ -34,6 +34,8 @@
                                ticket.status.name() == 'FAILED'        ? 'bg-danger'   :
                                ticket.status.name() == 'RETRY_LATER'   ? 'bg-warning text-dark' :
                                ticket.status.name() == 'CLOSED'        ? 'bg-secondary':
+                               ticket.status.name() == 'RECEIVED'      ? 'bg-info text-dark' :
+                               ticket.status.name() == 'IRRELEVANT'    ? 'bg-dark' :
                                                                          'bg-primary'}"
               th:text="${ticket.status}">NEW</span>
     </div>

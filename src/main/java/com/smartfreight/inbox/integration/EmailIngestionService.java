@@ -1,11 +1,11 @@
 package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.DraftNotificationService;
-import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.SettingsService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -34,14 +34,19 @@ import java.io.IOException;
  * Processing pipeline:
  * 1. The message is copied into memory (guard against FolderClosedException).
  * 2. The Message-ID header is checked — messages without it are ignored.
- * 3. The message body is extracted (plain text or multipart).
- * 4. LLM classification (Qwen) — BEFORE the first DB query, so the JDBC connection is not held.
- *    Unrelated emails (non-freight inquiries) are rejected here with no DB record created.
- * 5. Duplicate check by Message-ID — IMAP may deliver the same message twice.
- * 6. A ticket is created and persisted, and a "ticket.created" event is written to the
- *    transactional outbox IN THE SAME transaction (Phase 1.3).
- * 7. OutboxRelay publishes the event to RabbitMQ; TicketEventConsumer runs the AI pipeline.
- *    A broker outage therefore never blocks ingestion — events wait in the outbox.
+ * 3. The message body is extracted (plain text or multipart); attachments are parsed
+ *    locally (PDFBox/POI — CPU-bound, no network, so it stays on this thread).
+ * 4. Duplicate check by Message-ID — IMAP may deliver the same message twice.
+ * 5. A ticket is persisted with status RECEIVED, and a "ticket.created" event is written
+ *    to the transactional outbox IN THE SAME transaction (Phase 1.3).
+ * 6. OutboxRelay publishes the event to RabbitMQ; TicketEventConsumer classifies the email
+ *    (Qwen) and runs the AI pipeline. A broker or Ollama outage therefore never blocks
+ *    ingestion — events wait in the outbox, tickets wait in RECEIVED.
+ *
+ * Phase 1.3 session 3: NO LLM call happens on this thread anymore. Classification used to
+ * run here (blocking IMAP IDLE for up to 30 s per email, losing mail when Ollama was down);
+ * it now lives in the consumer, and non-freight emails get a persisted IRRELEVANT ticket
+ * instead of vanishing without trace.
  */
 @Service
 public class EmailIngestionService {
@@ -59,20 +64,17 @@ public class EmailIngestionService {
 
     private final EmailTicketRepository emailTicketRepository;
     private final TicketEventPublisher ticketEventPublisher;
-    private final EmailClassificationService emailClassificationService;
     private final AttachmentParserService attachmentParserService;
     private final SettingsService settingsService;
     private final Counter receivedCounter;
 
     public EmailIngestionService(EmailTicketRepository emailTicketRepository,
                                  TicketEventPublisher ticketEventPublisher,
-                                 EmailClassificationService emailClassificationService,
                                  AttachmentParserService attachmentParserService,
                                  SettingsService settingsService,
                                  MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketEventPublisher = ticketEventPublisher;
-        this.emailClassificationService = emailClassificationService;
         this.attachmentParserService = attachmentParserService;
         this.settingsService = settingsService;
         this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
@@ -129,22 +131,16 @@ public class EmailIngestionService {
             String body = extractBody(mimeMessage);
             String subject = mimeMessage.getSubject() != null ? mimeMessage.getSubject() : "";
 
-            // Phase 1.1: pull text from PDF/Excel attachments. Fed to the classifier too, so an RFQ
-            // whose body is just "please see attached" is judged on the attachment, not dropped.
-            // Behind a feature flag (plan-gating seam) — disabled tenants skip parsing entirely.
+            // Phase 1.1: pull text from PDF/Excel attachments. Persisted alongside the body so the
+            // consumer-side classifier judges an RFQ whose body is just "please see attached" on the
+            // attachment. Behind a feature flag (plan-gating seam) — disabled tenants skip parsing.
             String attachmentText = settingsService.isFeatureEnabled(FEATURE_ATTACHMENT_PARSING, true)
                     ? attachmentParserService.extractAttachmentText(mimeMessage)
                     : "";
-            String classificationInput = attachmentText.isBlank() ? body : body + "\n\n" + attachmentText;
 
             String senderEmail = "";
             if (mimeMessage.getFrom() != null && mimeMessage.getFrom().length > 0) {
                 senderEmail = mimeMessage.getFrom()[0].toString();
-            }
-
-            if (!emailClassificationService.isFreightInquiry(subject, classificationInput)) {
-                log.info("Non-freight email ignored (no DB record created): subject='{}'", subject);
-                return;
             }
 
             if (emailTicketRepository.findByMessageId(messageId).isPresent()) {
@@ -158,6 +154,9 @@ public class EmailIngestionService {
                     .senderEmail(senderEmail)
                     .body(body)
                     .attachmentText(attachmentText.isBlank() ? null : attachmentText)
+                    // RECEIVED = persisted but not yet classified; the consumer decides
+                    // IRRELEVANT vs pipeline. NEW is reserved for the retry re-entry path.
+                    .status(TicketStatus.RECEIVED)
                     .build();
 
             try {

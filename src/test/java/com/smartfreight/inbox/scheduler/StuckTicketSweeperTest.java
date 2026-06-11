@@ -24,7 +24,7 @@ import static org.mockito.Mockito.when;
  * Unit tests for StuckTicketSweeper.
  *
  * Verifies:
- * - the bulk transition targets exactly NEW + PROCESSING → RETRY_LATER
+ * - the bulk transition targets exactly RECEIVED + NEW + PROCESSING → RETRY_LATER
  * - the cutoff reflects the configured stuck-after-minutes threshold
  * - the swept counter increments by the number of affected rows
  * - a clean run (nothing stuck) does not touch the counter
@@ -48,7 +48,7 @@ class StuckTicketSweeperTest {
     }
 
     @Test
-    void sweep_transitionsStaleNewAndProcessingToRetryLater() {
+    void sweep_transitionsStaleReceivedNewAndProcessingToRetryLater() {
         when(emailTicketRepository.bulkTransitionStaleStatus(any(), any(), any())).thenReturn(2);
 
         sweeper.sweepStuckTickets();
@@ -60,7 +60,8 @@ class StuckTicketSweeperTest {
                 statusCaptor.capture(), eq(TicketStatus.RETRY_LATER), any(LocalDateTime.class));
 
         assertThat(statusCaptor.getValue())
-                .containsExactlyInAnyOrder(TicketStatus.NEW, TicketStatus.PROCESSING);
+                .containsExactlyInAnyOrder(
+                        TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.PROCESSING);
     }
 
     @Test

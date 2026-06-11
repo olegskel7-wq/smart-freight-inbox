@@ -17,8 +17,8 @@ import tools.jackson.databind.ObjectMapper;
  *
  * Idempotency: delivery is at-least-once (outbox relay may re-publish, the broker
  * may redeliver). That is safe because {@code TicketProcessingService.processAttempt}
- * only acts on tickets in NEW / RETRY_LATER — a duplicate event for an already
- * processed ticket is a logged no-op.
+ * only acts on tickets in RECEIVED / NEW / RETRY_LATER — a duplicate event for an
+ * already processed ticket is a logged no-op.
  *
  * Poison messages: an unparseable payload throws, the retry advice gives up after
  * 3 attempts and the message lands in the DLQ ({@link RabbitConfig#PROCESS_DLQ}).

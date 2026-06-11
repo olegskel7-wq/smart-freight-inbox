@@ -1,10 +1,10 @@
 package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.AttachmentParserService;
-import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.SettingsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.Session;
@@ -42,6 +42,10 @@ import org.mockito.quality.Strictness;
  * Nuo Phase 1.3 AI konvejeris nebevyksta tiesiogiai: paslauga tik įrašo įvykį
  * per TicketEventPublisher (transactional outbox), o vartotojas (RabbitMQ consumer)
  * apdoroja bilietą asinchroniškai. Todėl testuose tikrinamas publisher kvietimas.
+ *
+ * Phase 1.3 session 3: classification moved off the IMAP thread into the consumer.
+ * Ingestion persists every deduplicated email as RECEIVED with no LLM call at all —
+ * EmailClassificationService is no longer a dependency of this service.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -54,9 +58,6 @@ class EmailIngestionServiceTest {
     private TicketEventPublisher ticketEventPublisher;
 
     @Mock
-    private EmailClassificationService emailClassificationService;
-
-    @Mock
     private SettingsService settingsService;
 
     private EmailIngestionService emailIngestionService;
@@ -67,12 +68,10 @@ class EmailIngestionServiceTest {
     @BeforeEach
     void setUp() {
         emailIngestionService = new EmailIngestionService(
-                emailTicketRepository, ticketEventPublisher, emailClassificationService,
+                emailTicketRepository, ticketEventPublisher,
                 new AttachmentParserService(new SimpleMeterRegistry()), settingsService,
                 new SimpleMeterRegistry());
         mailSession = Session.getInstance(new Properties());
-        // Default: treat all emails as freight-relevant; individual tests override when needed.
-        when(emailClassificationService.isFreightInquiry(any(), any())).thenReturn(true);
         // Default: attachment-parsing feature on, so existing tests keep their behaviour.
         when(settingsService.isFeatureEnabled(any(), anyBoolean())).thenReturn(true);
     }
@@ -159,6 +158,9 @@ class EmailIngestionServiceTest {
         assertThat(captured.getSenderEmail()).contains("customer@freight.com");
         assertThat(captured.getSubject()).isEqualTo("Container inquiry MSCU1234567");
         assertThat(captured.getBody()).contains("MSCU1234567");
+        // Phase 1.3 session 3: ingestion persists as RECEIVED — classification happens
+        // later in the RabbitMQ consumer, never on the IMAP thread.
+        assertThat(captured.getStatus()).isEqualTo(TicketStatus.RECEIVED);
     }
 
     /**
@@ -257,25 +259,30 @@ class EmailIngestionServiceTest {
     }
 
     /**
-     * Test: email classified as IRRELEVANT is silently ignored — no DB record created.
+     * Test: even a non-freight-looking email is persisted as RECEIVED (Phase 1.3 session 3).
      *
-     * The LLM classifier returns false before any DB operation,
-     * so neither save() nor findByMessageId() should be called.
+     * Ingestion no longer calls the LLM classifier — relevance is decided by the
+     * consumer, which parks junk mail as IRRELEVANT instead of dropping it untraced.
      */
     @Test
-    void processIncomingEmail_irrelevantEmail_skipsWithoutAnyDbInteraction() throws Exception {
+    void processIncomingEmail_anyEmail_persistedAsReceivedWithoutClassification() throws Exception {
         MimeMessage email = buildSimpleEmail(
                 "<spam-001@example.com>",
                 "marketing@somecompany.com",
                 "Happy holidays!",
                 "Wishing you all the best this holiday season.");
 
-        when(emailClassificationService.isFreightInquiry(any(), any())).thenReturn(false); // override default
+        when(emailTicketRepository.findByMessageId("<spam-001@example.com>"))
+                .thenReturn(Optional.empty());
+        EmailTicket savedTicket = EmailTicket.builder().id(7L)
+                .messageId("<spam-001@example.com>").build();
+        when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
 
         emailIngestionService.processIncomingEmail(email);
 
-        verify(emailTicketRepository, never()).save(any());
-        verify(emailTicketRepository, never()).findByMessageId(any());
-        verifyNoInteractions(ticketEventPublisher);
+        ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
+        verify(emailTicketRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TicketStatus.RECEIVED);
+        verify(ticketEventPublisher).publishTicketCreated(7L);
     }
 }
