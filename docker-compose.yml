@@ -30,6 +30,14 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+    healthcheck:
+      # eclipse-temurin alpine has busybox wget but no curl (same as port-service)
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # Spring Boot 4 takes ~20-30s to start; give it headroom before failures count
+      start_period: 60s
     networks:
       - llm_internal
 
@@ -196,7 +204,8 @@ services:
       - ./monitoring/nginx/entrypoint.sh:/docker-entrypoint.d/00-generate-cert.sh:ro
       - nginx_certs:/etc/nginx/certs
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - llm_internal
 
