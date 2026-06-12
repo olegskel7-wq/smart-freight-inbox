@@ -30,4 +30,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * (login bootstrap), so the management UI scopes explicitly (Phase 2.2).
      */
     List<User> findByTenantId(Long tenantId);
+
+    /** User count per tenant for the platform admin overview (Phase 2.2 S2). */
+    long countByTenantId(Long tenantId);
 }

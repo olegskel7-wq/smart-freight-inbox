@@ -46,6 +46,10 @@ public class SecurityConfig {
         http
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**").permitAll()
+                // Tenant administration is platform-level (Phase 2.2 S2) — a tenant's own
+                // operators must never see other tenants. Matcher order matters: this
+                // rule must precede the broader /admin/** one.
+                .requestMatchers("/admin/tenants/**").hasRole("SUPER_ADMIN")
                 .requestMatchers("/admin/**").hasRole("OPERATOR")
                 .anyRequest().authenticated()
             )

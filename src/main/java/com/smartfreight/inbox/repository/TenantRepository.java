@@ -3,6 +3,11 @@ package com.smartfreight.inbox.repository;
 import com.smartfreight.inbox.entity.Tenant;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/** Repository for {@link Tenant}. Minimal until the tenant admin UI (Phase 2.2 S2). */
+import java.util.Optional;
+
+/** Repository for {@link Tenant}. The table carries no RLS — it is the policy catalogue. */
 public interface TenantRepository extends JpaRepository<Tenant, Long> {
+
+    /** Lookup by unique organisation name — duplicate check on tenant onboarding (S2). */
+    Optional<Tenant> findByName(String name);
 }

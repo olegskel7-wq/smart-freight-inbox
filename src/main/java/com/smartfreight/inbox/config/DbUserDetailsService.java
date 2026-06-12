@@ -37,6 +37,9 @@ public class DbUserDetailsService implements UserDetailsService {
     /** Default role assigned when the user's {@code role} field in the DB is NULL. */
     private static final String DEFAULT_ROLE = "OPERATOR";
 
+    /** Platform admin (Phase 2.2 S2) — manages tenants, implies OPERATOR. */
+    public static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
+
     private final UserRepository userRepository;
 
     public DbUserDetailsService(UserRepository userRepository) {
@@ -67,12 +70,18 @@ public class DbUserDetailsService implements UserDetailsService {
                     String role = (u.getRole() == null || u.getRole().isBlank())
                             ? DEFAULT_ROLE
                             : u.getRole();
+                    // SUPER_ADMIN (platform admin, Phase 2.2 S2) keeps full operator
+                    // access on top of /admin/tenants — grant both authorities rather
+                    // than introduce a role-hierarchy bean for a single pair.
+                    String[] roles = SUPER_ADMIN_ROLE.equals(role)
+                            ? new String[]{"ROLE_" + SUPER_ADMIN_ROLE, "ROLE_" + DEFAULT_ROLE}
+                            : new String[]{"ROLE_" + role};
                     // Phase 2.2: the principal carries the tenant so TenantFilter never
                     // needs a DB lookup — the tenant is fixed for the session at login.
                     return (UserDetails) new TenantUserDetails(
                             u.getEmail(),
                             u.getPassword(),
-                            AuthorityUtils.createAuthorityList("ROLE_" + role),
+                            AuthorityUtils.createAuthorityList(roles),
                             u.getTenantId());
                 })
                 .orElseThrow(() -> {
