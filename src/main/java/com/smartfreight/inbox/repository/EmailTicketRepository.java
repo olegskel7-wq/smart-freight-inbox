@@ -4,7 +4,6 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -35,24 +34,6 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     Optional<EmailTicket> findByMessageId(String messageId);
 
     /**
-     * Finds all tickets with the specified status.
-     *
-     * @param status the status to search for
-     * @return list of tickets
-     */
-    List<EmailTicket> findByStatus(TicketStatus status);
-
-    /**
-     * Finds all tickets with the specified status and sort order.
-     * Used in the UI list to filter and sort simultaneously.
-     *
-     * @param status   the status to search for
-     * @param sort     sort specification
-     * @return sorted list of tickets
-     */
-    List<EmailTicket> findByStatus(TicketStatus status, Sort sort);
-
-    /**
      * Paginated ticket list with optional status filter.
      * Used by the operator UI — avoids loading all tickets into memory.
      *
@@ -76,11 +57,16 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
      * RetryScheduler uses this to find tickets eligible for reprocessing.
      * The maxRetries parameter protects against infinite retry loops.
      *
+     * Paginated (Phase 1.8): the scheduler only ever re-enqueues one batch per run,
+     * so the batch limit belongs in the SQL (LIMIT) — not in a subList over fully
+     * loaded entities with their TEXT columns (body/draft_reply up to 10 MB each).
+     *
      * @param status     the status to search for (typically RETRY_LATER)
      * @param maxRetries maximum retryCount (exclusive upper bound)
-     * @return list of tickets eligible for retry
+     * @param pageable   batch size and ordering (oldest updatedAt first = FIFO fairness)
+     * @return one page of tickets eligible for retry; totalElements = full eligible count
      */
-    List<EmailTicket> findByStatusAndRetryCountLessThan(TicketStatus status, int maxRetries);
+    Page<EmailTicket> findByStatusAndRetryCountLessThan(TicketStatus status, int maxRetries, Pageable pageable);
 
     /**
      * Returns ONLY ticket IDs for the specified statuses (projection).

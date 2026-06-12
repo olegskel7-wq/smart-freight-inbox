@@ -11,11 +11,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 /**
  * Scheduler for reprocessing stuck tickets.
@@ -99,19 +100,21 @@ public class RetryScheduler {
             return;
         }
 
-        List<EmailTicket> allEligible = emailTicketRepository
-                .findByStatusAndRetryCountLessThan(TicketStatus.RETRY_LATER, MAX_RETRIES);
+        // Phase 1.8: the batch limit lives in the SQL (LIMIT batchSize), not in a subList
+        // over fully loaded entities — body/draft_reply TEXT columns can reach 10 MB each.
+        // Oldest updatedAt first: tickets parked earliest are retried first (FIFO), so a
+        // burst of fresh parkings cannot starve older ones. totalElements still reports
+        // the full eligible backlog for the log.
+        Page<EmailTicket> toRetry = emailTicketRepository.findByStatusAndRetryCountLessThan(
+                TicketStatus.RETRY_LATER, MAX_RETRIES,
+                PageRequest.of(0, batchSize, Sort.by(Sort.Direction.ASC, "updatedAt")));
 
-        if (allEligible.isEmpty()) {
+        if (toRetry.isEmpty()) {
             return;
         }
 
-        List<EmailTicket> toRetry = allEligible.size() > batchSize
-                ? allEligible.subList(0, batchSize)
-                : allEligible;
-
         log.info("RetryScheduler: found {} eligible ticket(s), re-enqueueing {} (batch limit {})",
-                allEligible.size(), toRetry.size(), batchSize);
+                toRetry.getTotalElements(), toRetry.getNumberOfElements(), batchSize);
 
         for (EmailTicket ticket : toRetry) {
             ticket.setRetryCount(ticket.getRetryCount() + 1);

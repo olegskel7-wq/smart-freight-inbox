@@ -14,6 +14,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import java.util.List;
 
@@ -77,8 +80,8 @@ class RetrySchedulerTest {
     void retryFailedTickets_oneEligibleTicket_reEnqueuesAndUpdatesFields() {
         EmailTicket ticket = buildRetryTicket(1L, 2);
         when(emailTicketRepository.findByStatusAndRetryCountLessThan(
-                TicketStatus.RETRY_LATER, MAX_RETRIES))
-                .thenReturn(List.of(ticket));
+                eq(TicketStatus.RETRY_LATER), eq(MAX_RETRIES), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(ticket)));
 
         retryScheduler.retryFailedTickets();
 
@@ -102,8 +105,8 @@ class RetrySchedulerTest {
         EmailTicket t3 = buildRetryTicket(3L, 3);
 
         when(emailTicketRepository.findByStatusAndRetryCountLessThan(
-                TicketStatus.RETRY_LATER, MAX_RETRIES))
-                .thenReturn(List.of(t1, t2, t3));
+                eq(TicketStatus.RETRY_LATER), eq(MAX_RETRIES), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(t1, t2, t3)));
 
         retryScheduler.retryFailedTickets();
 
@@ -121,8 +124,8 @@ class RetrySchedulerTest {
     @Test
     void retryFailedTickets_noTickets_doesNothing() {
         when(emailTicketRepository.findByStatusAndRetryCountLessThan(
-                TicketStatus.RETRY_LATER, MAX_RETRIES))
-                .thenReturn(List.of());
+                eq(TicketStatus.RETRY_LATER), eq(MAX_RETRIES), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
 
         retryScheduler.retryFailedTickets();
 
@@ -131,18 +134,29 @@ class RetrySchedulerTest {
     }
 
     /**
-     * Repository is queried with exactly RETRY_LATER and MAX_RETRIES = 5.
+     * Repository is queried with exactly RETRY_LATER, MAX_RETRIES = 5 and a page
+     * request that puts the batch limit into the SQL: page size = batchSize (10),
+     * ordered oldest updatedAt first (FIFO — fresh parkings cannot starve old ones).
      */
     @Test
-    void retryFailedTickets_queriesRepositoryWithCorrectParameters() {
+    void retryFailedTickets_queriesRepositoryWithBatchLimitAndFifoOrder() {
         when(emailTicketRepository.findByStatusAndRetryCountLessThan(
-                eq(TicketStatus.RETRY_LATER), eq(MAX_RETRIES)))
-                .thenReturn(List.of());
+                eq(TicketStatus.RETRY_LATER), eq(MAX_RETRIES), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
 
         retryScheduler.retryFailedTickets();
 
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(emailTicketRepository).findByStatusAndRetryCountLessThan(
-                TicketStatus.RETRY_LATER, MAX_RETRIES);
+                eq(TicketStatus.RETRY_LATER), eq(MAX_RETRIES), pageableCaptor.capture());
+
+        Pageable pageable = pageableCaptor.getValue();
+        assertThat(pageable.getPageNumber()).isZero();
+        assertThat(pageable.getPageSize()).isEqualTo(10);
+        assertThat(pageable.getSort().getOrderFor("updatedAt"))
+                .isNotNull()
+                .extracting(Sort.Order::getDirection)
+                .isEqualTo(Sort.Direction.ASC);
     }
 
     /**
@@ -166,8 +180,8 @@ class RetrySchedulerTest {
     void retryFailedTickets_incrementsRetryCountBeforePublishing() {
         EmailTicket ticket = buildRetryTicket(5L, 1);
         when(emailTicketRepository.findByStatusAndRetryCountLessThan(
-                TicketStatus.RETRY_LATER, MAX_RETRIES))
-                .thenReturn(List.of(ticket));
+                eq(TicketStatus.RETRY_LATER), eq(MAX_RETRIES), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(ticket)));
 
         var inOrder = inOrder(emailTicketRepository, ticketEventPublisher);
 
