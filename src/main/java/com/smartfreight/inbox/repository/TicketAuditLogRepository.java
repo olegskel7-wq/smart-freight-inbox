@@ -2,6 +2,8 @@ package com.smartfreight.inbox.repository;
 
 import com.smartfreight.inbox.entity.TicketAuditLog;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -34,4 +36,28 @@ public interface TicketAuditLogRepository extends JpaRepository<TicketAuditLog, 
      * @return number of matching audit entries
      */
     long countByActionAndCreatedAtGreaterThanEqual(String action, LocalDateTime since);
+
+    /**
+     * Average first-response time in seconds for tickets first answered in the period
+     * (Phase 2.1). "First answered" = the earliest SEND or AUTO_SEND audit entry of a
+     * ticket; the clock starts at the ticket's createdAt (email received). Attribution
+     * follows the reply KPIs: a ticket belongs to the period its first reply went out in,
+     * regardless of when the email arrived — and repeat replies never re-count a ticket.
+     *
+     * Native SQL (interval arithmetic + a grouped subquery are beyond JPQL). The join
+     * deliberately skips soft-deleted tickets to stay consistent with the rest of the
+     * dashboard ({@code @SQLRestriction} does not apply to native queries).
+     *
+     * @param since start of the reporting period (inclusive)
+     * @return mean seconds from receipt to first reply, or null when nothing was answered
+     */
+    @Query(nativeQuery = true, value =
+           "SELECT AVG(EXTRACT(EPOCH FROM (f.first_send - t.created_at))) " +
+           "  FROM (SELECT a.ticket_id, MIN(a.created_at) AS first_send " +
+           "          FROM ticket_audit_log a " +
+           "         WHERE a.action IN ('SEND', 'AUTO_SEND') " +
+           "         GROUP BY a.ticket_id) f " +
+           "  JOIN email_ticket t ON t.id = f.ticket_id AND t.deleted = false " +
+           " WHERE f.first_send >= :since")
+    Double avgFirstResponseSeconds(@Param("since") LocalDateTime since);
 }

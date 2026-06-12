@@ -33,7 +33,7 @@
 
         <!-- KPI cards -->
         <div class="row g-3 mb-4">
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md">
                 <div class="card shadow-sm h-100">
                     <div class="card-body">
                         <div class="text-muted small">Emails received</div>
@@ -46,7 +46,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md">
                 <div class="card shadow-sm h-100">
                     <div class="card-body">
                         <div class="text-muted small">Replies sent</div>
@@ -58,7 +58,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md">
                 <div class="card shadow-sm h-100">
                     <div class="card-body">
                         <div class="text-muted small">Automation rate</div>
@@ -69,7 +69,16 @@
                     </div>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small">Avg response time</div>
+                        <div class="fs-2 fw-bold" th:text="${s.avgResponseFormatted()}">—</div>
+                        <div class="small text-muted">receipt to first reply</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md">
                 <div class="card shadow-sm h-100">
                     <div class="card-body">
                         <div class="text-muted small">SLA breaches</div>
@@ -80,6 +89,79 @@
                             <span th:text="${#numbers.formatDecimal(s.slaBreachedPct(), 1, 1)} + '%'">0%</span>
                             of relevant tickets
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Volume by day -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header fw-semibold">Email volume by day</div>
+            <div class="card-body">
+                <p th:if="${s.totalReceived() == 0}" class="text-muted small mb-0">
+                    No tickets received in this period.
+                </p>
+                <div th:if="${s.totalReceived() > 0}" style="height: 260px;">
+                    <canvas id="volumeChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <!-- Tickets by type -->
+            <div class="col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-semibold">Relevant tickets by type</div>
+                    <div class="card-body p-0">
+                        <p th:if="${s.relevant() == 0}" class="text-muted small p-3 mb-0">
+                            No relevant tickets in this period.
+                        </p>
+                        <table class="table table-sm table-hover align-middle mb-0" th:if="${s.relevant() > 0}">
+                            <tbody>
+                            <tr th:each="entry : ${s.byType()}">
+                                <td class="ps-3" style="width: 170px;">
+                                    <span class="badge bg-primary" th:text="${entry.key}">RFQ</span>
+                                </td>
+                                <td class="text-end pe-3 fw-semibold" style="width: 70px;"
+                                    th:text="${entry.value}">0</td>
+                                <td>
+                                    <div class="progress" style="height: 8px;" th:if="${entry.value > 0}">
+                                        <div class="progress-bar bg-secondary"
+                                             th:style="'width: ' + ${s.typePct(entry.value)} + '%'"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr th:if="${s.untyped() > 0}">
+                                <td class="ps-3"><span class="badge bg-light text-dark border">Unclassified</span></td>
+                                <td class="text-end pe-3 fw-semibold" th:text="${s.untyped()}">0</td>
+                                <td>
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar bg-secondary"
+                                             th:style="'width: ' + ${s.typePct(s.untyped())} + '%'"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Confidence histogram -->
+            <div class="col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-semibold">AI confidence distribution</div>
+                    <div class="card-body">
+                        <p th:if="${s.confidenceCount() == 0}" class="text-muted small mb-0">
+                            No drafts with a stored confidence in this period.
+                        </p>
+                        <div th:if="${s.confidenceCount() > 0}" style="height: 220px;">
+                            <canvas id="confidenceChart"></canvas>
+                        </div>
+                        <p class="small text-muted mb-0 mt-2" th:if="${s.confidenceCount() > 0}">
+                            <span th:text="${s.confidenceCount()}">0</span> drafts scored — read against the
+                            auto-send threshold on Settings.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -130,11 +212,74 @@
         <div class="card shadow-sm border-0 bg-light">
             <div class="card-body small text-muted">
                 <p class="fw-semibold text-body mb-1">How these numbers are counted</p>
-                Ticket cards count emails <em>received</em> in the selected period; reply cards count
-                send events <em>recorded</em> in the period (a reply sent today on an older ticket counts
-                as today's work). SLA breaches are permanent — a late reply stays a breach in the history.
+                Ticket cards count emails <em>received</em> in the selected period; reply cards (including
+                average response time) count send events <em>recorded</em> in the period (a reply sent today
+                on an older ticket counts as today's work). Response time runs from email receipt to the
+                first reply on the ticket. SLA breaches are permanent — a late reply stays a breach in the
+                history.
             </div>
         </div>
+
+        <!-- Chart.js is served as a webjar from this application, not a CDN — the version
+             in the path comes from <chartjs.version> in pom.xml; keep the two in sync. -->
+        <script th:src="@{/webjars/chart.js/4.5.0/dist/chart.umd.js}"></script>
+        <script th:inline="javascript">
+            /*<![CDATA[*/
+            const hasVolume = /*[[${s.totalReceived() > 0}]]*/ false;
+            if (hasVolume) {
+                new Chart(document.getElementById('volumeChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: /*[[${s.volumeLabels()}]]*/ [],
+                        datasets: [
+                            {
+                                label: 'Relevant',
+                                data: /*[[${s.volumeRelevantSeries()}]]*/ [],
+                                backgroundColor: '#0d6efd'
+                            },
+                            {
+                                label: 'Junk',
+                                data: /*[[${s.volumeJunkSeries()}]]*/ [],
+                                backgroundColor: '#adb5bd'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {stacked: true, ticks: {maxRotation: 0, autoSkip: true}},
+                            y: {stacked: true, beginAtZero: true, ticks: {precision: 0}}
+                        },
+                        plugins: {legend: {position: 'bottom'}}
+                    }
+                });
+            }
+
+            const hasConfidence = /*[[${s.confidenceCount() > 0}]]*/ false;
+            if (hasConfidence) {
+                new Chart(document.getElementById('confidenceChart'), {
+                    type: 'bar',
+                    data: {
+                        // Bucket i covers [i/10, (i+1)/10); 1.0 is folded into the top bucket
+                        labels: ['0–.1', '.1–.2', '.2–.3', '.3–.4', '.4–.5',
+                                 '.5–.6', '.6–.7', '.7–.8', '.8–.9', '.9–1'],
+                        datasets: [{
+                            label: 'Drafts',
+                            data: /*[[${s.confidenceBins()}]]*/ [],
+                            backgroundColor: '#198754'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {y: {beginAtZero: true, ticks: {precision: 0}}},
+                        plugins: {legend: {display: false}}
+                    }
+                });
+            }
+            /*]]>*/
+        </script>
 
     </div>
 

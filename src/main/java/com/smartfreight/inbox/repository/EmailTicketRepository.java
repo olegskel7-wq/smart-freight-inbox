@@ -166,6 +166,71 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     List<StatusCount> countByStatusSince(@Param("since") java.time.LocalDateTime since);
 
     /**
+     * Ticket counts grouped by business type for tickets created on or after the cutoff
+     * (Phase 2.1 per-type breakdown). IRRELEVANT tickets are excluded — junk never carries
+     * a type, and including it would inflate the "unclassified" bucket; the breakdown
+     * answers "what kinds of work arrived", so its denominator is the relevant tickets.
+     * A null type groups tickets that never received a classification verdict.
+     *
+     * @param since    start of the reporting period (inclusive)
+     * @param excluded status outside the breakdown (IRRELEVANT)
+     * @return one row per type present in the period (null type possible)
+     */
+    @Query("SELECT new com.smartfreight.inbox.repository.TypeCount(t.ticketType, COUNT(t)) " +
+           "  FROM EmailTicket t " +
+           " WHERE t.createdAt >= :since " +
+           "   AND t.status <> :excluded " +
+           " GROUP BY t.ticketType")
+    List<TypeCount> countByTypeSince(@Param("since") java.time.LocalDateTime since,
+                                     @Param("excluded") TicketStatus excluded);
+
+    /**
+     * Per-day intake counts for the analytics volume chart (Phase 2.1).
+     *
+     * Native SQL: JPQL has no FILTER clause and no date truncation. Because the query is
+     * native, Hibernate's {@code @SQLRestriction} on the entity does NOT apply — the
+     * {@code deleted = false} predicate is repeated explicitly to stay consistent with
+     * the JPQL aggregations on this page.
+     *
+     * @param since start of the reporting period (inclusive)
+     * @return one row per day that received at least one email, ascending
+     */
+    @Query(nativeQuery = true, value =
+           "SELECT CAST(t.created_at AS date) AS day, " +
+           "       COUNT(*) AS total, " +
+           "       COUNT(*) FILTER (WHERE t.status = 'IRRELEVANT') AS junk " +
+           "  FROM email_ticket t " +
+           " WHERE t.created_at >= :since " +
+           "   AND t.deleted = false " +
+           " GROUP BY CAST(t.created_at AS date) " +
+           " ORDER BY day")
+    List<DailyVolume> dailyVolumeSince(@Param("since") java.time.LocalDateTime since);
+
+    /**
+     * AI-confidence histogram over drafts created in the period (Phase 2.1): how the
+     * deterministic heuristic (Phase 1.6) distributes — the operator reads this against
+     * the auto-send threshold to judge how much would go out automatically.
+     *
+     * Counts every ticket with a stored confidence (it is written on each draft regardless
+     * of the auto-send flag, precisely to collect this statistic). Bucket i covers
+     * [i/10, (i+1)/10); LEAST folds the exact 1.0 into bucket 9. Native SQL, so the
+     * soft-delete predicate is explicit (see {@link #dailyVolumeSince}).
+     *
+     * @param since start of the reporting period (inclusive)
+     * @return one row per non-empty bucket, ascending by bucket index
+     */
+    @Query(nativeQuery = true, value =
+           "SELECT CAST(LEAST(FLOOR(t.ai_confidence * 10), 9) AS int) AS bucket, " +
+           "       COUNT(*) AS count " +
+           "  FROM email_ticket t " +
+           " WHERE t.ai_confidence IS NOT NULL " +
+           "   AND t.created_at >= :since " +
+           "   AND t.deleted = false " +
+           " GROUP BY bucket " +
+           " ORDER BY bucket")
+    List<ConfidenceBucket> confidenceHistogramSince(@Param("since") java.time.LocalDateTime since);
+
+    /**
      * How many tickets created on or after the cutoff breached their SLA deadline (Phase 2.1).
      * The breach flag is never reset (see {@link #markSlaBreached}), so this is a stable
      * historical count, not a snapshot of currently-overdue tickets.
