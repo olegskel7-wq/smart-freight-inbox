@@ -5,7 +5,7 @@
 <!--
   Shared navbar fragment.
   Usage: <nav th:replace="~{fragments/navbar :: navbar(active='tickets')}"></nav>
-  active = 'tickets' | 'users' | 'settings' — highlights the current section.
+  active = 'tickets' | 'analytics' | 'rates' | 'users' | 'settings' — highlights the current section.
 -->
 <nav th:fragment="navbar(active)" class="navbar navbar-dark bg-dark">
     <div class="container-fluid">
@@ -14,6 +14,9 @@
             <a href="/tickets"
                th:classappend="${active == 'tickets'} ? 'btn-light' : 'btn-outline-light'"
                class="btn btn-sm">Tickets</a>
+            <a href="/analytics"
+               th:classappend="${active == 'analytics'} ? 'btn-light' : 'btn-outline-light'"
+               class="btn btn-sm">Analytics</a>
             <a href="/rates"
                th:classappend="${active == 'rates'} ? 'btn-light' : 'btn-outline-light'"
                class="btn btn-sm">Rates</a>

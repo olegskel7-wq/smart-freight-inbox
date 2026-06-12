@@ -62,7 +62,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 
 | # | Фича | Приоритет | Усилие | Детали |
 |---|------|-----------|--------|--------|
-| 2.1 | **Inbox Analytics Dashboard** | 🔴 ВЫСОКИЙ | M | Кол-во писем по типам, avg response time, % автоматизации, SLA compliance. Убийственная фича для onboarding — клиент видит ROI в цифрах сразу. |
+| 2.1 | **Inbox Analytics Dashboard** ✅ MVP DONE (12.06.2026) | 🔴 ВЫСОКИЙ | M | Страница `/analytics` (флаг `feature.analytics`, периоды 7/30/90 дней): KPI-карточки — получено писем (relevant vs junk), отправлено ответов (оператор vs auto), % автоматизации, SLA breaches; разбивка по статусам с progress-барами и ссылками на отфильтрованный `/tickets`. Тикеты атрибутируются по дате получения, отправки — по audit-событиям SEND/AUTO_SEND. Агрегация в SQL (GROUP BY проекция, entity не грузятся). **Отложенный хвост:** разбивка по типам, avg response time (audit join), графики (объём по дням, confidence-гистограмма — Chart.js webjar подключаем вместе с первым графиком). |
 | 2.2 | **Multi-tenancy (PostgreSQL RLS)** | 🔴 ВЫСОКИЙ | L | Tenant model в БД. Row-Level Security. Per-tenant: mailbox, prompts, LLM endpoint, rate sheets. |
 | 2.3 | **OAuth2/OIDC (Keycloak)** | 🟡 СРЕДНИЙ | M | Заменить session-based auth. Нужен для multi-tenant и горизонтального масштабирования. |
 | 2.4 | **Status Update Automation** | 🟡 СРЕДНИЙ | M | По событиям (departed/arrived/customs cleared/delivered) → автописьмо клиенту. 4–6 писем на отправку = 30–60 мин/день экономии оператора. |
@@ -229,7 +229,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
   totalElements в логе сохраняет видимость полного бэклога
 - Удалены неиспользуемые перегрузки `findByStatus` в EmailTicketRepository
 
-**Phase 1 завершена. Следующий шаг — Phase 2 (2.1 Inbox Analytics Dashboard)** (discovery call может сместить приоритеты).
+**Phase 1 завершена. 2.1 Analytics Dashboard — MVP готов. Следующий шаг — хвост 2.1 (графики, по типам, avg response time) или 2.2 Multi-tenancy** (discovery call может сместить приоритеты).
 
 _Подробности: `C:\Users\olegs\Documents\smartfreight-wiki\wiki\analysis\Master Roadmap.md`_
 

@@ -152,6 +152,30 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
                                   @Param("cutoff") java.time.LocalDateTime cutoff);
 
     /**
+     * Ticket counts grouped by status for tickets created on or after the cutoff (Phase 2.1).
+     * One GROUP BY query feeds every per-status KPI on the analytics dashboard — statuses
+     * with no tickets in the period are simply absent from the result.
+     *
+     * @param since start of the reporting period (inclusive)
+     * @return one row per status present in the period
+     */
+    @Query("SELECT new com.smartfreight.inbox.repository.StatusCount(t.status, COUNT(t)) " +
+           "  FROM EmailTicket t " +
+           " WHERE t.createdAt >= :since " +
+           " GROUP BY t.status")
+    List<StatusCount> countByStatusSince(@Param("since") java.time.LocalDateTime since);
+
+    /**
+     * How many tickets created on or after the cutoff breached their SLA deadline (Phase 2.1).
+     * The breach flag is never reset (see {@link #markSlaBreached}), so this is a stable
+     * historical count, not a snapshot of currently-overdue tickets.
+     *
+     * @param since start of the reporting period (inclusive)
+     * @return number of breached tickets in the period
+     */
+    long countByCreatedAtGreaterThanEqualAndSlaBreachedTrue(java.time.LocalDateTime since);
+
+    /**
      * Flags open tickets whose SLA deadline has passed (Phase 1.5). Used by
      * {@link com.smartfreight.inbox.scheduler.SlaBreachScheduler}.
      *
