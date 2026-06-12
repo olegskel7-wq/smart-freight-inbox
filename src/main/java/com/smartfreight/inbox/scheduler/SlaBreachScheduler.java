@@ -3,13 +3,14 @@ package com.smartfreight.inbox.scheduler;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.SlaService;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -39,13 +40,16 @@ public class SlaBreachScheduler {
 
     private final EmailTicketRepository emailTicketRepository;
     private final SlaService slaService;
+    private final TransactionTemplate transactionTemplate;
     private final Counter breachedCounter;
 
     public SlaBreachScheduler(EmailTicketRepository emailTicketRepository,
                               SlaService slaService,
+                              TransactionTemplate transactionTemplate,
                               MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.slaService = slaService;
+        this.transactionTemplate = transactionTemplate;
         this.breachedCounter = Counter.builder("smartfreight_sla_breached_total")
                 .description("Open tickets that passed their SLA deadline without a reply")
                 .register(meterRegistry);
@@ -56,13 +60,15 @@ public class SlaBreachScheduler {
      * sub-minute lag is acceptable and one indexed bulk UPDATE per run costs nothing.
      */
     @Scheduled(fixedDelayString = "${sla.breach-check-interval-ms:60000}", initialDelay = 60_000)
-    @Transactional
     public void markBreachedTickets() {
         if (!slaService.isEnabled()) {
             return;
         }
 
-        int breached = emailTicketRepository.markSlaBreached(LocalDateTime.now(), SLA_EXEMPT_STATUSES);
+        // Phase 2.2: SYSTEM tenant state — one bulk UPDATE marks breaches across all
+        // tenants. Context wraps the transaction (see RetryScheduler for why).
+        int breached = TenantContext.callAsSystem(() -> transactionTemplate.execute(tx ->
+                emailTicketRepository.markSlaBreached(LocalDateTime.now(), SLA_EXEMPT_STATUSES)));
 
         if (breached > 0) {
             breachedCounter.increment(breached);

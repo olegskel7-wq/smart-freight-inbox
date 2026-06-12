@@ -2,6 +2,7 @@ package com.smartfreight.inbox.scheduler;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.testutil.TestTransactions;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,8 @@ class StuckTicketSweeperTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        sweeper = new StuckTicketSweeper(emailTicketRepository, meterRegistry);
+        sweeper = new StuckTicketSweeper(
+                emailTicketRepository, TestTransactions.noOpTemplate(), meterRegistry);
         ReflectionTestUtils.setField(sweeper, "stuckAfterMinutes", STUCK_AFTER_MINUTES);
     }
 

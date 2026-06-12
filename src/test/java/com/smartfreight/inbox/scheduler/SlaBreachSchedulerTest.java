@@ -2,6 +2,7 @@ package com.smartfreight.inbox.scheduler;
 
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.SlaService;
+import com.smartfreight.inbox.testutil.TestTransactions;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,8 @@ class SlaBreachSchedulerTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        scheduler = new SlaBreachScheduler(emailTicketRepository, slaService, meterRegistry);
+        scheduler = new SlaBreachScheduler(
+                emailTicketRepository, slaService, TestTransactions.noOpTemplate(), meterRegistry);
     }
 
     @Test

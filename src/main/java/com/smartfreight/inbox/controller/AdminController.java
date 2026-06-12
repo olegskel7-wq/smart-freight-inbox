@@ -5,6 +5,8 @@ import com.smartfreight.inbox.messaging.DlqAdminService;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
+import com.smartfreight.inbox.tenancy.TenancyProperties;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -32,15 +34,18 @@ public class AdminController {
     private final TicketProcessingService ticketProcessingService;
     private final TicketEventPublisher ticketEventPublisher;
     private final DlqAdminService dlqAdminService;
+    private final TenancyProperties tenancyProperties;
 
     public AdminController(EmailTicketRepository emailTicketRepository,
                            TicketProcessingService ticketProcessingService,
                            TicketEventPublisher ticketEventPublisher,
-                           DlqAdminService dlqAdminService) {
+                           DlqAdminService dlqAdminService,
+                           TenancyProperties tenancyProperties) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketProcessingService = ticketProcessingService;
         this.ticketEventPublisher = ticketEventPublisher;
         this.dlqAdminService = dlqAdminService;
+        this.tenancyProperties = tenancyProperties;
     }
 
     /**
@@ -79,7 +84,15 @@ public class AdminController {
         }
 
         log.info("Async reprocessing queued for {} ticket(s) (reset {} from FAILED)", ids.size(), reset);
-        ids.forEach(ticketEventPublisher::publishRetryRequested);
+        // Phase 2.2: the id query above is tenant-filtered (@TenantId + RLS), so every id
+        // belongs to the request's tenant — reprocess is a per-tenant operation now.
+        Long tenantId = TenantContext.tenantIdOrNull();
+        if (tenantId == null) {
+            tenantId = tenancyProperties.getDefaultId();
+        }
+        for (Long id : ids) {
+            ticketEventPublisher.publishRetryRequested(id, tenantId);
+        }
 
         return ResponseEntity.ok("Queued " + ids.size() + " tickets for reprocessing (reset " + reset + " from FAILED).");
     }

@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -23,4 +24,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return the user if found
      */
     Optional<User> findByEmail(String email);
+
+    /**
+     * Users of one tenant — {@code app_user} sits outside {@code @TenantId}/RLS
+     * (login bootstrap), so the management UI scopes explicitly (Phase 2.2).
+     */
+    List<User> findByTenantId(Long tenantId);
 }

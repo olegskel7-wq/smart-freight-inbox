@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.messaging;
 
 import com.smartfreight.inbox.repository.OutboxEventRepository;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
@@ -28,13 +29,15 @@ import java.time.LocalDateTime;
 public class OutboxMetrics {
 
     public OutboxMetrics(OutboxEventRepository outboxEventRepository, MeterRegistry meterRegistry) {
+        // Phase 2.2: gauges sample on the Prometheus scrape thread, which has no tenant —
+        // SYSTEM state, because ops metrics must see the whole backlog, not one tenant's.
         Gauge.builder("smartfreight_outbox_pending", outboxEventRepository,
-                        repo -> repo.countByPublishedAtIsNull())
+                        repo -> TenantContext.callAsSystem(repo::countByPublishedAtIsNull))
                 .description("Outbox events not yet published to RabbitMQ")
                 .register(meterRegistry);
 
         Gauge.builder("smartfreight_outbox_oldest_pending_age_seconds", outboxEventRepository,
-                        OutboxMetrics::oldestPendingAgeSeconds)
+                        repo -> TenantContext.callAsSystem(() -> oldestPendingAgeSeconds(repo)))
                 .description("Age in seconds of the oldest unpublished outbox event (0 = drained)")
                 .register(meterRegistry);
     }

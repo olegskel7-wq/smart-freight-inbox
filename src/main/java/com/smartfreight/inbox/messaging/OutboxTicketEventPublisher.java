@@ -37,25 +37,32 @@ public class OutboxTicketEventPublisher implements TicketEventPublisher {
     }
 
     @Override
-    public void publishTicketCreated(Long ticketId) {
-        record(ticketId, TicketEventMessage.TYPE_TICKET_CREATED);
+    public void publishTicketCreated(Long ticketId, Long tenantId) {
+        record(ticketId, tenantId, TicketEventMessage.TYPE_TICKET_CREATED);
     }
 
     @Override
-    public void publishRetryRequested(Long ticketId) {
-        record(ticketId, TicketEventMessage.TYPE_RETRY_REQUESTED);
+    public void publishRetryRequested(Long ticketId, Long tenantId) {
+        record(ticketId, tenantId, TicketEventMessage.TYPE_RETRY_REQUESTED);
     }
 
-    private void record(Long ticketId, String eventType) {
+    private void record(Long ticketId, Long tenantId, String eventType) {
         // The whole point of the outbox is atomicity with the business change —
         // outside a transaction that guarantee silently disappears, so fail loudly.
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException(
                     "TicketEventPublisher must be called inside an active transaction");
         }
+        // A row with no tenant cannot exist (NOT NULL + FK), and a wrong tenant would
+        // make the consumer's tenant-scoped reload miss the ticket — fail at the source.
+        if (tenantId == null) {
+            throw new IllegalArgumentException(
+                    "tenantId is required for outbox event " + eventType + ", ticketId=" + ticketId);
+        }
 
-        TicketEventMessage message = new TicketEventMessage(ticketId, eventType, Instant.now());
+        TicketEventMessage message = new TicketEventMessage(ticketId, tenantId, eventType, Instant.now());
         OutboxEvent event = OutboxEvent.builder()
+                .tenantId(tenantId)
                 .aggregateType(AGGREGATE_TICKET)
                 .aggregateId(ticketId)
                 .eventType(eventType)
@@ -64,6 +71,6 @@ public class OutboxTicketEventPublisher implements TicketEventPublisher {
                 .createdAt(LocalDateTime.now())
                 .build();
         outboxEventRepository.save(event);
-        log.debug("Outbox event recorded: type={}, ticketId={}", eventType, ticketId);
+        log.debug("Outbox event recorded: type={}, ticketId={}, tenantId={}", eventType, ticketId, tenantId);
     }
 }

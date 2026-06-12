@@ -50,7 +50,7 @@ class OutboxTicketEventPublisherTest {
         OutboxTicketEventPublisher publisher =
                 new OutboxTicketEventPublisher(outboxEventRepository, objectMapper);
 
-        publisher.publishTicketCreated(42L);
+        publisher.publishTicketCreated(42L, 1L);
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(outboxEventRepository).save(captor.capture());
@@ -58,8 +58,10 @@ class OutboxTicketEventPublisherTest {
         OutboxEvent event = captor.getValue();
         assertThat(event.getAggregateType()).isEqualTo("TICKET");
         assertThat(event.getAggregateId()).isEqualTo(42L);
+        assertThat(event.getTenantId()).isEqualTo(1L);
         assertThat(event.getEventType()).isEqualTo(TicketEventMessage.TYPE_TICKET_CREATED);
         assertThat(event.getPayload()).contains("\"ticketId\":42");
+        assertThat(event.getPayload()).contains("\"tenantId\":1");
         assertThat(event.getCreatedAt()).isNotNull();
         assertThat(event.getPublishedAt()).isNull();
     }
@@ -70,7 +72,7 @@ class OutboxTicketEventPublisherTest {
         OutboxTicketEventPublisher publisher =
                 new OutboxTicketEventPublisher(outboxEventRepository, objectMapper);
 
-        publisher.publishRetryRequested(7L);
+        publisher.publishRetryRequested(7L, 1L);
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(outboxEventRepository).save(captor.capture());
@@ -83,9 +85,24 @@ class OutboxTicketEventPublisherTest {
         OutboxTicketEventPublisher publisher =
                 new OutboxTicketEventPublisher(outboxEventRepository, objectMapper);
 
-        assertThatThrownBy(() -> publisher.publishTicketCreated(1L))
+        assertThatThrownBy(() -> publisher.publishTicketCreated(1L, 1L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("active transaction");
+
+        verifyNoInteractions(outboxEventRepository);
+    }
+
+    @Test
+    void publish_withoutTenant_throwsIllegalArgument() {
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        OutboxTicketEventPublisher publisher =
+                new OutboxTicketEventPublisher(outboxEventRepository, objectMapper);
+
+        // A missing tenant would surface later as a NOT NULL violation or, worse, a
+        // consumer reload that silently misses the ticket — fail at the source instead.
+        assertThatThrownBy(() -> publisher.publishTicketCreated(1L, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tenantId");
 
         verifyNoInteractions(outboxEventRepository);
     }

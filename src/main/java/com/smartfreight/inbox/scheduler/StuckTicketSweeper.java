@@ -2,6 +2,7 @@ package com.smartfreight.inbox.scheduler;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -9,7 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -53,14 +54,17 @@ public class StuckTicketSweeper {
             List.of(TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.PROCESSING);
 
     private final EmailTicketRepository emailTicketRepository;
+    private final TransactionTemplate transactionTemplate;
     private final Counter sweptCounter;
 
     @Value("${sweep.stuck-after-minutes:30}")
     private long stuckAfterMinutes;
 
     public StuckTicketSweeper(EmailTicketRepository emailTicketRepository,
+                              TransactionTemplate transactionTemplate,
                               MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
+        this.transactionTemplate = transactionTemplate;
         this.sweptCounter = Counter.builder("smartfreight_tickets_swept_total")
                 .description("Stuck RECEIVED/NEW/PROCESSING tickets moved to RETRY_LATER by the sweeper")
                 .register(meterRegistry);
@@ -69,14 +73,18 @@ public class StuckTicketSweeper {
     /**
      * fixedDelay 5 min: stuck detection is not latency-sensitive (the threshold is
      * tens of minutes anyway), and one bulk UPDATE per run keeps the cost trivial.
+     *
+     * Phase 2.2: SYSTEM tenant state — stuck tickets of all tenants are swept in one
+     * bulk UPDATE (tenant attribution stays in the rows). Context wraps the
+     * transaction; see RetryScheduler for why @Transactional cannot be used here.
      */
     @Scheduled(fixedDelayString = "${sweep.poll-interval-ms:300000}", initialDelay = 120_000)
-    @Transactional
     public void sweepStuckTickets() {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(stuckAfterMinutes);
 
-        int swept = emailTicketRepository.bulkTransitionStaleStatus(
-                SWEEPABLE_STATUSES, TicketStatus.RETRY_LATER, cutoff);
+        int swept = TenantContext.callAsSystem(() -> transactionTemplate.execute(tx ->
+                emailTicketRepository.bulkTransitionStaleStatus(
+                        SWEEPABLE_STATUSES, TicketStatus.RETRY_LATER, cutoff)));
 
         if (swept > 0) {
             sweptCounter.increment(swept);

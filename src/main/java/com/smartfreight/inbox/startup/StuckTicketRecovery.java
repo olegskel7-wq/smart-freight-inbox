@@ -2,12 +2,13 @@ package com.smartfreight.inbox.startup;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Startup recovery for tickets that were stuck in {@link TicketStatus#PROCESSING}
@@ -31,20 +32,26 @@ public class StuckTicketRecovery {
     private static final Logger log = LoggerFactory.getLogger(StuckTicketRecovery.class);
 
     private final EmailTicketRepository emailTicketRepository;
+    private final TransactionTemplate transactionTemplate;
 
-    public StuckTicketRecovery(EmailTicketRepository emailTicketRepository) {
+    public StuckTicketRecovery(EmailTicketRepository emailTicketRepository,
+                               TransactionTemplate transactionTemplate) {
         this.emailTicketRepository = emailTicketRepository;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /**
      * Fires once when the application context is fully initialised
      * (after Flyway, after JPA, before incoming traffic).
+     *
+     * Phase 2.2: SYSTEM tenant state — recovery spans all tenants in one bulk UPDATE.
+     * Context wraps the transaction (see RetryScheduler for why not @Transactional).
      */
     @EventListener(ApplicationReadyEvent.class)
-    @Transactional
     public void recoverStuckTickets() {
-        int reset = emailTicketRepository.bulkTransitionStatus(
-                TicketStatus.PROCESSING, TicketStatus.RETRY_LATER);
+        int reset = TenantContext.callAsSystem(() -> transactionTemplate.execute(tx ->
+                emailTicketRepository.bulkTransitionStatus(
+                        TicketStatus.PROCESSING, TicketStatus.RETRY_LATER)));
 
         if (reset > 0) {
             log.warn("Startup recovery: {} ticket(s) were stuck in PROCESSING and moved to RETRY_LATER", reset);

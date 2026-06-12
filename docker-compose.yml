@@ -4,8 +4,13 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartfreight
-      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-postgres}
-      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      # Phase 2.2: app pool = restricted role (RLS applies); Flyway = admin (DDL).
+      # DB_APP_PASSWORD also feeds the V19 placeholder that creates the role.
+      - SPRING_DATASOURCE_USERNAME=${DB_APP_USER:-smartfreight_app}
+      - SPRING_DATASOURCE_PASSWORD=${DB_APP_PASSWORD:-smartfreight_app}
+      - DB_APP_PASSWORD=${DB_APP_PASSWORD:-smartfreight_app}
+      - DB_ADMIN_USER=${POSTGRES_USER:-postgres}
+      - DB_ADMIN_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - OLLAMA_URL=http://ollama:11434
       - PORT_SERVICE_URL=http://port-service:9000
       - PORT_SERVICE_API_KEY=${PORT_SERVICE_API_KEY:-smartfreight-port-secret}

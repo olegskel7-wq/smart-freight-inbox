@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.annotations.TenantId;
 
 import java.time.LocalDateTime;
 
@@ -24,7 +25,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
     name = "email_ticket",
-    uniqueConstraints = @UniqueConstraint(columnNames = "message_id")
+    uniqueConstraints = @UniqueConstraint(columnNames = {"tenant_id", "message_id"})
 )
 @Getter
 @Setter
@@ -42,10 +43,21 @@ public class EmailTicket {
     private Long id;
 
     /**
-     * Unique message identifier from the RFC 2822 "Message-ID" header.
-     * Used for duplicate detection — the same message is never saved twice.
+     * Owning tenant (Phase 2.2). Assigned by Hibernate on insert from the current
+     * {@link com.smartfreight.inbox.tenancy.TenantContext}; every entity query is
+     * automatically restricted to it. Postgres RLS enforces the same boundary
+     * independently for native SQL.
      */
-    @Column(name = "message_id", nullable = false, unique = true)
+    @TenantId
+    @Column(name = "tenant_id", nullable = false, updatable = false)
+    private Long tenantId;
+
+    /**
+     * Unique message identifier from the RFC 2822 "Message-ID" header.
+     * Used for duplicate detection — the same message is never saved twice
+     * per tenant (two tenants may legitimately receive a copy of one email).
+     */
+    @Column(name = "message_id", nullable = false)
     private String messageId;
 
     /** Email sender address (e.g. customer@company.com). */

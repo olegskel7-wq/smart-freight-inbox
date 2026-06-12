@@ -2,6 +2,7 @@ package com.smartfreight.inbox.actuator;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
@@ -24,9 +25,11 @@ public class TicketMetricsBinder implements MeterBinder {
     @Override
     public void bindTo(MeterRegistry registry) {
         for (TicketStatus status : TicketStatus.values()) {
-            Gauge.builder("smartfreight_tickets_current_count", 
-                          emailTicketRepository, 
-                          repo -> repo.countByStatus(status))
+            // Phase 2.2: sampled on the scrape thread (no tenant) — SYSTEM state so the
+            // ops dashboard counts tickets across all tenants.
+            Gauge.builder("smartfreight_tickets_current_count",
+                          emailTicketRepository,
+                          repo -> TenantContext.callAsSystem(() -> repo.countByStatus(status)))
                  .description("Current number of tickets by status")
                  .tag("status", status.name())
                  .register(registry);

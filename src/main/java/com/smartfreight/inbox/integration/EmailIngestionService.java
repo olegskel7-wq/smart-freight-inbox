@@ -177,7 +177,11 @@ public class EmailIngestionService {
                 log.info("Email ingested: ticket ID={}, subject='{}'", saved.getId(), saved.getSubject());
 
                 // Same transaction as the ticket insert: either both become durable or neither.
-                ticketEventPublisher.publishTicketCreated(saved.getId());
+                // Tenant: ingestion runs without an explicit TenantContext, so Hibernate
+                // stamps the ticket with the DEFAULT tenant (the single current mailbox).
+                // Per-tenant mailboxes (Phase 2.2 S3) will bind the context per IMAP
+                // adapter BEFORE this transaction opens — this call site stays unchanged.
+                ticketEventPublisher.publishTicketCreated(saved.getId(), saved.getTenantId());
 
             } catch (DataIntegrityViolationException e) {
                 log.info("Duplicate email on concurrent save, skipping: {}", messageId);

@@ -1,8 +1,10 @@
 package com.smartfreight.inbox.config;
 
 import com.smartfreight.inbox.repository.UserRepository;
+import com.smartfreight.inbox.tenancy.TenantUserDetails;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -65,11 +67,13 @@ public class DbUserDetailsService implements UserDetailsService {
                     String role = (u.getRole() == null || u.getRole().isBlank())
                             ? DEFAULT_ROLE
                             : u.getRole();
-                    return org.springframework.security.core.userdetails.User
-                            .withUsername(u.getEmail())
-                            .password(u.getPassword())
-                            .roles(role)
-                            .build();
+                    // Phase 2.2: the principal carries the tenant so TenantFilter never
+                    // needs a DB lookup — the tenant is fixed for the session at login.
+                    return (UserDetails) new TenantUserDetails(
+                            u.getEmail(),
+                            u.getPassword(),
+                            AuthorityUtils.createAuthorityList("ROLE_" + role),
+                            u.getTenantId());
                 })
                 .orElseThrow(() -> {
                     log.warn("User not found in database: {}", email);

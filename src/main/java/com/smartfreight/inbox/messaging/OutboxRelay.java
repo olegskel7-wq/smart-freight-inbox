@@ -3,6 +3,7 @@ package com.smartfreight.inbox.messaging;
 import com.smartfreight.inbox.config.RabbitConfig;
 import com.smartfreight.inbox.entity.OutboxEvent;
 import com.smartfreight.inbox.repository.OutboxEventRepository;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -12,7 +13,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -42,6 +43,7 @@ public class OutboxRelay {
 
     private final OutboxEventRepository outboxEventRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final TransactionTemplate transactionTemplate;
     private final Counter publishedCounter;
     private final Counter publishFailedCounter;
 
@@ -50,9 +52,11 @@ public class OutboxRelay {
 
     public OutboxRelay(OutboxEventRepository outboxEventRepository,
                        RabbitTemplate rabbitTemplate,
+                       TransactionTemplate transactionTemplate,
                        MeterRegistry meterRegistry) {
         this.outboxEventRepository = outboxEventRepository;
         this.rabbitTemplate = rabbitTemplate;
+        this.transactionTemplate = transactionTemplate;
         this.publishedCounter = Counter.builder("smartfreight_outbox_published_total")
                 .description("Outbox events successfully published to RabbitMQ")
                 .register(meterRegistry);
@@ -66,10 +70,17 @@ public class OutboxRelay {
      *
      * fixedDelay (not fixedRate): the next poll starts only after the previous one
      * finished, so a slow broker cannot pile up overlapping relay runs.
+     *
+     * Phase 2.2: SYSTEM tenant state — the relay drains every tenant's events in one
+     * id-ordered pass (tenant isolation happens at consumption, not transport).
+     * Context wraps the transaction (see RetryScheduler for why not @Transactional).
      */
     @Scheduled(fixedDelayString = "${outbox.poll-interval-ms:2000}", initialDelay = 10_000)
-    @Transactional
     public void publishPending() {
+        TenantContext.runAsSystem(() -> transactionTemplate.executeWithoutResult(tx -> relayBatch()));
+    }
+
+    private void relayBatch() {
         List<OutboxEvent> batch = outboxEventRepository.lockUnpublishedBatch(batchSize);
         if (batch.isEmpty()) {
             return;

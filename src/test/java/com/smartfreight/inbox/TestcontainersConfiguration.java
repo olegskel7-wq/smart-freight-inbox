@@ -3,45 +3,53 @@ package com.smartfreight.inbox;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
 
 /**
  * Конфигурация Testcontainers для интеграционных тестов.
- * 
- * Автоматически запускает Docker контейнер с PostgreSQL перед тестами
- * и связывает его с приложением (не трогает вашу рабочую БД на порту 5433).
- * 
- * @TestConfiguration — конфигурация только для тестов (не используется в production)
- * @ServiceConnection — Spring Boot автоматически создаёт JDBC datasource с параметрами контейнера
- * 
+ *
+ * Автоматически запускает Docker контейнеры (PostgreSQL, RabbitMQ) перед тестами
+ * и связывает их с приложением (не трогает вашу рабочую БД на порту 5433).
+ *
  * Требования:
  * - Docker установлен и запущен
  * - Testcontainers на classpath (добавлена в pom.xml <scope>test</scope>)
- * - PostgreSQL контейнер доступен в Docker Registry (docker.io)
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 
 	/**
-	 * Bean для управления PostgreSQL Docker контейнером.
-	 * 
-	 * Жизненный цикл:
-	 * 1. @BeforeAll (один раз перед всеми тестами): контейнер запускается, БД инициализируется
-	 * 2. Flyway миграции выполняются (создаём таблицы)
-	 * 3. Тесты выполняются (используют эту БД через JDBC datasource)
-	 * 4. @AfterAll (один раз после всех тестов): контейнер останавливается и удаляется
-	 * 
-	 * @ServiceConnection — Spring Boot читает параметры контейнера
-	 *                     (хост, порт, username, password) и автоматически создаёт
-	 *                     JDBC datasource (не нужно вручную писать spring.datasource.url)
-	 * 
-	 * @return контейнер PostgreSQL (его управляет Testcontainers)
+	 * PostgreSQL контейнер.
+	 *
+	 * Phase 2.2: БЕЗ @ServiceConnection — креды раздаются вручную ниже, потому что
+	 * приложение и Flyway должны подключаться под РАЗНЫМИ ролями, как в проде:
+	 * Flyway — под админом контейнера (DDL, CREATE ROLE, политики RLS),
+	 * приложение — под smartfreight_app (NOSUPERUSER, NOBYPASSRLS — роль создаёт V19).
+	 * Юзер контейнера — суперюзер, RLS его игнорирует: тесты изоляции под ним
+	 * молча проверяли бы пустоту.
 	 */
 	@Bean
-	@ServiceConnection
 	public PostgreSQLContainer<?> postgresContainer() {
 		return new PostgreSQLContainer<>("postgres:16-alpine");
+	}
+
+	/**
+	 * Разводка кредов по ролям (см. postgresContainer). Регистратор зависит от бина
+	 * контейнера, поэтому Boot стартует контейнер до резолва свойств; пароль роли
+	 * smartfreight_app берётся из дефолта плейсхолдера app_db_password в application.yaml.
+	 */
+	@Bean
+	public DynamicPropertyRegistrar postgresProperties(PostgreSQLContainer<?> postgres) {
+		return registry -> {
+			registry.add("spring.datasource.url", postgres::getJdbcUrl);
+			registry.add("spring.datasource.username", () -> "smartfreight_app");
+			registry.add("spring.datasource.password", () -> "smartfreight_app");
+			registry.add("spring.flyway.url", postgres::getJdbcUrl);
+			registry.add("spring.flyway.user", postgres::getUsername);
+			registry.add("spring.flyway.password", postgres::getPassword);
+		};
 	}
 
 	/**

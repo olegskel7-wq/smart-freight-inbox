@@ -2,6 +2,8 @@ package com.smartfreight.inbox.messaging;
 
 import com.smartfreight.inbox.config.RabbitConfig;
 import com.smartfreight.inbox.service.TicketProcessingService;
+import com.smartfreight.inbox.tenancy.TenancyProperties;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -32,18 +34,28 @@ public class TicketEventConsumer {
 
     private final TicketProcessingService ticketProcessingService;
     private final ObjectMapper objectMapper;
+    private final TenancyProperties tenancyProperties;
 
     public TicketEventConsumer(TicketProcessingService ticketProcessingService,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               TenancyProperties tenancyProperties) {
         this.ticketProcessingService = ticketProcessingService;
         this.objectMapper = objectMapper;
+        this.tenancyProperties = tenancyProperties;
     }
 
     @RabbitListener(queues = RabbitConfig.PROCESS_QUEUE, containerFactory = "aiPipelineListenerFactory")
     public void onTicketEvent(String payload) {
         // Jackson 3 throws unchecked JacksonException on malformed payload → retry advice → DLQ
         TicketEventMessage message = objectMapper.readValue(payload, TicketEventMessage.class);
-        log.info("Consuming {} for ticket {}", message.eventType(), message.ticketId());
-        ticketProcessingService.process(message.ticketId());
+        log.info("Consuming {} for ticket {} (tenant {})",
+                message.eventType(), message.ticketId(), message.tenantId());
+
+        // Phase 2.2: the whole pipeline run is bound to the event's tenant — every ticket
+        // reload, audit row and settings read below is tenant-scoped. The context must be
+        // set HERE, before process() opens its transaction: Hibernate fixes the session's
+        // tenant at session open. Pre-2.2 in-flight messages carry no tenantId → default.
+        Long tenantId = message.tenantId() != null ? message.tenantId() : tenancyProperties.getDefaultId();
+        TenantContext.runAs(tenantId, () -> ticketProcessingService.process(message.ticketId()));
     }
 }

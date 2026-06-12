@@ -291,13 +291,14 @@ class EmailIngestionServiceTest {
 
         when(emailTicketRepository.findByMessageId(any())).thenReturn(Optional.empty());
 
-        EmailTicket savedTicket = EmailTicket.builder().id(99L)
+        EmailTicket savedTicket = EmailTicket.builder().id(99L).tenantId(1L)
                 .messageId("<outbox-001@example.com>").build();
         when(emailTicketRepository.save(any())).thenReturn(savedTicket);
 
         emailIngestionService.processIncomingEmail(email);
 
-        verify(ticketEventPublisher).publishTicketCreated(99L);
+        // The event carries the saved ticket's tenant (stamped by Hibernate @TenantId).
+        verify(ticketEventPublisher).publishTicketCreated(99L, 1L);
     }
 
     /**
@@ -316,7 +317,7 @@ class EmailIngestionServiceTest {
 
         when(emailTicketRepository.findByMessageId("<spam-001@example.com>"))
                 .thenReturn(Optional.empty());
-        EmailTicket savedTicket = EmailTicket.builder().id(7L)
+        EmailTicket savedTicket = EmailTicket.builder().id(7L).tenantId(1L)
                 .messageId("<spam-001@example.com>").build();
         when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
 
@@ -325,6 +326,6 @@ class EmailIngestionServiceTest {
         ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
         verify(emailTicketRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(TicketStatus.RECEIVED);
-        verify(ticketEventPublisher).publishTicketCreated(7L);
+        verify(ticketEventPublisher).publishTicketCreated(7L, 1L);
     }
 }

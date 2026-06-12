@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.testutil.TestTransactions;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,12 +61,14 @@ class RetrySchedulerTest {
         // Real (default-config) breaker — CLOSED, so re-enqueueing proceeds unless a test opens it.
         ollamaCircuitBreaker = CircuitBreaker.ofDefaults("ollama-test");
         retryScheduler = new RetryScheduler(
-                emailTicketRepository, ticketEventPublisher, ollamaCircuitBreaker, meterRegistry);
+                emailTicketRepository, ticketEventPublisher, ollamaCircuitBreaker,
+                TestTransactions.noOpTemplate(), meterRegistry);
     }
 
     private EmailTicket buildRetryTicket(Long id, int retryCount) {
         EmailTicket ticket = new EmailTicket();
         ticket.setId(id);
+        ticket.setTenantId(1L);
         ticket.setMessageId("msg-" + id + "@test.com");
         ticket.setStatus(TicketStatus.RETRY_LATER);
         ticket.setRetryCount(retryCount);
@@ -92,7 +95,8 @@ class RetrySchedulerTest {
         assertThat(saved.getRetryCount()).isEqualTo(3);
         assertThat(saved.getStatus()).isEqualTo(TicketStatus.NEW);
 
-        verify(ticketEventPublisher).publishRetryRequested(1L);
+        // The event carries the ticket's own tenant — the consumer binds its context to it.
+        verify(ticketEventPublisher).publishRetryRequested(1L, 1L);
     }
 
     /**
@@ -110,9 +114,9 @@ class RetrySchedulerTest {
 
         retryScheduler.retryFailedTickets();
 
-        verify(ticketEventPublisher).publishRetryRequested(1L);
-        verify(ticketEventPublisher).publishRetryRequested(2L);
-        verify(ticketEventPublisher).publishRetryRequested(3L);
+        verify(ticketEventPublisher).publishRetryRequested(1L, 1L);
+        verify(ticketEventPublisher).publishRetryRequested(2L, 1L);
+        verify(ticketEventPublisher).publishRetryRequested(3L, 1L);
 
         double counterValue = meterRegistry.counter("smartfreight_tickets_retry_count_total").count();
         assertThat(counterValue).isEqualTo(3.0);
@@ -188,6 +192,6 @@ class RetrySchedulerTest {
         retryScheduler.retryFailedTickets();
 
         inOrder.verify(emailTicketRepository).save(any(EmailTicket.class));
-        inOrder.verify(ticketEventPublisher).publishRetryRequested(5L);
+        inOrder.verify(ticketEventPublisher).publishRetryRequested(5L, 1L);
     }
 }

@@ -5,6 +5,7 @@ import com.smartfreight.inbox.messaging.DlqAdminService;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
+import com.smartfreight.inbox.tenancy.TenancyProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,7 +60,8 @@ class AdminControllerTest {
     @BeforeEach
     void setUp() {
         AdminController controller = new AdminController(
-                emailTicketRepository, ticketProcessingService, ticketEventPublisher, dlqAdminService);
+                emailTicketRepository, ticketProcessingService, ticketEventPublisher, dlqAdminService,
+                new TenancyProperties());
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -72,8 +74,9 @@ class AdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("2 tickets")));
 
-        verify(ticketEventPublisher).publishRetryRequested(1L);
-        verify(ticketEventPublisher).publishRetryRequested(2L);
+        // No tenant principal in a standalone MockMvc request → default tenant.
+        verify(ticketEventPublisher).publishRetryRequested(1L, new TenancyProperties().getDefaultId());
+        verify(ticketEventPublisher).publishRetryRequested(2L, new TenancyProperties().getDefaultId());
     }
 
     @Test

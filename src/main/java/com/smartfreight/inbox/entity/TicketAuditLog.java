@@ -42,6 +42,11 @@ public class TicketAuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Owning tenant (Phase 2.2) — assigned on insert, filters every entity query. */
+    @org.hibernate.annotations.TenantId
+    @Column(name = "tenant_id", nullable = false, updatable = false)
+    private Long tenantId;
+
     /** Foreign-key-like reference to {@link EmailTicket#getId()} — not a JPA relation to keep the entity cheap. */
     @Column(name = "ticket_id", nullable = false)
     private Long ticketId;

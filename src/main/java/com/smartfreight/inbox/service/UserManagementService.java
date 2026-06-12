@@ -2,6 +2,8 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.User;
 import com.smartfreight.inbox.repository.UserRepository;
+import com.smartfreight.inbox.tenancy.TenancyProperties;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +19,11 @@ import java.util.List;
  *
  * <p>All mutating methods validate the input and run inside a transaction —
  * exceptions thrown here bubble up to the controller as flash error messages.
+ *
+ * <p>Phase 2.2: {@code app_user} sits OUTSIDE {@code @TenantId}/RLS (login bootstrap
+ * table), so tenant scoping is enforced HERE, explicitly: lists are filtered by the
+ * caller's tenant, created users inherit it, and cross-tenant targets read as
+ * "not found". Email stays globally unique across tenants (it is the login key).
  */
 @Service
 public class UserManagementService {
@@ -26,15 +33,18 @@ public class UserManagementService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TenancyProperties tenancyProperties;
 
-    public UserManagementService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserManagementService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                                 TenancyProperties tenancyProperties) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.tenancyProperties = tenancyProperties;
     }
 
-    /** Returns every active user (no pagination — the operator team is expected to be small). */
+    /** Returns the caller's tenant users (no pagination — the operator team is expected to be small). */
     public List<User> findAll() {
-        return userRepository.findAll();
+        return userRepository.findByTenantId(currentTenantId());
     }
 
     /**
@@ -55,6 +65,7 @@ public class UserManagementService {
                 .email(email.trim().toLowerCase())
                 .password(passwordEncoder.encode(rawPassword))
                 .role(role)
+                .tenantId(currentTenantId())
                 .build();
         userRepository.save(user);
     }
@@ -70,8 +81,7 @@ public class UserManagementService {
     @Transactional
     public void changePassword(Long userId, String rawPassword) {
         validatePassword(rawPassword);
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        User user = findInCurrentTenant(userId);
         user.setPassword(passwordEncoder.encode(rawPassword));
         userRepository.save(user);
     }
@@ -94,11 +104,22 @@ public class UserManagementService {
      */
     @Transactional
     public void deleteUser(Long userId, String currentUserEmail) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        User user = findInCurrentTenant(userId);
         if (user.getEmail().equalsIgnoreCase(currentUserEmail)) {
             throw new IllegalArgumentException("You cannot delete your own account.");
         }
         userRepository.delete(user);
+    }
+
+    /** Loads a user only if they belong to the caller's tenant — others read as "not found". */
+    private User findInCurrentTenant(Long userId) {
+        return userRepository.findById(userId)
+                .filter(u -> u.getTenantId().equals(currentTenantId()))
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+    }
+
+    private Long currentTenantId() {
+        Long tenantId = TenantContext.tenantIdOrNull();
+        return tenantId != null ? tenantId : tenancyProperties.getDefaultId();
     }
 }

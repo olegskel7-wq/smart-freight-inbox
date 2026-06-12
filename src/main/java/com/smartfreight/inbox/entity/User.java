@@ -24,6 +24,16 @@ public class User {
     private Long id;
 
     /**
+     * Tenant the user belongs to (Phase 2.2). Deliberately NOT {@code @TenantId} and the
+     * table carries no RLS policy: this is the login bootstrap table — at authentication
+     * time no tenant context exists yet. Email stays globally unique, so one login maps
+     * to exactly one tenant and the login form needs no tenant picker. The resolved
+     * tenant rides in the session principal ({@code TenantUserDetails}) from then on.
+     */
+    @Column(name = "tenant_id", nullable = false)
+    private Long tenantId;
+
+    /**
      * Unique email address — used as the login name.
      * Spring Security looks up the user by this field.
      */

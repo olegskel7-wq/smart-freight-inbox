@@ -11,12 +11,16 @@ package com.smartfreight.inbox.messaging;
  *
  * Contract: implementations must be called INSIDE an active transaction, so that
  * the event becomes durable atomically with the business change that caused it.
+ *
+ * Tenant id travels with every event (Phase 2.2): callers always know it — ingestion
+ * reads it off the saved ticket, RetryScheduler off the loaded entity — and the
+ * consumer needs it to bind its TenantContext before reloading the ticket.
  */
 public interface TicketEventPublisher {
 
     /** A new ticket was ingested and needs to go through the AI pipeline. */
-    void publishTicketCreated(Long ticketId);
+    void publishTicketCreated(Long ticketId, Long tenantId);
 
     /** A RETRY_LATER ticket was reset and needs another pipeline run. */
-    void publishRetryRequested(Long ticketId);
+    void publishRetryRequested(Long ticketId, Long tenantId);
 }

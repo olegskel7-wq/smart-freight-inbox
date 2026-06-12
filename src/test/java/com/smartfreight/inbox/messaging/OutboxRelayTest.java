@@ -3,6 +3,7 @@ package com.smartfreight.inbox.messaging;
 import com.smartfreight.inbox.config.RabbitConfig;
 import com.smartfreight.inbox.entity.OutboxEvent;
 import com.smartfreight.inbox.repository.OutboxEventRepository;
+import com.smartfreight.inbox.testutil.TestTransactions;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,13 +54,15 @@ class OutboxRelayTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        outboxRelay = new OutboxRelay(outboxEventRepository, rabbitTemplate, meterRegistry);
+        outboxRelay = new OutboxRelay(
+                outboxEventRepository, rabbitTemplate, TestTransactions.noOpTemplate(), meterRegistry);
         ReflectionTestUtils.setField(outboxRelay, "batchSize", 50);
     }
 
     private OutboxEvent buildEvent(Long id, Long ticketId, String eventType) {
         return OutboxEvent.builder()
                 .id(id)
+                .tenantId(1L)
                 .aggregateType("TICKET")
                 .aggregateId(ticketId)
                 .eventType(eventType)

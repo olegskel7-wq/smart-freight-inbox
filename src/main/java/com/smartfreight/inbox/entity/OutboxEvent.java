@@ -31,6 +31,15 @@ public class OutboxEvent {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Owning tenant (Phase 2.2). Deliberately NOT {@code @TenantId}: events are also
+     * recorded from the system context (RetryScheduler re-enqueueing tickets of many
+     * tenants in one run), where Hibernate has no tenant to auto-assign. The publisher
+     * sets it explicitly; RLS still guards the table.
+     */
+    @Column(name = "tenant_id", nullable = false, updatable = false)
+    private Long tenantId;
+
     /** Aggregate kind the event belongs to, e.g. "TICKET". */
     @Column(name = "aggregate_type", nullable = false, length = 50)
     private String aggregateType;

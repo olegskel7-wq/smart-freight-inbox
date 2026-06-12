@@ -11,10 +11,13 @@ spring:
   thymeleaf:
     cache: false
 
+  # Phase 2.2: the app runs as the NON-privileged role smartfreight_app (created by V19) —
+  # RLS does not bind superusers, so connecting as postgres would silently disable tenant
+  # isolation. Flyway keeps admin credentials below (DDL + role creation).
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/smartfreight}
-    username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:postgres}
+    username: ${DB_APP_USER:smartfreight_app}
+    password: ${DB_APP_PASSWORD:smartfreight_app}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -32,6 +35,15 @@ spring:
     locations: classpath:db/migration
     connect-retries: 5
     ignore-migration-patterns: "*:missing"
+    # Migrations run as the DB admin (DDL, CREATE ROLE, RLS policies) while the app pool
+    # above uses the restricted role. Boot builds a separate Flyway datasource from these.
+    url: ${spring.datasource.url}
+    user: ${DB_ADMIN_USER:postgres}
+    password: ${DB_ADMIN_PASSWORD:postgres}
+    placeholders:
+      # Password V19 assigns to the smartfreight_app role at creation. Keep in sync with
+      # spring.datasource.password — both default to the same env var.
+      app_db_password: ${DB_APP_PASSWORD:smartfreight_app}
 
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
@@ -107,6 +119,11 @@ port:
   service:
     url: ${PORT_SERVICE_URL:http://localhost:9000}
     api-key: ${PORT_SERVICE_API_KEY:local-dev-api-key}
+
+# Multi-tenancy (Phase 2.2). default-id = the tenant attributed when no explicit context
+# exists (single current mailbox, pre-2.2 in-flight events). Matches the V18 seed row.
+tenant:
+  default-id: 1
 
 management:
   endpoints:
