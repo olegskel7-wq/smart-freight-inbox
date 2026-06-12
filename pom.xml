@@ -32,6 +32,7 @@
 		<pdfbox.version>3.0.3</pdfbox.version>
 		<poi.version>5.3.0</poi.version>
 		<commons-csv.version>1.12.0</commons-csv.version>
+		<resilience4j.version>2.3.0</resilience4j.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -107,6 +108,20 @@
 			<groupId>org.apache.poi</groupId>
 			<artifactId>poi-ooxml</artifactId>
 			<version>${poi.version}</version>
+		</dependency>
+
+		<!-- Circuit breakers (Phase 1.7): core library used programmatically — the
+		     resilience4j Spring Boot starter targets Boot 3 and its autoconfiguration
+		     is not guaranteed against Boot 4; the core artifact has no Spring deps -->
+		<dependency>
+			<groupId>io.github.resilience4j</groupId>
+			<artifactId>resilience4j-circuitbreaker</artifactId>
+			<version>${resilience4j.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.github.resilience4j</groupId>
+			<artifactId>resilience4j-micrometer</artifactId>
+			<version>${resilience4j.version}</version>
 		</dependency>
 
 		<!-- Rate sheet CSV import (Phase 1.2) -->

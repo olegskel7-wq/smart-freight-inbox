@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,14 +47,17 @@ class RetrySchedulerTest {
 
     private RetryScheduler retryScheduler;
     private SimpleMeterRegistry meterRegistry;
+    private CircuitBreaker ollamaCircuitBreaker;
 
     private static final int MAX_RETRIES = 5;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
+        // Real (default-config) breaker — CLOSED, so re-enqueueing proceeds unless a test opens it.
+        ollamaCircuitBreaker = CircuitBreaker.ofDefaults("ollama-test");
         retryScheduler = new RetryScheduler(
-                emailTicketRepository, ticketEventPublisher, meterRegistry);
+                emailTicketRepository, ticketEventPublisher, ollamaCircuitBreaker, meterRegistry);
     }
 
     private EmailTicket buildRetryTicket(Long id, int retryCount) {
@@ -139,6 +143,19 @@ class RetrySchedulerTest {
 
         verify(emailTicketRepository).findByStatusAndRetryCountLessThan(
                 TicketStatus.RETRY_LATER, MAX_RETRIES);
+    }
+
+    /**
+     * Phase 1.7: while the Ollama circuit breaker is OPEN the scheduler skips the whole
+     * run — parked tickets keep their retry budget until the dependency recovers.
+     */
+    @Test
+    void retryFailedTickets_ollamaBreakerOpen_skipsRunEntirely() {
+        ollamaCircuitBreaker.transitionToOpenState();
+
+        retryScheduler.retryFailedTickets();
+
+        verifyNoInteractions(emailTicketRepository, ticketEventPublisher);
     }
 
     /**

@@ -51,7 +51,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 | 1.4 | **Email classification (расширенный)** ✅ DONE (11.06.2026) | 🔴 ВЫСОКИЙ | S | Enum `TicketType`: RFQ / STATUS_UPDATE / BOOKING_CONFIRM / INVOICE_QUERY / DOCUMENT_REQUEST / GENERAL. Один вызов Qwen решает и релевантность, и тип (расширен шаг 0 в consumer — второго LLM-вызова нет): ответ IRRELEVANT либо тип. Fail-open → GENERAL. Колонка `ticket_type` (V15, nullable — retry-путь и старые тикеты без типа). Флаг `feature.ticket-type` (выкл → бинарный промпт 1.3). Колонка Type в `/tickets` (сортируемая) и в деталях. Метрика `smartfreight_tickets_type_total{type}`. Тип — seam для 1.5 (SLA по типу) и 1.6. Ветка `phase1/ticket-type`. |
 | 1.5 | **SLA таймер на тикетах** ✅ DONE (11.06.2026) | 🟡 СРЕДНИЙ | S | `sla_deadline_at` + `sla_breached` (V16, частичный индекс). Дедлайн = createdAt + окно типа (`sla.minutes.*`: RFQ=2ч, BOOKING_CONFIRM=30мин, STATUS_UPDATE=4ч, default=8ч): при ingest — окно GENERAL (тип неизвестен), после классификации уточняется, у IRRELEVANT снимается. `SlaBreachScheduler` (раз в минуту, bulk UPDATE, updatedAt не трогает — не сбивает sweeper). DRAFT_READY/FAILED = открытые (SLA про ответ). Флаг не сбрасывается (история для отчётов). `feature.sla-timer`, метрика `smartfreight_sla_breached_total`, красный бейдж Breached + сортируемая колонка SLA. Ветка `phase1/sla-timer`. |
 | 1.6 | **Auto-send threshold** ✅ DONE (11.06.2026) | 🟡 СРЕДНИЙ | S | Решение: confidence = **детерминированная эвристика**, не LLM self-score (7B-модели некалиброваны): +0.3 тип ≠ GENERAL, +0.2 идентификатор извлечён, +0.4 item найден в backend, +0.1 rate подобран. `ai_confidence` (V17) пишется на каждом драфте даже при выключенной фиче — копится статистика для калибровки порога. Три гейта в настройках: `feature.auto-send` (**первый default-OFF флаг** — фича шлёт письма клиентам), `autosend.types` (allowlist, старт = только STATUS_UPDATE: факты из TMS; RFQ с ценами — через оператора), `autosend.threshold` (0.8). SMTP-вызов строго ПОСЛЕ коммита транзакции пайплайна (нет двойной отправки на optimistic-lock retry); провал SMTP оставляет DRAFT_READY (fallback = оператор). Терминальный статус `AUTO_SENT` (отличим от CLOSED), audit `AUTO_SEND`, метрика `smartfreight_autosend_total{result}` + панель и алерт. UI: секция на `/settings`, сортируемая колонка Conf., read-only детали. Ветка `phase1/auto-send`. |
-| 1.7 | **Circuit Breaker (Resilience4j)** | 🟡 СРЕДНИЙ | S | На вызовы item-service и Ollama. Сейчас нет fallback — при падении Ollama всё зависает. |
+| 1.7 | **Circuit Breaker (Resilience4j)** ✅ DONE (12.06.2026) | 🟡 СРЕДНИЙ | S | Resilience4j **core программно** (Spring-starter таргетит Boot 3 — риск с Boot 4). Два breaker'а в `ResilienceConfig`: `ollama` (общий на классификацию/extraction/drafting — процесс один) и `portService` (4xx «не найден» = business miss, breaker не открывает). Окно 10 вызовов, порог 50%, открытие после 4 сбоев, probe через 30 сек (`resilience.*.wait-open-seconds`). Решение (выбор Олега из A/B): **breaker open → тикет паркуется в RETRY_LATER** вместо мгновенного fallback-драфта — клиент получает нормальный AI-ответ после восстановления Ollama; retryCount при парковке НЕ сжигается, RetryScheduler пропускает прогоны, пока breaker открыт. Тикет, припаркованный до классификации, дообрабатывается на retry (typed-режим: null type = вердикта не было). Port-service breaker open → прежняя деградация (драфт без данных, fail-fast). Метрики `resilience4j_circuitbreaker_*`, панель Circuit Breakers + алерт CircuitBreakerOpen. Ветка `phase1/circuit-breaker`. |
 | 1.8 | **Pagination** | 🟡 СРЕДНИЙ | S | Заменить findAll() на Page<> в StatusUpdateScheduler и TicketViewController. Падёт на реальных данных. |
 
 ---
@@ -215,8 +215,14 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
   (+ алерт AutoSendFailures, т.к. Gmail-драфт для eligible-тикетов не создаётся)
 - Закрыт хвост 1.5: панель SLA Breaches + алерт SlaBreaches в Grafana/Prometheus
 
-**Следующий шаг — 1.7 Circuit Breaker** (либо 1.8 Pagination; discovery call может
-сместить приоритеты).
+### 12.06.2026 — Phase 1.7 Circuit Breaker ✅
+- Resilience4j core (программно, без Spring-starter'а — Boot 4): breaker'ы `ollama` и `portService`
+- Ключевое поведение: открытый ollama-breaker паркует тикеты в RETRY_LATER (нормальный AI-драфт
+  после восстановления вместо мгновенной пустышки); retry-бюджет при парковке не тратится
+- Припаркованные до классификации тикеты получают вердикт на retry (null type в typed-режиме)
+- Панель Circuit Breakers в Grafana + алерт CircuitBreakerOpen
+
+**Следующий шаг — 1.8 Pagination** (discovery call может сместить приоритеты).
 
 _Подробности: `C:\Users\olegs\Documents\smartfreight-wiki\wiki\analysis\Master Roadmap.md`_
 

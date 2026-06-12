@@ -1,5 +1,7 @@
 package com.smartfreight.inbox.service;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,9 +14,11 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -42,13 +46,17 @@ class AiExtractionServiceTest {
     @Mock private SettingsService settingsService;
 
     private AiExtractionService service;
+    private CircuitBreaker circuitBreaker;
 
     @BeforeEach
     void setUp() {
         // Return the code-level default prompt so behaviour matches the un-customised pipeline.
         lenient().when(settingsService.getString(anyString(), anyString()))
                 .thenAnswer(inv -> inv.getArgument(1));
-        service = new AiExtractionService(webClient, settingsService, new SimpleMeterRegistry(), "qwen2.5:7b");
+        // Real (default-config) breaker per test — stays CLOSED unless a test opens it.
+        circuitBreaker = CircuitBreaker.ofDefaults("ollama-test");
+        service = new AiExtractionService(webClient, settingsService, circuitBreaker,
+                new SimpleMeterRegistry(), "qwen2.5:7b");
     }
 
     /**
@@ -135,7 +143,7 @@ class AiExtractionServiceTest {
 
     /**
      * Сценарий 4: Тело письма пусто.
-     * 
+     *
      * Ожидание: возвращается пустая строка без вызова Ollama (оптимизация)
      */
     @Test
@@ -143,5 +151,21 @@ class AiExtractionServiceTest {
         String result = service.extractIdentifier("   ");
 
         assertEquals("", result);
+    }
+
+    /**
+     * Сценарий 5 (Phase 1.7): circuit breaker ОТКРЫТ — Ollama лежит.
+     *
+     * Ожидание: CallNotPermittedException пробрасывается (НЕ глотается generic-catch'ем
+     * с regex-fallback'ом) — пайплайн припаркует тикет в RETRY_LATER. HTTP-вызов не делается.
+     */
+    @Test
+    void extractContainerNumber_breakerOpen_propagatesCallNotPermitted() {
+        circuitBreaker.transitionToOpenState();
+
+        assertThrows(CallNotPermittedException.class,
+                () -> service.extractIdentifier("Any update on MSCU1234567?"));
+
+        verifyNoInteractions(webClient);
     }
 }

@@ -895,6 +895,46 @@
       }],
       "title": "Auto-send Results",
       "type": "piechart"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "green", "index": 0, "text": "CLOSED" },
+                "1": { "color": "red", "index": 1, "text": "OPEN" }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 56 },
+      "id": 21,
+      "options": {
+        "colorMode": "background", "graphMode": "none", "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "editorMode": "code",
+        "expr": "max by (name) (resilience4j_circuitbreaker_state{state=\"open\"})",
+        "legendFormat": "{{name}}",
+        "range": true, "refId": "A"
+      }],
+      "title": "Circuit Breakers (open = dependency down)",
+      "type": "stat"
     }
   ],
   "refresh": "10s",

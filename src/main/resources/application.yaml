@@ -93,6 +93,16 @@ sla:
     invoice-query: 480
     document-request: 480
 
+# Circuit breakers (Phase 1.7). How long a breaker stays OPEN before a probe call.
+# While the ollama breaker is OPEN the pipeline parks tickets as RETRY_LATER (proper AI
+# draft after recovery) and RetryScheduler pauses re-enqueueing; an open port-service
+# breaker only degrades lookups to "item not found". Window/thresholds: ResilienceConfig.
+resilience:
+  ollama:
+    wait-open-seconds: 30
+  port-service:
+    wait-open-seconds: 30
+
 port:
   service:
     url: ${PORT_SERVICE_URL:http://localhost:9000}

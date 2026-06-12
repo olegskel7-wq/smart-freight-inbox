@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -59,6 +60,7 @@ public class TicketProcessingService {
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
+    private final Counter parkedCounter;
 
     /**
      * Self-reference to the Spring proxy so that @Transactional on processAttempt()
@@ -99,6 +101,9 @@ public class TicketProcessingService {
                 .tag("status", "FAILED")
                 .description("Ticket count by status")
                 .register(meterRegistry);
+        this.parkedCounter = Counter.builder("smartfreight_tickets_parked_total")
+                .description("Tickets parked as RETRY_LATER because a circuit breaker was open")
+                .register(meterRegistry);
     }
 
     /**
@@ -138,6 +143,16 @@ public class TicketProcessingService {
                         log.error("All retry attempts exhausted — marking ticket as FAILED");
                         self.markFailed(ticketId);
                     }
+                } catch (CallNotPermittedException e) {
+                    // Phase 1.7: a circuit breaker is OPEN — the dependency (Ollama) is known to
+                    // be down. Park the ticket instead of failing it or serving a degraded
+                    // fallback draft: RetryScheduler re-runs the pipeline once the breaker
+                    // closes, and the customer gets a proper AI draft, just later. The attempt's
+                    // transaction has rolled back, so the ticket is in its pre-attempt state.
+                    log.warn("Circuit breaker '{}' is open — parking ticket as RETRY_LATER",
+                            e.getCausingCircuitBreakerName());
+                    self.markRetryLater(ticketId);
+                    return;
                 } catch (Exception e) {
                     log.error("Unexpected error during ticket processing", e);
                     self.markFailed(ticketId);
@@ -173,12 +188,16 @@ public class TicketProcessingService {
             return false;
         }
 
-        // Phase 1.3 session 3: classification happens here, off the IMAP thread. Only for
-        // RECEIVED — the retry path (NEW / RETRY_LATER) has already passed it, and a swept
-        // RECEIVED ticket re-entering as NEW deliberately skips it (fail-open: when in
-        // doubt, run the pipeline rather than risk dropping a real customer request).
+        // Phase 1.3 session 3: classification happens here, off the IMAP thread.
         // Phase 1.4: the same call also assigns the business type (RFQ/STATUS_UPDATE/…).
-        if (ticket.getStatus() == TicketStatus.RECEIVED) {
+        // Phase 1.7: in typed mode the retry path re-enters classification when ticketType
+        // is still null — such a ticket never got a verdict (it was parked by an open
+        // breaker before step 0 completed, or swept out of RECEIVED). This is a first
+        // classification, not a re-judgement: tickets the operator sent back for a redraft
+        // carry their type and are not re-classified. Binary mode persists no verdict
+        // marker, so there the retry path keeps its historical fail-open skip.
+        if (ticket.getStatus() == TicketStatus.RECEIVED
+                || (ticket.getTicketType() == null && emailClassificationService.isTypedMode())) {
             log.info("Step 0: Classifying email relevance and type via Qwen 2.5");
             EmailClassificationService.ClassificationResult classification =
                     emailClassificationService.classify(ticket.getSubject(), buildAiInput(ticket));
@@ -280,6 +299,28 @@ public class TicketProcessingService {
      *
      * @param ticketId ticket identifier
      */
+    /**
+     * Parks a ticket as RETRY_LATER because a circuit breaker rejected a pipeline call
+     * (Phase 1.7). Runs in its own transaction for the same reason as {@link #markFailed}:
+     * the failed attempt's transaction has already rolled back.
+     *
+     * retryCount is deliberately NOT incremented here — the breaker being open is not the
+     * ticket's fault, and {@link com.smartfreight.inbox.scheduler.RetryScheduler} skips
+     * re-enqueueing entirely while the breaker stays open, so the retry budget is spent
+     * only on real processing attempts.
+     *
+     * @param ticketId ticket identifier
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markRetryLater(Long ticketId) {
+        emailTicketRepository.findById(ticketId).ifPresent(t -> {
+            t.setStatus(TicketStatus.RETRY_LATER);
+            t.setUpdatedAt(LocalDateTime.now());
+            emailTicketRepository.save(t);
+            parkedCounter.increment();
+        });
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(Long ticketId) {
         emailTicketRepository.findById(ticketId).ifPresent(t -> {

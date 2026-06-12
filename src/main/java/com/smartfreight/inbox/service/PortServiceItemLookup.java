@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TrackedItem;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -29,12 +31,15 @@ public class PortServiceItemLookup implements ItemLookupService {
     private static final Logger log = LoggerFactory.getLogger(PortServiceItemLookup.class);
 
     private final WebClient portServiceWebClient;
+    private final CircuitBreaker portServiceCircuitBreaker;
     private final Counter hitCounter;
     private final Counter missCounter;
 
     public PortServiceItemLookup(@Qualifier("portServiceWebClient") WebClient portServiceWebClient,
+                                 @Qualifier("portServiceCircuitBreaker") CircuitBreaker portServiceCircuitBreaker,
                                  MeterRegistry meterRegistry) {
         this.portServiceWebClient = portServiceWebClient;
+        this.portServiceCircuitBreaker = portServiceCircuitBreaker;
         // Metric name kept as smartfreight_container_lookup_total for Grafana dashboard stability.
         this.hitCounter = Counter.builder("smartfreight_container_lookup_total")
                 .description("Item lookups in port-service")
@@ -67,7 +72,9 @@ public class PortServiceItemLookup implements ItemLookupService {
         String normalized = identifier.trim().toUpperCase();
 
         try {
-            TrackedItem item = portServiceWebClient.get()
+            // 4xx ("not found") raises WebClientResponseException, which the breaker config
+            // ignores — only transport errors / 5xx / timeouts count towards opening it.
+            TrackedItem item = portServiceCircuitBreaker.executeSupplier(() -> portServiceWebClient.get()
                     .uri("/api/v1/containers/{number}", normalized)
                     .retrieve()
                     .onStatus(HttpStatusCode::is4xxClientError, response -> {
@@ -75,7 +82,7 @@ public class PortServiceItemLookup implements ItemLookupService {
                         return response.createException();
                     })
                     .bodyToMono(TrackedItem.class)
-                    .block();
+                    .block());
 
             if (item != null) {
                 log.info("Item found via port-service: {} | status={} | location={}",
@@ -86,6 +93,13 @@ public class PortServiceItemLookup implements ItemLookupService {
             missCounter.increment();
             return Optional.empty();
 
+        } catch (CallNotPermittedException e) {
+            // Breaker OPEN: port-service is down — fail fast with the same degradation as any
+            // other lookup failure (draft reflects missing data); no retry parking here, the
+            // pipeline is designed to produce drafts without backend data.
+            log.warn("Port-service circuit breaker is open — lookup for '{}' not attempted", normalized);
+            missCounter.increment();
+            return Optional.empty();
         } catch (Exception e) {
             log.warn("Port-service unavailable or item not found '{}': {}", normalized, e.getMessage());
             missCounter.increment();

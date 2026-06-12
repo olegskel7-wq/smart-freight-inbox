@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TrackedItem;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,13 +33,17 @@ class AiDraftingServiceTest {
     @Mock private SettingsService settingsService;
 
     private AiDraftingService service;
+    private CircuitBreaker circuitBreaker;
 
     @BeforeEach
     void setUp() {
         // Return the code-level default prompt so behaviour matches the un-customised pipeline.
         lenient().when(settingsService.getString(anyString(), anyString()))
                 .thenAnswer(inv -> inv.getArgument(1));
-        service = new AiDraftingService(webClient, settingsService, new SimpleMeterRegistry(), "llama3.1:8b");
+        // Real (default-config) breaker per test — stays CLOSED unless a test opens it.
+        circuitBreaker = CircuitBreaker.ofDefaults("ollama-test");
+        service = new AiDraftingService(webClient, settingsService, circuitBreaker,
+                new SimpleMeterRegistry(), "llama3.1:8b");
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -104,5 +111,17 @@ class AiDraftingServiceTest {
             result.toLowerCase().contains("contact"),
             "Fallback for missing container should indicate the problem"
         );
+    }
+
+    // Сценарий 4 (Phase 1.7): breaker ОТКРЫТ — исключение пробрасывается (без fallback-драфта),
+    // пайплайн припаркует тикет в RETRY_LATER; HTTP-вызов к Ollama не делается
+    @Test
+    void generateDraft_breakerOpen_propagatesCallNotPermitted() {
+        circuitBreaker.transitionToOpenState();
+
+        assertThrows(CallNotPermittedException.class,
+                () -> service.generateDraft("Any updates on MSCU1234567?", buildItem("MSCU1234567")));
+
+        verifyNoInteractions(webClient);
     }
 }

@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketType;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -63,16 +65,19 @@ public class EmailClassificationService {
 
     private final WebClient ollamaWebClient;
     private final SettingsService settingsService;
+    private final CircuitBreaker ollamaCircuitBreaker;
     private final MeterRegistry meterRegistry;
     private final Counter relevantCounter;
     private final Counter irrelevantCounter;
 
     public EmailClassificationService(@Qualifier("ollamaWebClient") WebClient ollamaWebClient,
                                       SettingsService settingsService,
+                                      @Qualifier("ollamaCircuitBreaker") CircuitBreaker ollamaCircuitBreaker,
                                       MeterRegistry meterRegistry,
                                       @Value("${ollama.extraction-model:qwen2.5:7b}") String model) {
         this.ollamaWebClient = ollamaWebClient;
         this.settingsService = settingsService;
+        this.ollamaCircuitBreaker = ollamaCircuitBreaker;
         this.meterRegistry = meterRegistry;
         this.model = model;
         this.relevantCounter = Counter.builder("smartfreight_emails_classified_total")
@@ -123,19 +128,25 @@ public class EmailClassificationService {
             );
 
             @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaWebClient
+            Map<String, Object> response = ollamaCircuitBreaker.executeSupplier(() -> ollamaWebClient
                     .post()
                     .uri("/api/generate")
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block(CLASSIFICATION_TIMEOUT);
+                    .block(CLASSIFICATION_TIMEOUT));
 
             if (response == null) {
                 log.warn("Ollama returned null for classification - treating as relevant (fail-open)");
                 return record(failOpen(typed));
             }
             answer = String.valueOf(response.getOrDefault("response", "")).trim().toUpperCase();
+        } catch (CallNotPermittedException e) {
+            // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
+            // ticket as RETRY_LATER (Phase 1.7) — a real classification verdict will be made
+            // on retry (see TicketProcessingService: unclassified typed tickets re-enter step 0).
+            log.warn("Ollama circuit breaker is open — classification call not attempted");
+            throw e;
         } catch (Exception e) {
             log.warn("Classification call failed: {} - treating as relevant (fail-open)", e.getMessage());
             return record(failOpen(typed));
@@ -143,6 +154,17 @@ public class EmailClassificationService {
 
         log.debug("Classification response: '{}'", answer);
         return record(parseAnswer(answer, typed));
+    }
+
+    /**
+     * Whether typed classification (Phase 1.4) is active. In typed mode a persisted
+     * {@code ticketType} is the durable marker that classification produced a verdict —
+     * the pipeline uses this to re-run step 0 for tickets that were parked by an open
+     * circuit breaker before classification could happen (Phase 1.7). Binary mode
+     * persists nothing, so there the retry path keeps its historical skip.
+     */
+    public boolean isTypedMode() {
+        return settingsService.isFeatureEnabled(FEATURE_KEY, true);
     }
 
     /**

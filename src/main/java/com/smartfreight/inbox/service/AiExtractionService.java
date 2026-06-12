@@ -1,10 +1,13 @@
 package com.smartfreight.inbox.service;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -63,15 +66,18 @@ public class AiExtractionService {
 
     private final WebClient ollamaWebClient;
     private final SettingsService settingsService;
+    private final CircuitBreaker ollamaCircuitBreaker;
     private final Counter fallbackCounter;
     private final Timer ollamaTimer;
 
     public AiExtractionService(WebClient ollamaWebClient,
                                SettingsService settingsService,
+                               @Qualifier("ollamaCircuitBreaker") CircuitBreaker ollamaCircuitBreaker,
                                MeterRegistry meterRegistry,
                                @Value("${ollama.extraction-model:qwen2.5:7b}") String extractionModel) {
         this.ollamaWebClient = ollamaWebClient;
         this.settingsService = settingsService;
+        this.ollamaCircuitBreaker = ollamaCircuitBreaker;
         this.extractionModel = extractionModel;
         this.fallbackCounter = Counter.builder("smartfreight_extraction_fallback_total")
                 .description("Times regex fallback was used instead of LLM for container extraction")
@@ -117,13 +123,13 @@ public class AiExtractionService {
 
             long start = System.nanoTime();
             @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaWebClient
+            Map<String, Object> response = ollamaCircuitBreaker.executeSupplier(() -> ollamaWebClient
                     .post()
                     .uri("/api/generate")
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block(OLLAMA_TIMEOUT);
+                    .block(OLLAMA_TIMEOUT));
             ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
 
             if (response == null) {
@@ -148,6 +154,11 @@ public class AiExtractionService {
             log.warn("LLM could not extract container number, trying regex fallback");
             return fallbackRegexExtraction(emailBody);
 
+        } catch (CallNotPermittedException e) {
+            // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
+            // ticket as RETRY_LATER (Phase 1.7) instead of producing a degraded regex result.
+            log.warn("Ollama circuit breaker is open — extraction call not attempted");
+            throw e;
         } catch (Exception e) {
             log.error("Extraction call to Ollama failed: {}", e.getMessage());
             return fallbackRegexExtraction(emailBody);

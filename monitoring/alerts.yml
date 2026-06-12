@@ -115,6 +115,19 @@ groups:
             The tickets remain DRAFT_READY but nobody was notified (auto-send skips
             the Gmail draft) — review them in the UI and check SMTP connectivity.
 
+      - alert: CircuitBreakerOpen
+        expr: max by (name) (resilience4j_circuitbreaker_state{state="open"}) == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker '{{ $labels.name }}' is open"
+          description: >-
+            The {{ $labels.name }} dependency has been failing and its breaker opened.
+            ollama: tickets are parked as RETRY_LATER and will be processed automatically
+            after recovery. portService: drafts are generated without item data.
+            Check the dependency's container health.
+
       - alert: RabbitMQDown
         expr: up{job="rabbitmq"} == 0
         for: 2m

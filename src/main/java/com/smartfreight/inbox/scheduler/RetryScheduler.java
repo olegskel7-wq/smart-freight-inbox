@@ -4,10 +4,12 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -56,13 +58,16 @@ public class RetryScheduler {
 
     private final EmailTicketRepository emailTicketRepository;
     private final TicketEventPublisher ticketEventPublisher;
+    private final CircuitBreaker ollamaCircuitBreaker;
     private final Counter retryCounter;
 
     public RetryScheduler(EmailTicketRepository emailTicketRepository,
                           TicketEventPublisher ticketEventPublisher,
+                          @Qualifier("ollamaCircuitBreaker") CircuitBreaker ollamaCircuitBreaker,
                           MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketEventPublisher = ticketEventPublisher;
+        this.ollamaCircuitBreaker = ollamaCircuitBreaker;
         this.retryCounter = Counter.builder("smartfreight_tickets_retry_count_total")
                 .description("Total number of retry processing attempts for tickets")
                 .register(meterRegistry);
@@ -84,6 +89,16 @@ public class RetryScheduler {
     @Scheduled(fixedDelay = 120_000, initialDelay = 60_000)
     @Transactional
     public void retryFailedTickets() {
+        // Phase 1.7: while the Ollama breaker is OPEN every pipeline run would be parked
+        // straight back to RETRY_LATER. Skipping the whole run keeps retryCount intact —
+        // the retry budget is spent on real attempts, not on a dependency known to be down.
+        // In HALF_OPEN the run proceeds: the first re-enqueued ticket is the probe call.
+        CircuitBreaker.State ollamaState = ollamaCircuitBreaker.getState();
+        if (ollamaState == CircuitBreaker.State.OPEN || ollamaState == CircuitBreaker.State.FORCED_OPEN) {
+            log.info("RetryScheduler: ollama circuit breaker is {} — skipping this run", ollamaState);
+            return;
+        }
+
         List<EmailTicket> allEligible = emailTicketRepository
                 .findByStatusAndRetryCountLessThan(TicketStatus.RETRY_LATER, MAX_RETRIES);
 

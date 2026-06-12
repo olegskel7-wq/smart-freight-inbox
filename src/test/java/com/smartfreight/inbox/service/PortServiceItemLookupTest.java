@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TrackedItem;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,10 +28,13 @@ class PortServiceItemLookupTest {
     @Mock private WebClient.ResponseSpec responseSpec;
 
     private PortServiceItemLookup service;
+    private CircuitBreaker circuitBreaker;
 
     @BeforeEach
     void setUp() {
-        service = new PortServiceItemLookup(webClient, new SimpleMeterRegistry());
+        // Real (default-config) breaker per test — stays CLOSED unless a test opens it.
+        circuitBreaker = CircuitBreaker.ofDefaults("portService-test");
+        service = new PortServiceItemLookup(webClient, circuitBreaker, new SimpleMeterRegistry());
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -90,6 +95,19 @@ class PortServiceItemLookupTest {
         Optional<TrackedItem> result = service.findByIdentifier("MSCU1234567");
 
         assertFalse(result.isPresent());
+    }
+
+    // Сценарий 4b (Phase 1.7): breaker ОТКРЫТ — empty сразу, HTTP-вызов не делается.
+    // В отличие от Ollama-сервисов исключение НЕ пробрасывается: драфт без данных —
+    // штатная деградация lookup'а, тикет не паркуется
+    @Test
+    void findByIdentifier_breakerOpen_returnsEmptyWithoutHttpCall() {
+        circuitBreaker.transitionToOpenState();
+
+        Optional<TrackedItem> result = service.findByIdentifier("MSCU1234567");
+
+        assertFalse(result.isPresent());
+        verifyNoInteractions(webClient);
     }
 
     // Сценарий 5: Идентификатор нормализуется к верхнему регистру перед отправкой

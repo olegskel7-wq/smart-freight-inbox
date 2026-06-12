@@ -1,10 +1,13 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TrackedItem;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -71,14 +74,17 @@ public class AiDraftingService {
 
     private final WebClient ollamaWebClient;
     private final SettingsService settingsService;
+    private final CircuitBreaker ollamaCircuitBreaker;
     private final Timer ollamaTimer;
 
     public AiDraftingService(WebClient ollamaWebClient,
                              SettingsService settingsService,
+                             @Qualifier("ollamaCircuitBreaker") CircuitBreaker ollamaCircuitBreaker,
                              MeterRegistry meterRegistry,
                              @Value("${ollama.drafting-model:llama3.1:8b}") String draftingModel) {
         this.ollamaWebClient = ollamaWebClient;
         this.settingsService = settingsService;
+        this.ollamaCircuitBreaker = ollamaCircuitBreaker;
         this.draftingModel = draftingModel;
         this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
                 .description("Ollama response time per model")
@@ -146,13 +152,13 @@ public class AiDraftingService {
 
             long start = System.nanoTime();
             @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaWebClient
+            Map<String, Object> response = ollamaCircuitBreaker.executeSupplier(() -> ollamaWebClient
                     .post()
                     .uri("/api/generate")
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block(OLLAMA_TIMEOUT);
+                    .block(OLLAMA_TIMEOUT));
             ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
 
             if (response == null) {
@@ -169,6 +175,11 @@ public class AiDraftingService {
             log.info("Draft generated successfully ({} chars)", draft.length());
             return draft;
 
+        } catch (CallNotPermittedException e) {
+            // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
+            // ticket as RETRY_LATER (Phase 1.7) instead of serving the static fallback draft.
+            log.warn("Ollama circuit breaker is open — drafting call not attempted");
+            throw e;
         } catch (Exception e) {
             log.error("Drafting call to Ollama failed: {}", e.getMessage());
             return buildFallbackDraft(item);
