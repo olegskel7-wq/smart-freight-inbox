@@ -119,6 +119,15 @@ public class SettingsService {
         setString(KEY_DRAFT_ENABLED, enabled ? "true" : "false");
     }
 
+    /**
+     * The current tenant's RAW override, without falling back to the platform default.
+     * UI forms use this to distinguish "tenant overrode the value" from "inherits the
+     * default" — saving a blank override is how a tenant returns to inheriting.
+     */
+    public Optional<String> getTenantOverride(String key) {
+        return tenantValue(key);
+    }
+
     /** Override chain: tenant value (skipped in system context) → platform default. */
     private Optional<String> resolve(String key) {
         return tenantValue(key).or(() -> platformDefault(key));

@@ -4,6 +4,7 @@ import com.smartfreight.inbox.TestcontainersConfiguration;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,6 +46,9 @@ class TicketProcessingServiceTest {
      */
     @Test
     void testContainerExtraction_andDraftGeneration() {
+      // The real pipeline runs inside the consumer's tenant scope; in this direct call
+      // the default tenant stands in (S3 fail-loud: a session needs a declared state).
+      TenantContext.runAs(1L, () -> {
 
         EmailTicket ticket = EmailTicket.builder()
                 .messageId("test-unit-001@test.com")
@@ -86,5 +90,6 @@ class TicketProcessingServiceTest {
         if (result.getStatus() == TicketStatus.FAILED) {
             System.out.println("[TEST] Ollama not available — fallback draft used");
         }
+      });
     }
 }

@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.config;
 
 import com.smartfreight.inbox.repository.UserRepository;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import com.smartfreight.inbox.tenancy.TenantUserDetails;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,7 +66,12 @@ public class DbUserDetailsService implements UserDetailsService {
      */
     @Override
     public UserDetails loadUserByUsername(String email) {
-        return userRepository.findByEmail(email)
+        // Login is inherently cross-tenant: it runs BEFORE TenantFilter can bind a tenant
+        // (inside the security chain) and its whole job is to discover which tenant the
+        // user belongs to. Under S3 fail-loud semantics an undeclared context would throw
+        // at session open, so the lookup states its nature explicitly. app_user itself is
+        // outside @TenantId/RLS — system here widens nothing.
+        return TenantContext.callAsSystem(() -> userRepository.findByEmail(email))
                 .map(u -> {
                     String role = (u.getRole() == null || u.getRole().isBlank())
                             ? DEFAULT_ROLE

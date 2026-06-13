@@ -2,7 +2,6 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.User;
 import com.smartfreight.inbox.repository.UserRepository;
-import com.smartfreight.inbox.tenancy.TenancyProperties;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -33,13 +32,10 @@ public class UserManagementService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final TenancyProperties tenancyProperties;
 
-    public UserManagementService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                                 TenancyProperties tenancyProperties) {
+    public UserManagementService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.tenancyProperties = tenancyProperties;
     }
 
     /** Returns the caller's tenant users (no pagination — the operator team is expected to be small). */
@@ -119,7 +115,8 @@ public class UserManagementService {
     }
 
     private Long currentTenantId() {
-        Long tenantId = TenantContext.tenantIdOrNull();
-        return tenantId != null ? tenantId : tenancyProperties.getDefaultId();
+        // S3: user management is only reachable by an authenticated operator, whose
+        // tenant TenantFilter has already bound — an absent tenant is a bug, not default.
+        return TenantContext.requireTenantId();
     }
 }

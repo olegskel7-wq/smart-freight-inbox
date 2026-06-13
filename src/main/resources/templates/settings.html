@@ -24,21 +24,121 @@
 
     <h5 class="mb-4">Settings</h5>
 
-    <!-- Email Integration (read-only) -->
+    <!-- Mailboxes (Phase 2.2 S3 — per-tenant, editable) -->
     <div class="card shadow-sm mb-4">
-        <div class="card-header fw-semibold">Email Integration</div>
+        <div class="card-header fw-semibold">Mailboxes</div>
         <div class="card-body">
             <p class="text-muted small mb-3">
-                IMAP and SMTP settings are configured via environment variables.
-                To change them, update <code>.env</code> and restart the application.
+                Inboxes watched for incoming enquiries. Changes apply within ~30 seconds —
+                no restart. To rotate a password, delete the mailbox and add it again.
+            </p>
+
+            <div th:unless="${cipherConfigured}" class="alert alert-warning small">
+                <strong>MAILBOX_ENCRYPTION_KEY is not set.</strong> Mailbox passwords cannot be
+                encrypted, so mailboxes cannot be saved and no adapters will start. Generate a key
+                with <code>openssl rand -base64 32</code> and set the environment variable.
+            </div>
+
+            <table class="table table-sm align-middle" th:unless="${#lists.isEmpty(mailboxes)}">
+                <thead>
+                <tr class="small text-muted">
+                    <th>Host</th>
+                    <th>Port</th>
+                    <th>Username</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="m : ${mailboxes}">
+                    <td><code th:text="${m.host}">imap.example.com</code></td>
+                    <td th:text="${m.port}">993</td>
+                    <td th:text="${m.username}">inbox@example.com</td>
+                    <td>
+                        <span th:if="${m.enabled and adapterRunning[m.id]}" class="badge bg-success">Running</span>
+                        <span th:if="${m.enabled and !adapterRunning[m.id]}" class="badge bg-warning text-dark"
+                              title="Adapter not registered yet — starts on the next reconcile pass">Starting…</span>
+                        <span th:unless="${m.enabled}" class="badge bg-secondary">Disabled</span>
+                    </td>
+                    <td class="text-end">
+                        <form method="post" th:action="@{'/settings/mailboxes/' + ${m.id} + '/toggle'}" class="d-inline">
+                            <input type="hidden" name="enabled" th:value="${!m.enabled}">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm"
+                                    th:text="${m.enabled} ? 'Disable' : 'Enable'">Disable</button>
+                        </form>
+                        <form method="post" th:action="@{'/settings/mailboxes/' + ${m.id} + '/delete'}" class="d-inline"
+                              onsubmit="return confirm('Delete this mailbox? Its adapter stops within ~30 seconds.');">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+
+            <p th:if="${#lists.isEmpty(mailboxes)}" class="text-muted small">
+                No mailboxes yet — incoming mail is not being watched.
+            </p>
+
+            <hr>
+            <p class="fw-semibold small mb-2">Add mailbox</p>
+            <form method="post" th:action="@{/settings/mailboxes}" class="row g-2">
+                <div class="col-sm-4">
+                    <input type="text" class="form-control form-control-sm" name="host"
+                           placeholder="IMAP host (imap.gmail.com)" required>
+                </div>
+                <div class="col-sm-2">
+                    <input type="number" class="form-control form-control-sm" name="port"
+                           value="993" min="1" max="65535" required>
+                </div>
+                <div class="col-sm-3">
+                    <input type="text" class="form-control form-control-sm" name="username"
+                           placeholder="Username" autocomplete="off" required>
+                </div>
+                <div class="col-sm-3">
+                    <input type="password" class="form-control form-control-sm" name="password"
+                           placeholder="Password" autocomplete="new-password" required>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary btn-sm" th:disabled="${!cipherConfigured}">
+                        Add mailbox
+                    </button>
+                    <span class="form-text ms-2">The password is stored encrypted (AES-256-GCM) and never displayed.</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- AI Endpoint (Phase 2.2 S3 — per-tenant override) -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold">AI Endpoint</div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                Where this tenant's LLM calls go. Leave blank to use the platform instance
+                (<code th:text="${platformOllamaUrl}">http://ollama:11434</code>). Point it at your
+                own Ollama server to keep prompts and drafts entirely on your infrastructure —
+                each endpoint gets its own circuit breaker, so an outage on one never affects others.
+            </p>
+            <form method="post" th:action="@{/settings/ollama}" class="row g-2">
+                <div class="col-sm-8">
+                    <input type="text" class="form-control form-control-sm" name="ollamaBaseUrl"
+                           th:value="${ollamaUrlOverride}" th:placeholder="${platformOllamaUrl}">
+                </div>
+                <div class="col-sm-4">
+                    <button type="submit" class="btn btn-primary btn-sm">Save endpoint</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- SMTP (read-only) -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold">Outgoing Mail (SMTP)</div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                Replies are sent through the platform SMTP account, configured via environment
+                variables. Per-tenant sender addresses are on the roadmap.
             </p>
             <dl class="row mb-0">
-                <dt class="col-sm-4">IMAP host</dt>
-                <dd class="col-sm-8"><code th:text="${imapHost}">imap.example.com</code></dd>
-
-                <dt class="col-sm-4">IMAP user</dt>
-                <dd class="col-sm-8"><code th:text="${imapUser}">inbox@example.com</code></dd>
-
                 <dt class="col-sm-4">SMTP host</dt>
                 <dd class="col-sm-8"><code th:text="${smtpHost}">smtp.gmail.com</code></dd>
 
@@ -171,15 +271,16 @@
     <!-- How to change env vars -->
     <div class="card shadow-sm border-0 bg-light">
         <div class="card-body">
-            <p class="fw-semibold mb-2">How to change IMAP / SMTP</p>
-            <p class="small text-muted mb-2">Edit the <code>.env</code> file in the project root:</p>
-            <pre class="bg-white border rounded p-3 small mb-2">IMAP_HOST=imap.gmail.com
-IMAP_USER=your@gmail.com
-IMAP_PASSWORD=your-app-password
-SMTP_HOST=smtp.gmail.com
+            <p class="fw-semibold mb-2">How to change SMTP</p>
+            <p class="small text-muted mb-2">
+                Incoming mailboxes are managed above — no restart needed. Outgoing SMTP still
+                comes from the <code>.env</code> file in the project root:
+            </p>
+            <pre class="bg-white border rounded p-3 small mb-2">SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your@gmail.com
-SMTP_PASSWORD=your-app-password</pre>
+SMTP_PASSWORD=your-app-password
+MAILBOX_ENCRYPTION_KEY=&lt;openssl rand -base64 32&gt;</pre>
             <p class="small text-muted mb-0">Then restart: <code>docker-compose up --build backend</code></p>
         </div>
     </div>

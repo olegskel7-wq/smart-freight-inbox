@@ -5,17 +5,21 @@ import java.util.function.Supplier;
 /**
  * Holds the tenant the current thread is working for (Phase 2.2).
  *
- * <p>Three states:
+ * <p>Four states:
  * <ul>
  *   <li><b>tenant</b> — a concrete tenant id. Set by {@code TenantFilter} for web requests
  *       (from the logged-in user's principal), by the RabbitMQ consumer (from the event
- *       payload) and by ingestion (default tenant until per-tenant mailboxes in S3).</li>
- *   <li><b>system</b> — cross-tenant background work: schedulers, outbox relay, DLQ admin.
- *       Hibernate disables the {@code @TenantId} filter (root tenant) and the RLS policy
- *       admits all rows via the {@code app.is_system} GUC.</li>
- *   <li><b>unset</b> — treated as the default tenant by {@link TenantIdentifierResolver}
- *       and {@link TenantAwareDataSource}. A deliberate S1 compromise while exactly one
- *       real tenant exists; tightens to fail-loud when tenant onboarding arrives (S3).</li>
+ *       payload) and by the per-mailbox IMAP adapters (from the owning mailbox row, S3).</li>
+ *   <li><b>system</b> — cross-tenant background work: schedulers, outbox relay, DLQ admin,
+ *       login lookups. Hibernate disables the {@code @TenantId} filter (root tenant) and
+ *       the RLS policy admits all rows via the {@code app.is_system} GUC.</li>
+ *   <li><b>anonymous</b> — an authenticated-but-tenantless or unauthenticated web request
+ *       (login page, static resources, actuator scrapes). Fail-closed: Hibernate filters
+ *       tenant entities to an impossible tenant, RLS sees an empty GUC. Reads of tenant
+ *       data return nothing, writes fail on the FK.</li>
+ *   <li><b>unset</b> — a bug since S3. {@link TenantIdentifierResolver} throws: every
+ *       entry point (web filter, consumer, adapters, schedulers, tests) must declare
+ *       its state explicitly. The S1 unset-equals-default compromise is gone.</li>
  * </ul>
  *
  * <p>Always use the {@code runAs*} helpers rather than raw set/clear — they restore the
@@ -26,6 +30,13 @@ public final class TenantContext {
 
     /** Sentinel for the system (cross-tenant) state — never a valid tenant table id. */
     static final Long SYSTEM = -1L;
+
+    /**
+     * Sentinel for the anonymous (no-tenant) state — never a valid tenant table id and
+     * never declared root: Hibernate filters {@code @TenantId} queries to this impossible
+     * tenant (zero rows) and stamps it on inserts (loud FK failure).
+     */
+    static final Long ANONYMOUS = -2L;
 
     private static final ThreadLocal<Long> CURRENT = new ThreadLocal<>();
 
@@ -81,6 +92,11 @@ public final class TenantContext {
         return new Scope(SYSTEM);
     }
 
+    /** Opens a fail-closed scope for requests that carry no tenant (anonymous web traffic). */
+    public static Scope openAnonymous() {
+        return new Scope(ANONYMOUS);
+    }
+
     /** Restores the previous tenant state on close. */
     public static final class Scope implements AutoCloseable {
         private final Long previous;
@@ -100,14 +116,51 @@ public final class TenantContext {
         }
     }
 
-    /** Current tenant id, or {@code null} when unset or in system state. */
+    /** Current tenant id, or {@code null} when in any non-tenant state (system/anonymous/unset). */
     public static Long tenantIdOrNull() {
         Long value = CURRENT.get();
-        return SYSTEM.equals(value) ? null : value;
+        return SYSTEM.equals(value) || ANONYMOUS.equals(value) ? null : value;
+    }
+
+    /**
+     * Current tenant id, failing loudly when the thread is not bound to a concrete tenant.
+     * For call sites that are only reachable from tenant-scoped work (authenticated
+     * controllers) and have no meaningful anonymous/system behaviour.
+     */
+    public static Long requireTenantId() {
+        Long tenantId = tenantIdOrNull();
+        if (tenantId == null) {
+            throw new IllegalStateException(
+                    "A concrete tenant is required here, but the context is " + describeState());
+        }
+        return tenantId;
     }
 
     public static boolean isSystem() {
         return SYSTEM.equals(CURRENT.get());
+    }
+
+    public static boolean isAnonymous() {
+        return ANONYMOUS.equals(CURRENT.get());
+    }
+
+    /** True when the thread never declared a state — a bug under S3 fail-loud semantics. */
+    public static boolean isUnset() {
+        return CURRENT.get() == null;
+    }
+
+    static String describeState() {
+        Long value = CURRENT.get();
+        if (value == null) {
+            return "unset";
+        }
+        if (SYSTEM.equals(value)) {
+            return "system";
+        }
+        if (ANONYMOUS.equals(value)) {
+            return "anonymous";
+        }
+        return "tenant " + value;
     }
 
     private static <T> T callWith(Long value, Supplier<T> work) {

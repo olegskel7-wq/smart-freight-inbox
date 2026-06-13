@@ -18,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,8 +28,9 @@ import java.io.IOException;
 /**
  * Incoming email ingestion service.
  *
- * Acts as the receiver of the IMAP IDLE channel (mailChannel) — Spring Integration
- * automatically invokes {@link #processIncomingEmail} when a new message arrives.
+ * Invoked by the per-mailbox IMAP IDLE adapters ({@link MailboxImapAdapterManager}) for
+ * every arriving message, already wrapped in the owning tenant's {@code TenantContext}
+ * (Phase 2.2 S3 — one dynamic adapter per tenant_mailbox row, not a static channel).
  *
  * Processing pipeline:
  * 1. The message is copied into memory (guard against FolderClosedException).
@@ -89,15 +89,15 @@ public class EmailIngestionService {
     /**
      * Processes an incoming email: validates, persists a ticket, and starts the AI pipeline.
      *
-     * @ServiceActivator — Spring Integration automatically invokes this method
-     * when a new message arrives on the mailChannel channel.
+     * Caller contract (S3): the thread must already be bound to the mailbox's tenant —
+     * the adapter flows in {@link MailboxImapAdapterManager} do this. The fail-loud
+     * TenantContext makes an unbound call throw at the first DB touch.
      *
      * @Transactional — ticket persistence and the outbox event are atomic.
      * If save() throws an exception, no ticket is created and no event is recorded.
      *
      * @param mimeMessage received Jakarta Mail message object
      */
-    @ServiceActivator(inputChannel = "mailChannel")
     @Transactional
     public void processIncomingEmail(MimeMessage mimeMessage) {
         try {
@@ -177,10 +177,8 @@ public class EmailIngestionService {
                 log.info("Email ingested: ticket ID={}, subject='{}'", saved.getId(), saved.getSubject());
 
                 // Same transaction as the ticket insert: either both become durable or neither.
-                // Tenant: ingestion runs without an explicit TenantContext, so Hibernate
-                // stamps the ticket with the DEFAULT tenant (the single current mailbox).
-                // Per-tenant mailboxes (Phase 2.2 S3) will bind the context per IMAP
-                // adapter BEFORE this transaction opens — this call site stays unchanged.
+                // Tenant: the adapter bound the mailbox's tenant before this transaction
+                // opened (S3), so Hibernate stamped it on the ticket and the event carries it.
                 ticketEventPublisher.publishTicketCreated(saved.getId(), saved.getTenantId());
 
             } catch (DataIntegrityViolationException e) {

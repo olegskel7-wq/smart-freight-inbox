@@ -1,8 +1,9 @@
 package com.smartfreight.inbox.actuator;
 
+import com.smartfreight.inbox.service.OllamaClientProvider;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Duration;
@@ -40,10 +41,10 @@ public class OllamaHealthIndicator implements HealthIndicator {
     @Value("${ollama.drafting-model:llama3.1:8b}")
     private String draftingModel;
 
-    private final WebClient ollamaWebClient;
+    private final OllamaClientProvider ollamaClients;
 
-    public OllamaHealthIndicator(@Qualifier("ollamaWebClient") WebClient ollamaWebClient) {
-        this.ollamaWebClient = ollamaWebClient;
+    public OllamaHealthIndicator(OllamaClientProvider ollamaClients) {
+        this.ollamaClients = ollamaClients;
     }
 
     /**
@@ -61,6 +62,9 @@ public class OllamaHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         try {
+            // This probe is about the PLATFORM instance — system context resolves the
+            // platform URL regardless of which thread (web, scheduler) asks for health.
+            WebClient ollamaWebClient = TenantContext.callAsSystem(ollamaClients::client);
             String response = ollamaWebClient.get()
                     .uri("/api/tags")
                     .retrieve()

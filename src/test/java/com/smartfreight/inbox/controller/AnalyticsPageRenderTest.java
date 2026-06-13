@@ -5,13 +5,15 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.support.DefaultTenantTestExecutionListener;
+import com.smartfreight.inbox.support.WithMockTenantOperator;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 // Boot 4: test autoconfigurations moved into per-module artifacts (spring-boot-webmvc-test)
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +34,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
+@TestExecutionListeners(
+        value = DefaultTenantTestExecutionListener.class,
+        mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 @Transactional
 class AnalyticsPageRenderTest {
 
@@ -42,7 +47,7 @@ class AnalyticsPageRenderTest {
     private EmailTicketRepository tickets;
 
     @Test
-    @WithMockUser(roles = "OPERATOR")
+    @WithMockTenantOperator
     void analyticsPage_rendersWithChartData() throws Exception {
         // A ticket with a confidence score makes both chart branches render,
         // exercising the th:inline serialization of the series lists.
@@ -65,7 +70,7 @@ class AnalyticsPageRenderTest {
     }
 
     @Test
-    @WithMockUser(roles = "OPERATOR")
+    @WithMockTenantOperator
     void analyticsPage_rendersOnEmptyPeriodWithoutCharts() throws Exception {
         // Other test classes COMMIT tickets into the shared container; soft-delete them
         // inside this rolled-back TX so the empty-period branch actually renders.

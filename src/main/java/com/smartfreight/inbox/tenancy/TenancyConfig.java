@@ -2,7 +2,6 @@ package com.smartfreight.inbox.tenancy;
 
 import org.hibernate.cfg.MultiTenancySettings;
 import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.hibernate.autoconfigure.HibernatePropertiesCustomizer;
@@ -27,11 +26,20 @@ import javax.sql.DataSource;
 @EnableConfigurationProperties(TenancyProperties.class)
 public class TenancyConfig {
 
+    /**
+     * A bean (not an inline instance): the resolver listens for ApplicationReadyEvent to
+     * switch from lenient bootstrap mode to strict fail-loud mode, and @EventListener
+     * only works on container-managed beans.
+     */
     @Bean
-    public HibernatePropertiesCustomizer tenantIdentifierCustomizer(TenancyProperties properties) {
+    public TenantIdentifierResolver tenantIdentifierResolver() {
+        return new TenantIdentifierResolver();
+    }
+
+    @Bean
+    public HibernatePropertiesCustomizer tenantIdentifierCustomizer(TenantIdentifierResolver resolver) {
         return hibernateProperties -> hibernateProperties.put(
-                MultiTenancySettings.MULTI_TENANT_IDENTIFIER_RESOLVER,
-                new TenantIdentifierResolver(properties));
+                MultiTenancySettings.MULTI_TENANT_IDENTIFIER_RESOLVER, resolver);
     }
 
     /**
@@ -40,18 +48,15 @@ public class TenancyConfig {
      * and pool metrics intact. Flyway builds its own admin-role connection from
      * {@code spring.flyway.*} (not a bean), so migrations stay outside RLS by design.
      *
-     * <p>Static + ObjectProvider: BPPs are created before almost everything else, and
-     * resolving {@link TenancyProperties} lazily avoids pulling configuration-properties
-     * binding forward before it is ready.
+     * <p>Static: BPPs are created before almost everything else in the context.
      */
     @Bean
-    public static BeanPostProcessor tenantAwareDataSourceWrapper(
-            ObjectProvider<TenancyProperties> properties) {
+    public static BeanPostProcessor tenantAwareDataSourceWrapper() {
         return new BeanPostProcessor() {
             @Override
             public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
                 if (bean instanceof DataSource dataSource && !(bean instanceof TenantAwareDataSource)) {
-                    return new TenantAwareDataSource(dataSource, properties.getObject());
+                    return new TenantAwareDataSource(dataSource);
                 }
                 return bean;
             }

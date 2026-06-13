@@ -17,16 +17,12 @@ import java.util.concurrent.TimeUnit;
 /**
  * WebClient bean configuration for calling external services.
  *
- * Creates two separate WebClient beans:
- * — {@code ollamaWebClient} — for the Ollama AI server (long timeouts due to LLM)
- * — {@code portServiceWebClient} — for port-service (short timeouts — fast REST API)
+ * <p>Holds the {@code portServiceWebClient} bean. Ollama clients are NOT a singleton bean
+ * any more — {@link com.smartfreight.inbox.service.OllamaClientProvider} builds and caches
+ * one per resolved endpoint (the per-tenant override arrived with Phase 2.2 S3).
  */
 @Configuration
 public class WebClientConfig {
-
-    /** Ollama server URL. Default: http://localhost:11434 (local development environment). */
-    @Value("${ollama.base-url:http://localhost:11434}")
-    private String ollamaBaseUrl;
 
     /** External port status service URL. */
     @Value("${port.service.url:http://localhost:9000}")
@@ -35,43 +31,6 @@ public class WebClientConfig {
     /** API key for authenticating with port-service. Passed in the X-API-Key header. */
     @Value("${port.service.api-key}")
     private String portServiceApiKey;
-
-    /**
-     * WebClient for Ollama AI server requests.
-     *
-     * Used by {@link com.smartfreight.inbox.service.AiExtractionService} and
-     * {@link com.smartfreight.inbox.service.AiDraftingService}.
-     *
-     * Timeouts configured for LLM characteristics:
-     * — Read timeout: 150 s — LLM may take long for large texts
-     * — Write timeout: 30 s — request sending
-     * — TCP connection timeout: 10 s
-     *
-     * ConnectionProvider manages the connection pool (up to 10 concurrent connections to Ollama).
-     *
-     * @return configured ollamaWebClient
-     */
-    @Bean
-    public WebClient ollamaWebClient() {
-        ConnectionProvider provider = ConnectionProvider.builder("ollama-pool")
-                .maxConnections(10)
-                .maxIdleTime(Duration.ofMinutes(10))
-                .maxLifeTime(Duration.ofMinutes(20))
-                .pendingAcquireTimeout(Duration.ofSeconds(10))
-                .build();
-
-        HttpClient httpClient = HttpClient.create(provider)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
-                .doOnConnected(conn -> conn
-                        .addHandlerLast(new ReadTimeoutHandler(150, TimeUnit.SECONDS))
-                        .addHandlerLast(new WriteTimeoutHandler(30, TimeUnit.SECONDS))
-                );
-
-        return WebClient.builder()
-                .baseUrl(ollamaBaseUrl)
-                .clientConnector(new ReactorClientHttpConnector(httpClient))
-                .build();
-    }
 
     /**
      * WebClient for port-service requests.

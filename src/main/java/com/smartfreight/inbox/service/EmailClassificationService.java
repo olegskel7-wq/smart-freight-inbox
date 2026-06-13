@@ -2,12 +2,10 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketType;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -63,21 +61,18 @@ public class EmailClassificationService {
 
     private final String model;
 
-    private final WebClient ollamaWebClient;
+    private final OllamaClientProvider ollamaClients;
     private final SettingsService settingsService;
-    private final CircuitBreaker ollamaCircuitBreaker;
     private final MeterRegistry meterRegistry;
     private final Counter relevantCounter;
     private final Counter irrelevantCounter;
 
-    public EmailClassificationService(@Qualifier("ollamaWebClient") WebClient ollamaWebClient,
+    public EmailClassificationService(OllamaClientProvider ollamaClients,
                                       SettingsService settingsService,
-                                      @Qualifier("ollamaCircuitBreaker") CircuitBreaker ollamaCircuitBreaker,
                                       MeterRegistry meterRegistry,
                                       @Value("${ollama.extraction-model:qwen2.5:7b}") String model) {
-        this.ollamaWebClient = ollamaWebClient;
+        this.ollamaClients = ollamaClients;
         this.settingsService = settingsService;
-        this.ollamaCircuitBreaker = ollamaCircuitBreaker;
         this.meterRegistry = meterRegistry;
         this.model = model;
         this.relevantCounter = Counter.builder("smartfreight_emails_classified_total")
@@ -127,8 +122,10 @@ public class EmailClassificationService {
                     "stream", false
             );
 
+            // Phase 2.2 S3: client + breaker resolved per call for the CURRENT tenant's endpoint.
+            WebClient ollamaWebClient = ollamaClients.client();
             @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaCircuitBreaker.executeSupplier(() -> ollamaWebClient
+            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
                     .post()
                     .uri("/api/generate")
                     .bodyValue(requestBody)

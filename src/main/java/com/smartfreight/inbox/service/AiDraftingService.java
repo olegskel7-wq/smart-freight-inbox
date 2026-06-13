@@ -2,12 +2,10 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TrackedItem;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -72,19 +70,16 @@ public class AiDraftingService {
     /** Draft generation model name — read from application.yaml. */
     private final String draftingModel;
 
-    private final WebClient ollamaWebClient;
+    private final OllamaClientProvider ollamaClients;
     private final SettingsService settingsService;
-    private final CircuitBreaker ollamaCircuitBreaker;
     private final Timer ollamaTimer;
 
-    public AiDraftingService(WebClient ollamaWebClient,
+    public AiDraftingService(OllamaClientProvider ollamaClients,
                              SettingsService settingsService,
-                             @Qualifier("ollamaCircuitBreaker") CircuitBreaker ollamaCircuitBreaker,
                              MeterRegistry meterRegistry,
                              @Value("${ollama.drafting-model:llama3.1:8b}") String draftingModel) {
-        this.ollamaWebClient = ollamaWebClient;
+        this.ollamaClients = ollamaClients;
         this.settingsService = settingsService;
-        this.ollamaCircuitBreaker = ollamaCircuitBreaker;
         this.draftingModel = draftingModel;
         this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
                 .description("Ollama response time per model")
@@ -151,8 +146,10 @@ public class AiDraftingService {
             log.debug("Sending drafting request to Ollama model {}", draftingModel);
 
             long start = System.nanoTime();
+            // Phase 2.2 S3: client + breaker resolved per call for the CURRENT tenant's endpoint.
+            WebClient ollamaWebClient = ollamaClients.client();
             @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaCircuitBreaker.executeSupplier(() -> ollamaWebClient
+            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
                     .post()
                     .uri("/api/generate")
                     .bodyValue(requestBody)

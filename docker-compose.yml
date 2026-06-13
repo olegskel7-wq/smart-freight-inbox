@@ -21,6 +21,9 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-${IMAP_USER:-inbox@example.com}}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-${IMAP_PASSWORD:-changeme}}
+      # Phase 2.2 S3: AES key for tenant_mailbox passwords (base64, 32 bytes;
+      # openssl rand -base64 32). Without it no IMAP adapters start.
+      - MAILBOX_ENCRYPTION_KEY=${MAILBOX_ENCRYPTION_KEY:-}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USER=${RABBITMQ_USER:-smartfreight}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-smartfreight}

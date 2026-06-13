@@ -110,8 +110,12 @@ class EmailClassificationServiceTest {
         WebClient webClient = mock(WebClient.class);
         CircuitBreaker breaker = CircuitBreaker.ofDefaults("ollama-test");
         breaker.transitionToOpenState();
+        // Phase 2.2 S3: client + breaker come from the provider, resolved per call.
+        OllamaClientProvider ollamaClients = mock(OllamaClientProvider.class);
+        when(ollamaClients.client()).thenReturn(webClient);
+        when(ollamaClients.circuitBreaker()).thenReturn(breaker);
         EmailClassificationService service = new EmailClassificationService(
-                webClient, settingsService, breaker, new SimpleMeterRegistry(), "qwen2.5:7b");
+                ollamaClients, settingsService, new SimpleMeterRegistry(), "qwen2.5:7b");
 
         assertThatThrownBy(() -> service.classify("Container inquiry", "Where is MSCU1234567?"))
                 .isInstanceOf(CallNotPermittedException.class);

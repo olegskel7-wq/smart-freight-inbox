@@ -53,6 +53,10 @@ spring:
     # Publisher confirms: OutboxRelay marks an event published only after the broker acks it.
     publisher-confirm-type: correlated
 
+  # Legacy single-mailbox config (pre-S3). Used ONLY by MailboxBootstrap to import the
+  # mailbox into tenant_mailbox on first start (and by GmailDraftService for the Gmail
+  # drafts feature). Adapters themselves are built from tenant_mailbox rows — manage
+  # mailboxes on /settings. Placeholder values = nothing to import.
   mail:
     host: ${IMAP_HOST:imap.example.com}
     port: ${IMAP_PORT:993}
@@ -120,10 +124,19 @@ port:
     url: ${PORT_SERVICE_URL:http://localhost:9000}
     api-key: ${PORT_SERVICE_API_KEY:local-dev-api-key}
 
-# Multi-tenancy (Phase 2.2). default-id = the tenant attributed when no explicit context
-# exists (single current mailbox, pre-2.2 in-flight events). Matches the V18 seed row.
+# Multi-tenancy (Phase 2.2). default-id = the V18 seed tenant; used only for pre-2.2
+# in-flight outbox events and the env-mailbox bootstrap import. An unset TenantContext
+# throws since S3 — there is no default-tenant fallback any more.
 tenant:
   default-id: 1
+
+# Per-tenant mailboxes (Phase 2.2 S3). The reconciler diffs tenant_mailbox rows against
+# running IMAP adapters every interval; encryption-key (base64, 32 bytes — generate with
+# `openssl rand -base64 32`) protects stored IMAP passwords. Without the key the app runs,
+# but no adapters start and mailboxes cannot be saved.
+mailbox:
+  reconcile-interval-ms: 30000
+  encryption-key: ${MAILBOX_ENCRYPTION_KEY:}
 
 management:
   endpoints:

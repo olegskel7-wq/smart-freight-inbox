@@ -5,7 +5,7 @@ import com.smartfreight.inbox.messaging.DlqAdminService;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
-import com.smartfreight.inbox.tenancy.TenancyProperties;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,11 +57,13 @@ class AdminControllerTest {
 
     private MockMvc mockMvc;
 
+    /** Tenant the standalone requests run under — S3 fail-loud: reprocess requires one. */
+    private static final long TENANT = 7L;
+
     @BeforeEach
     void setUp() {
         AdminController controller = new AdminController(
-                emailTicketRepository, ticketProcessingService, ticketEventPublisher, dlqAdminService,
-                new TenancyProperties());
+                emailTicketRepository, ticketProcessingService, ticketEventPublisher, dlqAdminService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -70,13 +72,26 @@ class AdminControllerTest {
         when(ticketProcessingService.prepareForRetry()).thenReturn(2);
         when(emailTicketRepository.findIdsByStatusIn(any())).thenReturn(List.of(1L, 2L));
 
-        mockMvc.perform(post("/admin/reprocess"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("2 tickets")));
+        try (var ignored = TenantContext.openAs(TENANT)) {
+            mockMvc.perform(post("/admin/reprocess"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string(containsString("2 tickets")));
+        }
 
-        // No tenant principal in a standalone MockMvc request → default tenant.
-        verify(ticketEventPublisher).publishRetryRequested(1L, new TenancyProperties().getDefaultId());
-        verify(ticketEventPublisher).publishRetryRequested(2L, new TenancyProperties().getDefaultId());
+        // The re-enqueued events carry the request thread's tenant.
+        verify(ticketEventPublisher).publishRetryRequested(1L, TENANT);
+        verify(ticketEventPublisher).publishRetryRequested(2L, TENANT);
+    }
+
+    @Test
+    void reprocessAll_withoutTenantContext_failsLoudly() throws Exception {
+        when(ticketProcessingService.prepareForRetry()).thenReturn(0);
+        when(emailTicketRepository.findIdsByStatusIn(any())).thenReturn(List.of(1L));
+
+        // S3: no unset-equals-default fallback — reprocess outside a tenant scope is a bug.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> mockMvc.perform(post("/admin/reprocess")))
+                .hasCauseInstanceOf(IllegalStateException.class);
+        verifyNoInteractions(ticketEventPublisher);
     }
 
     @Test

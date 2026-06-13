@@ -1,26 +1,31 @@
 package com.smartfreight.inbox.controller;
 
+import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.service.AutoSendService;
+import com.smartfreight.inbox.service.MailboxManagementService;
+import com.smartfreight.inbox.service.OllamaClientProvider;
+import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 @Controller
 @RequestMapping("/settings")
 public class SettingsController {
-
-    @Value("${spring.mail.host}")
-    private String imapHost;
-
-    @Value("${spring.mail.username}")
-    private String imapUser;
 
     @Value("${smtp.host}")
     private String smtpHost;
@@ -31,16 +36,39 @@ public class SettingsController {
     @Value("${smtp.username}")
     private String smtpUser;
 
-    private final SettingsService settingsService;
+    /** Platform Ollama URL — shown as the inherited default next to the override field. */
+    @Value("${ollama.base-url:http://localhost:11434}")
+    private String platformOllamaUrl;
 
-    public SettingsController(SettingsService settingsService) {
+    private final SettingsService settingsService;
+    private final MailboxManagementService mailboxService;
+    private final MailboxImapAdapterManager adapterManager;
+    private final SecretCipher secretCipher;
+
+    public SettingsController(SettingsService settingsService,
+                              MailboxManagementService mailboxService,
+                              MailboxImapAdapterManager adapterManager,
+                              SecretCipher secretCipher) {
         this.settingsService = settingsService;
+        this.mailboxService = mailboxService;
+        this.adapterManager = adapterManager;
+        this.secretCipher = secretCipher;
     }
 
     @GetMapping
     public String settingsPage(Model model) {
-        model.addAttribute("imapHost", imapHost);
-        model.addAttribute("imapUser", imapUser);
+        // Phase 2.2 S3: mailboxes are tenant-scoped DB rows now, not env vars.
+        List<TenantMailbox> mailboxes = mailboxService.findAll();
+        Map<Long, Boolean> adapterRunning = new HashMap<>();
+        for (TenantMailbox mailbox : mailboxes) {
+            adapterRunning.put(mailbox.getId(), adapterManager.isRunning(mailbox.getId()));
+        }
+        model.addAttribute("mailboxes", mailboxes);
+        model.addAttribute("adapterRunning", adapterRunning);
+        model.addAttribute("cipherConfigured", secretCipher.isConfigured());
+        model.addAttribute("platformOllamaUrl", platformOllamaUrl);
+        model.addAttribute("ollamaUrlOverride",
+                settingsService.getTenantOverride(OllamaClientProvider.KEY_OLLAMA_BASE_URL).orElse(""));
         model.addAttribute("smtpHost", smtpHost);
         model.addAttribute("smtpPort", smtpPort);
         model.addAttribute("smtpUser", smtpUser);
@@ -102,6 +130,76 @@ public class SettingsController {
             redirectAttributes.addFlashAttribute("successMessage",
                     "Auto-send settings saved" + (enabled ? "" : " (feature is off)") + ".");
         }
+        return "redirect:/settings";
+    }
+
+    /**
+     * Adds a mailbox for the current tenant (Phase 2.2 S3). The reconciler starts its
+     * IMAP adapter within one pass (~30 s) — no restart.
+     */
+    @PostMapping("/mailboxes")
+    public String addMailbox(@RequestParam("host") String host,
+                             @RequestParam(name = "port", defaultValue = "993") int port,
+                             @RequestParam("username") String username,
+                             @RequestParam("password") String password,
+                             RedirectAttributes redirectAttributes) {
+        try {
+            mailboxService.create(host, port, username, password);
+            redirectAttributes.addFlashAttribute("successMessage",
+                    "Mailbox added — its IMAP adapter starts within ~30 seconds.");
+        } catch (DataIntegrityViolationException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "This mailbox (host + username) is already configured.");
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        }
+        return "redirect:/settings";
+    }
+
+    /** Pauses/resumes a mailbox's adapter without losing the stored credentials. */
+    @PostMapping("/mailboxes/{id}/toggle")
+    public String toggleMailbox(@PathVariable Long id,
+                                @RequestParam("enabled") boolean enabled,
+                                RedirectAttributes redirectAttributes) {
+        try {
+            mailboxService.setEnabled(id, enabled);
+            redirectAttributes.addFlashAttribute("successMessage",
+                    "Mailbox " + (enabled ? "enabled" : "disabled") + ".");
+        } catch (IllegalArgumentException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        }
+        return "redirect:/settings";
+    }
+
+    @PostMapping("/mailboxes/{id}/delete")
+    public String deleteMailbox(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+        try {
+            mailboxService.delete(id);
+            redirectAttributes.addFlashAttribute("successMessage", "Mailbox deleted.");
+        } catch (IllegalArgumentException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        }
+        return "redirect:/settings";
+    }
+
+    /**
+     * Saves the tenant's Ollama endpoint override (Phase 2.2 S3). Blank = inherit the
+     * platform instance. The pipeline picks the new endpoint up on the next LLM call;
+     * each distinct endpoint gets its own circuit breaker.
+     */
+    @PostMapping("/ollama")
+    public String saveOllamaUrl(@RequestParam("ollamaBaseUrl") String ollamaBaseUrl,
+                                RedirectAttributes redirectAttributes) {
+        String trimmed = ollamaBaseUrl == null ? "" : ollamaBaseUrl.trim();
+        if (!trimmed.isEmpty() && !trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "Ollama URL must start with http:// or https:// — setting not saved.");
+            return "redirect:/settings";
+        }
+        settingsService.setString(OllamaClientProvider.KEY_OLLAMA_BASE_URL, trimmed);
+        redirectAttributes.addFlashAttribute("successMessage", trimmed.isEmpty()
+                ? "Ollama endpoint override cleared — using the platform instance."
+                : "Ollama endpoint saved: " + trimmed);
         return "redirect:/settings";
     }
 

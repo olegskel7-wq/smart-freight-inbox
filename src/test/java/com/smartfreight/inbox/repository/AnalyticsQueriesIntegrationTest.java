@@ -6,11 +6,13 @@ import com.smartfreight.inbox.entity.TicketAuditLog;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.service.TicketAuditService;
+import com.smartfreight.inbox.support.DefaultTenantTestExecutionListener;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -34,6 +36,9 @@ import static org.assertj.core.api.Assertions.within;
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
+@TestExecutionListeners(
+        value = DefaultTenantTestExecutionListener.class,
+        mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 @Transactional
 class AnalyticsQueriesIntegrationTest {
 

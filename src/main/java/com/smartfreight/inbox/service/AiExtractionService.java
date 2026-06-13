@@ -1,13 +1,11 @@
 package com.smartfreight.inbox.service;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -64,20 +62,17 @@ public class AiExtractionService {
     /** Extraction model name — read from application.yaml. */
     private final String extractionModel;
 
-    private final WebClient ollamaWebClient;
+    private final OllamaClientProvider ollamaClients;
     private final SettingsService settingsService;
-    private final CircuitBreaker ollamaCircuitBreaker;
     private final Counter fallbackCounter;
     private final Timer ollamaTimer;
 
-    public AiExtractionService(WebClient ollamaWebClient,
+    public AiExtractionService(OllamaClientProvider ollamaClients,
                                SettingsService settingsService,
-                               @Qualifier("ollamaCircuitBreaker") CircuitBreaker ollamaCircuitBreaker,
                                MeterRegistry meterRegistry,
                                @Value("${ollama.extraction-model:qwen2.5:7b}") String extractionModel) {
-        this.ollamaWebClient = ollamaWebClient;
+        this.ollamaClients = ollamaClients;
         this.settingsService = settingsService;
-        this.ollamaCircuitBreaker = ollamaCircuitBreaker;
         this.extractionModel = extractionModel;
         this.fallbackCounter = Counter.builder("smartfreight_extraction_fallback_total")
                 .description("Times regex fallback was used instead of LLM for container extraction")
@@ -122,8 +117,10 @@ public class AiExtractionService {
             log.debug("Sending extraction request to Ollama model {}", extractionModel);
 
             long start = System.nanoTime();
+            // Phase 2.2 S3: client + breaker resolved per call for the CURRENT tenant's endpoint.
+            WebClient ollamaWebClient = ollamaClients.client();
             @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaCircuitBreaker.executeSupplier(() -> ollamaWebClient
+            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
                     .post()
                     .uri("/api/generate")
                     .bodyValue(requestBody)

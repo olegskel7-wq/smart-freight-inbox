@@ -44,6 +44,7 @@ class AiExtractionServiceTest {
     @Mock private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
     @Mock private WebClient.ResponseSpec responseSpec;
     @Mock private SettingsService settingsService;
+    @Mock private OllamaClientProvider ollamaClients;
 
     private AiExtractionService service;
     private CircuitBreaker circuitBreaker;
@@ -54,8 +55,11 @@ class AiExtractionServiceTest {
         lenient().when(settingsService.getString(anyString(), anyString()))
                 .thenAnswer(inv -> inv.getArgument(1));
         // Real (default-config) breaker per test — stays CLOSED unless a test opens it.
+        // Phase 2.2 S3: the service asks the provider per call; hand back the test doubles.
         circuitBreaker = CircuitBreaker.ofDefaults("ollama-test");
-        service = new AiExtractionService(webClient, settingsService, circuitBreaker,
+        lenient().when(ollamaClients.client()).thenReturn(webClient);
+        lenient().when(ollamaClients.circuitBreaker()).thenReturn(circuitBreaker);
+        service = new AiExtractionService(ollamaClients, settingsService,
                 new SimpleMeterRegistry(), "qwen2.5:7b");
     }
 

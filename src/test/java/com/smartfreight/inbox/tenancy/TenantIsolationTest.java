@@ -62,8 +62,10 @@ class TenantIsolationTest {
 
     @BeforeEach
     void createSecondTenant() {
-        // The tenant table itself carries no RLS — any context can read/insert it.
-        secondTenant = tenants.save(Tenant.builder().name("isolation-" + UUID.randomUUID()).build()).getId();
+        // The tenant table carries no RLS, but a Hibernate session still needs a declared
+        // state (S3 fail-loud) — tenant administration is cross-tenant, hence system.
+        secondTenant = TenantContext.callAsSystem(
+                () -> tenants.save(Tenant.builder().name("isolation-" + UUID.randomUUID()).build()).getId());
     }
 
     @AfterEach
@@ -73,8 +75,8 @@ class TenantIsolationTest {
         TenantContext.runAsSystem(() -> {
             jdbc.update("DELETE FROM outbox_event");
             jdbc.update("DELETE FROM email_ticket");
+            tenants.deleteById(secondTenant);
         });
-        tenants.deleteById(secondTenant);
     }
 
     private EmailTicket newTicket(String messageId) {

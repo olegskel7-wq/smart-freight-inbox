@@ -18,9 +18,10 @@ import java.io.IOException;
  * chain (order -100), so the authentication is already populated. Everything downstream —
  * controllers, services, Hibernate sessions, RLS GUCs — sees the tenant from the principal.
  *
- * <p>Principals without a tenant (anonymous actuator scrapes, {@code @WithMockUser} in
- * tests) leave the context unset, which resolves to the default tenant — the documented
- * S1 single-tenant compromise.
+ * <p>Principals without a tenant (the login page, actuator scrapes, static resources) get
+ * the fail-closed <b>anonymous</b> scope (S3): tenant entities read as empty, writes fail
+ * on the FK. Every request therefore leaves this filter with an explicitly declared state —
+ * the unset-equals-default S1 compromise is gone.
  */
 @Component
 public class TenantFilter extends OncePerRequestFilter {
@@ -29,11 +30,9 @@ public class TenantFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof TenantUserDetails user) {
-            try (TenantContext.Scope ignored = TenantContext.openAs(user.getTenantId())) {
-                filterChain.doFilter(request, response);
-            }
-        } else {
+        try (TenantContext.Scope ignored = auth != null && auth.getPrincipal() instanceof TenantUserDetails user
+                ? TenantContext.openAs(user.getTenantId())
+                : TenantContext.openAnonymous()) {
             filterChain.doFilter(request, response);
         }
     }

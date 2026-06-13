@@ -46,13 +46,17 @@ class SettingsTenantIsolationTest {
 
     @BeforeEach
     void createSecondTenant() {
-        secondTenant = tenants.save(Tenant.builder().name("settings-" + UUID.randomUUID()).build()).getId();
+        // Tenant administration is cross-tenant — declare the system state (S3 fail-loud).
+        secondTenant = TenantContext.callAsSystem(
+                () -> tenants.save(Tenant.builder().name("settings-" + UUID.randomUUID()).build()).getId());
     }
 
     @AfterEach
     void hardDeleteOverrides() {
-        TenantContext.runAsSystem(() -> jdbc.update("DELETE FROM tenant_setting"));
-        tenants.deleteById(secondTenant);
+        TenantContext.runAsSystem(() -> {
+            jdbc.update("DELETE FROM tenant_setting");
+            tenants.deleteById(secondTenant);
+        });
     }
 
     @Test
