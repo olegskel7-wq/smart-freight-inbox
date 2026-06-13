@@ -126,6 +126,16 @@ public class EmailTicket {
     private String draftReply;
 
     /**
+     * True for outbound proactive status updates (Phase 2.4) — tickets the platform creates
+     * itself when a watched shipment hits a milestone, not mail a customer sent in. They reuse
+     * the ticket model for visibility/audit/auto-send, but are NOT inbound: analytics "received"
+     * counts exclude them and {@code EmailReplyService} sends them with a fresh subject (no "Re:").
+     */
+    @Column(name = "proactive", nullable = false)
+    @Builder.Default
+    private boolean proactive = false;
+
+    /**
      * Heuristic confidence score 0.0–1.0 (Phase 1.6), computed from verifiable pipeline facts
      * (type classified, identifier extracted, item found, rate matched) — deliberately NOT an
      * LLM self-assessment, which small models cannot calibrate. Written on every drafting run

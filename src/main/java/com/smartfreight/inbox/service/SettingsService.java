@@ -41,6 +41,12 @@ public class SettingsService {
     /** AI drafting prompt template ({@code {itemContext}}, {@code {email}} placeholders). Seeded by migration V9. */
     public static final String KEY_DRAFTING_PROMPT = "ai.drafting-prompt";
 
+    /**
+     * Proactive status-update prompt template ({@code {itemContext}}, {@code {previousStatus}}
+     * placeholders) for Phase 2.4 milestone notifications. Seeded by migration V22.
+     */
+    public static final String KEY_STATUS_UPDATE_PROMPT = "ai.status-update-prompt";
+
     private final AppSettingRepository appSettings;
     private final TenantSettingRepository tenantSettings;
 

@@ -117,6 +117,30 @@ class AiDraftingServiceTest {
         );
     }
 
+    // Phase 2.4: проактивный апдейт — Ollama вернул текст, возвращаем его
+    @Test
+    void generateProactiveUpdate_ollamaReturnsDraft_returnsDraft() {
+        String aiDraft = "Hello, good news — your shipment MSCU1234567 has arrived at Felixstowe.";
+        stubOllama(Map.of("response", aiDraft, "done", true));
+
+        String result = service.generateProactiveUpdate(buildItem("MSCU1234567"), "IN_TRANSIT");
+
+        assertEquals(aiDraft, result);
+    }
+
+    // Phase 2.4: Ollama недоступен — fallback-нотис содержит данные груза
+    @Test
+    void generateProactiveUpdate_ollamaFails_fallbackContainsShipmentData() {
+        stubOllamaError();
+
+        String result = service.generateProactiveUpdate(buildItem("MSCU1234567"), "IN_TRANSIT");
+
+        assertNotNull(result);
+        assertFalse(result.isBlank(), "Fallback notice must not be empty");
+        assertTrue(result.contains("MSCU1234567"), "Fallback must contain the shipment identifier");
+        assertTrue(result.contains("AT_PORT"), "Fallback must contain the current status");
+    }
+
     // Сценарий 4 (Phase 1.7): breaker ОТКРЫТ — исключение пробрасывается (без fallback-драфта),
     // пайплайн припаркует тикет в RETRY_LATER; HTTP-вызов к Ollama не делается
     @Test

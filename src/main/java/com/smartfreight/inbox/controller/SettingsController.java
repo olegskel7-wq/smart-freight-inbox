@@ -6,6 +6,7 @@ import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
+import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
 import org.springframework.beans.factory.annotation.Value;
@@ -84,6 +85,11 @@ public class SettingsController {
         model.addAttribute("autoSendTypes",
                 settingsService.getString(AutoSendService.KEY_TYPES, "STATUS_UPDATE"));
         model.addAttribute("allTicketTypes", TicketType.values());
+        model.addAttribute("statusUpdateEnabled",
+                settingsService.isFeatureEnabled(StatusWatchScheduler.FEATURE_KEY, false));
+        model.addAttribute("statusUpdateMilestones",
+                settingsService.getString(StatusWatchScheduler.KEY_MILESTONES,
+                        StatusWatchScheduler.DEFAULT_MILESTONES));
         return "settings";
     }
 
@@ -130,6 +136,28 @@ public class SettingsController {
             redirectAttributes.addFlashAttribute("successMessage",
                     "Auto-send settings saved" + (enabled ? "" : " (feature is off)") + ".");
         }
+        return "redirect:/settings";
+    }
+
+    /**
+     * Updates the proactive status-update automation gates (Phase 2.4). Milestone names are
+     * stored upper-cased and de-blanked; they are matched against the raw backend status names
+     * (e.g. AT_PORT, RELEASED, DELIVERED), so no enum validation applies here.
+     */
+    @PostMapping("/statusupdate")
+    public String saveStatusUpdate(@RequestParam(name = "statusUpdateEnabled", defaultValue = "false") boolean enabled,
+                                   @RequestParam(name = "statusUpdateMilestones", required = false) String milestones,
+                                   RedirectAttributes redirectAttributes) {
+        String normalised = (milestones == null ? "" : milestones).trim();
+        if (enabled && normalised.isEmpty()) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "Status-update automation is on but no milestones are set — nothing will be sent.");
+            return "redirect:/settings";
+        }
+        settingsService.setString(StatusWatchScheduler.FEATURE_KEY, enabled ? "true" : "false");
+        settingsService.setString(StatusWatchScheduler.KEY_MILESTONES, normalised);
+        redirectAttributes.addFlashAttribute("successMessage",
+                "Status-update automation saved" + (enabled ? "" : " (feature is off)") + ".");
         return "redirect:/settings";
     }
 

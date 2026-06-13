@@ -227,6 +227,46 @@
         </div>
     </div>
 
+    <!-- Status Update Automation (editable) -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold d-flex align-items-center gap-2">
+            Status Update Automation
+            <span th:if="${statusUpdateEnabled}" class="badge bg-success small">ON</span>
+            <span th:unless="${statusUpdateEnabled}" class="badge bg-secondary small">OFF</span>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                Proactively email customers when their shipment reaches a milestone — no need for
+                them to ask. A subscription is created automatically whenever a customer enquires
+                about a shipment; updates are sent until it is delivered. Delivery reuses the
+                <strong>auto-send</strong> gate above: turn auto-send on for STATUS_UPDATE to send
+                these automatically, otherwise they appear as drafts for review.
+            </p>
+            <form method="post" th:action="@{/settings/statusupdate}">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="statusUpdateEnabled" name="statusUpdateEnabled" value="true"
+                           th:checked="${statusUpdateEnabled}">
+                    <label class="form-check-label" for="statusUpdateEnabled">
+                        Enable proactive status updates
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="statusUpdateMilestones">Milestone statuses</label>
+                    <input type="text" class="form-control" style="max-width: 360px;"
+                           id="statusUpdateMilestones" name="statusUpdateMilestones"
+                           th:value="${statusUpdateMilestones}">
+                    <div class="form-text">
+                        Comma-separated backend status names that trigger a notification
+                        (e.g. <code>AT_PORT,RELEASED,DELIVERED</code>). Intermediate statuses stay
+                        silent so customers are not flooded.
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Save status-update settings</button>
+            </form>
+        </div>
+    </div>
+
     <!-- AI Prompts (editable) -->
     <div class="card shadow-sm mb-4">
         <div class="card-header fw-semibold">AI Prompts</div>

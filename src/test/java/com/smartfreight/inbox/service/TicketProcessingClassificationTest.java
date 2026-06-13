@@ -70,6 +70,9 @@ class TicketProcessingClassificationTest {
     @Mock
     private AutoSendService autoSendService;
 
+    @Mock
+    private ShipmentWatchService shipmentWatchService;
+
     private TicketProcessingService service;
 
     @BeforeEach
@@ -77,7 +80,7 @@ class TicketProcessingClassificationTest {
         service = new TicketProcessingService(
                 emailTicketRepository, emailClassificationService, aiExtractionService,
                 itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
-                slaService, autoSendService, new SimpleMeterRegistry());
+                slaService, autoSendService, shipmentWatchService, new SimpleMeterRegistry());
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);

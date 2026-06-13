@@ -76,10 +76,14 @@ public class EmailReplyService {
             }
             helper.setFrom(fromAddress);
             helper.setTo(to);
-            helper.setSubject("Re: " + (ticket.getSubject() != null ? ticket.getSubject() : ""));
+            // Phase 2.4: a proactive status update is a fresh email, not a reply — its subject
+            // stands on its own and its synthetic Message-ID belongs to no inbound thread, so no
+            // "Re:" prefix and no threading headers. Inbound replies keep both.
+            String subject = ticket.getSubject() != null ? ticket.getSubject() : "";
+            helper.setSubject(ticket.isProactive() ? subject : "Re: " + subject);
             helper.setText(ticket.getDraftReply() != null ? ticket.getDraftReply() : "");
 
-            if (ticket.getMessageId() != null) {
+            if (!ticket.isProactive() && ticket.getMessageId() != null) {
                 message.setHeader("In-Reply-To", ticket.getMessageId());
                 message.setHeader("References", ticket.getMessageId());
             }

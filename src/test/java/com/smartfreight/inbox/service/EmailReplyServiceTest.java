@@ -120,6 +120,25 @@ class EmailReplyServiceTest {
         verify(mailSender, times(1)).send(mimeMessage);
     }
 
+    // Phase 2.4: проактивный апдейт — свежее письмо, НЕ reply. Даже при непустом (синтетическом)
+    // messageId threading-заголовки не выставляются (новый тред), отправка происходит.
+    @Test
+    void sendReply_proactiveTicket_skipsThreadingHeaders() throws Exception {
+        EmailTicket ticket = buildTicket(
+                "customer@example.com",
+                "Shipment update: MSCU1234567",
+                "Good news — your shipment has been released.",
+                "<proactive-7f3a@smartfreight>"
+        );
+        ticket.setProactive(true);
+
+        service.sendReply(ticket);
+
+        verify(mimeMessage, never()).setHeader(eq("In-Reply-To"), any());
+        verify(mimeMessage, never()).setHeader(eq("References"), any());
+        verify(mailSender, times(1)).send(mimeMessage);
+    }
+
     // Сценарий 7: mailSender.send() бросает исключение — сервис оборачивает в RuntimeException
     @Test
     void sendReply_smtpFailure_throwsRuntimeException() {

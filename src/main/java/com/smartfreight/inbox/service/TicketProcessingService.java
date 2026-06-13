@@ -3,6 +3,7 @@ package com.smartfreight.inbox.service;
 import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
@@ -57,6 +58,7 @@ public class TicketProcessingService {
     private final GmailDraftService gmailDraftService;
     private final SlaService slaService;
     private final AutoSendService autoSendService;
+    private final ShipmentWatchService shipmentWatchService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
@@ -80,6 +82,7 @@ public class TicketProcessingService {
                                    GmailDraftService gmailDraftService,
                                    SlaService slaService,
                                    AutoSendService autoSendService,
+                                   ShipmentWatchService shipmentWatchService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailClassificationService = emailClassificationService;
@@ -90,6 +93,7 @@ public class TicketProcessingService {
         this.gmailDraftService = gmailDraftService;
         this.slaService = slaService;
         this.autoSendService = autoSendService;
+        this.shipmentWatchService = shipmentWatchService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -263,6 +267,16 @@ public class TicketProcessingService {
         draftReadyCounter.increment();
         processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
         log.info("Ticket processing finished: DRAFT_READY (confidence {})", ticket.getAiConfidence());
+
+        // Phase 2.4: a STATUS_UPDATE enquiry grounded in real backend data becomes a proactive
+        // subscription — StatusWatchScheduler keeps this customer posted about this shipment
+        // until it is delivered. Recorded unconditionally (cheap); the scheduler is gated by
+        // feature.status-update-automation, so enabling the flag activates recent enquiries at once.
+        if (ticket.getTicketType() == TicketType.STATUS_UPDATE
+                && ticket.getExtractedIdentifier() != null
+                && item != null) {
+            shipmentWatchService.upsertFromTicket(ticket, item);
+        }
 
         // The auto-send decision is made here (one settings read, one log line), but the SMTP
         // call belongs to the caller — after this transaction commits. An eligible ticket also

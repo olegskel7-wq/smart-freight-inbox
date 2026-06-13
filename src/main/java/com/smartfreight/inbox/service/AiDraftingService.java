@@ -67,6 +67,25 @@ public class AiDraftingService {
     /** Substituted for {@code {rateContext}} when no rates matched the enquiry. */
     private static final String NO_RATES_NOTE = "No rate information available for this enquiry. Do not quote any price.";
 
+    /**
+     * Fallback prompt for proactive status updates (Phase 2.4) when the DB-backed
+     * {@code ai.status-update-prompt} row is missing or blank. Kept in sync with migration V22.
+     * {@code {itemContext}} → the looked-up shipment data, {@code {previousStatus}} → the status
+     * the customer was last told about.
+     */
+    private static final String DEFAULT_STATUS_UPDATE_PROMPT = """
+            You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
+            Write a short, proactive status update email to notify the customer that their shipment has progressed.
+            This is NOT a reply to a customer message — the customer has not just written to you. Open accordingly.
+            Use only the shipment information provided. Be helpful, polite and factual. Do NOT invent information.
+
+            Shipment information:
+            {itemContext}
+
+            Previous status: {previousStatus}
+
+            Write only the email body (no subject line). Keep it to a few sentences.""";
+
     /** Draft generation model name — read from application.yaml. */
     private final String draftingModel;
 
@@ -137,6 +156,46 @@ public class AiDraftingService {
                     + "never mention margin):\n" + rates;
         }
 
+        return callOllama(prompt, item);
+    }
+
+    /**
+     * Generates a proactive status-update notification (Phase 2.4).
+     *
+     * <p>Unlike {@link #generateDraft}, this is not a reply to an inbound email — it is composed
+     * when a watched shipment reaches a milestone, so it uses the dedicated
+     * {@code ai.status-update-prompt} template ({@code {itemContext}}, {@code {previousStatus}})
+     * rather than the reply prompt. The Ollama call, per-tenant endpoint, circuit breaker and
+     * fallback are shared with the reply path.
+     *
+     * @param item           the freshly looked-up shipment (its current status is the milestone)
+     * @param previousStatus the status the customer was last told about (may be null)
+     * @return generated or fallback notification body
+     */
+    public String generateProactiveUpdate(TrackedItem item, String previousStatus) {
+        String itemContext = buildItemContext(item);
+        String prev = (previousStatus == null || previousStatus.isBlank()) ? "Unknown" : previousStatus;
+
+        String template = settingsService.getString(
+                SettingsService.KEY_STATUS_UPDATE_PROMPT, DEFAULT_STATUS_UPDATE_PROMPT);
+        String prompt = template
+                .replace("{itemContext}", itemContext)
+                .replace("{previousStatus}", prev);
+
+        return callOllama(prompt, item);
+    }
+
+    /**
+     * Sends a generate request to Ollama for the CURRENT tenant's endpoint (Phase 2.2 S3) and
+     * returns the response text, falling back to a static draft on an empty/failed call.
+     *
+     * @param prompt       the fully substituted prompt
+     * @param fallbackItem item used to build the static fallback when the call yields nothing
+     * @return the model's reply, or a fallback draft
+     * @throws CallNotPermittedException when the breaker is OPEN — propagated so the caller can
+     *         decide (the reply pipeline parks the ticket; the proactive poller skips the watch)
+     */
+    private String callOllama(String prompt, TrackedItem fallbackItem) {
         try {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", draftingModel);
@@ -160,13 +219,13 @@ public class AiDraftingService {
 
             if (response == null) {
                 log.warn("Ollama returned null response during drafting");
-                return buildFallbackDraft(item);
+                return buildFallbackDraft(fallbackItem);
             }
 
             String draft = String.valueOf(response.getOrDefault("response", "")).trim();
             if (draft.isEmpty()) {
                 log.warn("Ollama returned empty draft");
-                return buildFallbackDraft(item);
+                return buildFallbackDraft(fallbackItem);
             }
 
             log.info("Draft generated successfully ({} chars)", draft.length());
@@ -179,7 +238,7 @@ public class AiDraftingService {
             throw e;
         } catch (Exception e) {
             log.error("Drafting call to Ollama failed: {}", e.getMessage());
-            return buildFallbackDraft(item);
+            return buildFallbackDraft(fallbackItem);
         }
     }
 
