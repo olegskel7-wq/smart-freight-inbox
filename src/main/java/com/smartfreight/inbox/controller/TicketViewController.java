@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.EmailReplyService;
+import com.smartfreight.inbox.service.QuoteFollowUpService;
 import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
 import org.slf4j.Logger;
@@ -44,15 +45,18 @@ public class TicketViewController {
     private final EmailReplyService emailReplyService;
     private final TicketAuditService auditService;
     private final SendRateLimiter sendRateLimiter;
+    private final QuoteFollowUpService quoteFollowUpService;
 
     public TicketViewController(EmailTicketRepository emailTicketRepository,
                                 EmailReplyService emailReplyService,
                                 TicketAuditService auditService,
-                                SendRateLimiter sendRateLimiter) {
+                                SendRateLimiter sendRateLimiter,
+                                QuoteFollowUpService quoteFollowUpService) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
         this.auditService = auditService;
         this.sendRateLimiter = sendRateLimiter;
+        this.quoteFollowUpService = quoteFollowUpService;
     }
 
     /** GET / — authenticated users go directly to tickets, others to login. */
@@ -258,6 +262,9 @@ public class TicketViewController {
                 ticket.setStatus(TicketStatus.CLOSED);
                 log.info("Ticket {} draft sent to {} and closed", id, ticket.getSenderEmail());
                 auditService.record(id, TicketAuditService.ACTION_SEND, "to=" + ticket.getSenderEmail());
+                // Phase 2.5: a sent RFQ quote arms a one-shot follow-up (guarded inside the service —
+                // non-RFQ and proactive tickets are ignored).
+                quoteFollowUpService.armFromTicket(ticket);
                 redirectAttributes.addFlashAttribute("successMessage",
                         "Reply sent to " + ticket.getSenderEmail());
             } catch (Exception e) {

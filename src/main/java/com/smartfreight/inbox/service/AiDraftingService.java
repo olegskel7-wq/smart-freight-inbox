@@ -1,5 +1,6 @@
 package com.smartfreight.inbox.service;
 
+import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.TrackedItem;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -86,6 +87,38 @@ public class AiDraftingService {
 
             Write only the email body (no subject line). Keep it to a few sentences.""";
 
+    /**
+     * Fallback prompt for proactive quote follow-ups (Phase 2.5) when the DB-backed
+     * {@code ai.quote-followup-prompt} row is missing or blank. Kept in sync with migration V24.
+     * {@code {originalEnquiry}} → the customer's original RFQ text.
+     */
+    private static final String DEFAULT_QUOTE_FOLLOWUP_PROMPT = """
+            You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
+            You sent this customer a freight quote a couple of days ago and have not heard back.
+            Write a short, polite follow-up email gently checking whether they have any questions about the quote and whether they would like to proceed.
+            This is NOT a reply to a new customer message — you are reaching out proactively. Open accordingly.
+            Do NOT restate prices or invent any new figures. Keep it warm, brief and low-pressure.
+
+            The customer's original enquiry was:
+            {originalEnquiry}
+
+            Write only the email body (no subject line). Keep it to a few sentences.""";
+
+    /**
+     * Static fallback nudge used when Ollama is unavailable for a quote follow-up — there is no
+     * {@link TrackedItem} here (a follow-up is about a quote, not a shipment), so the generic
+     * shipment fallback does not apply.
+     */
+    private static final String DEFAULT_FOLLOWUP_FALLBACK = """
+            Dear Customer,
+
+            I hope you are well. I am following up on the freight quote we sent you recently.
+            Please let me know if you have any questions or if you would like to go ahead — we would be glad to help.
+
+            Kind regards,
+            Customer Service Team
+            """;
+
     /** Draft generation model name — read from application.yaml. */
     private final String draftingModel;
 
@@ -156,7 +189,7 @@ public class AiDraftingService {
                     + "never mention margin):\n" + rates;
         }
 
-        return callOllama(prompt, item);
+        return callOllama(prompt, buildFallbackDraft(item));
     }
 
     /**
@@ -182,20 +215,44 @@ public class AiDraftingService {
                 .replace("{itemContext}", itemContext)
                 .replace("{previousStatus}", prev);
 
-        return callOllama(prompt, item);
+        return callOllama(prompt, buildFallbackDraft(item));
+    }
+
+    /**
+     * Generates a proactive quote follow-up nudge (Phase 2.5).
+     *
+     * <p>Composed when a sent quote has gone unanswered for the configured delay — it is not a
+     * reply to inbound mail, so it uses the dedicated {@code ai.quote-followup-prompt} template
+     * ({@code {originalEnquiry}}) rather than the reply prompt, and a quote-specific static
+     * fallback (there is no shipment item to fall back on). The Ollama call, per-tenant endpoint,
+     * circuit breaker and breaker propagation are shared with the reply path.
+     *
+     * @param originalTicket the quoted RFQ ticket (its body is the original enquiry context)
+     * @return generated or fallback nudge body
+     */
+    public String generateQuoteFollowUp(EmailTicket originalTicket) {
+        String body = originalTicket.getBody() == null ? "" : originalTicket.getBody();
+        String enquiry = body.substring(0, Math.min(body.length(), MAX_PROMPT_BODY_CHARS));
+
+        String template = settingsService.getString(
+                SettingsService.KEY_QUOTE_FOLLOWUP_PROMPT, DEFAULT_QUOTE_FOLLOWUP_PROMPT);
+        String prompt = template.replace("{originalEnquiry}", enquiry);
+
+        return callOllama(prompt, DEFAULT_FOLLOWUP_FALLBACK);
     }
 
     /**
      * Sends a generate request to Ollama for the CURRENT tenant's endpoint (Phase 2.2 S3) and
      * returns the response text, falling back to a static draft on an empty/failed call.
      *
-     * @param prompt       the fully substituted prompt
-     * @param fallbackItem item used to build the static fallback when the call yields nothing
-     * @return the model's reply, or a fallback draft
+     * @param prompt        the fully substituted prompt
+     * @param fallbackDraft static draft returned when the call yields nothing (precomputed by the
+     *                      caller — pure string-building, no I/O)
+     * @return the model's reply, or the fallback draft
      * @throws CallNotPermittedException when the breaker is OPEN — propagated so the caller can
-     *         decide (the reply pipeline parks the ticket; the proactive poller skips the watch)
+     *         decide (the reply pipeline parks the ticket; the proactive pollers skip the entry)
      */
-    private String callOllama(String prompt, TrackedItem fallbackItem) {
+    private String callOllama(String prompt, String fallbackDraft) {
         try {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", draftingModel);
@@ -219,13 +276,13 @@ public class AiDraftingService {
 
             if (response == null) {
                 log.warn("Ollama returned null response during drafting");
-                return buildFallbackDraft(fallbackItem);
+                return fallbackDraft;
             }
 
             String draft = String.valueOf(response.getOrDefault("response", "")).trim();
             if (draft.isEmpty()) {
                 log.warn("Ollama returned empty draft");
-                return buildFallbackDraft(fallbackItem);
+                return fallbackDraft;
             }
 
             log.info("Draft generated successfully ({} chars)", draft.length());
@@ -238,7 +295,7 @@ public class AiDraftingService {
             throw e;
         } catch (Exception e) {
             log.error("Drafting call to Ollama failed: {}", e.getMessage());
-            return buildFallbackDraft(fallbackItem);
+            return fallbackDraft;
         }
     }
 

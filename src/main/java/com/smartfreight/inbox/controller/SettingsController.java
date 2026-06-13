@@ -6,6 +6,7 @@ import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
+import com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler;
 import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
@@ -90,6 +91,11 @@ public class SettingsController {
         model.addAttribute("statusUpdateMilestones",
                 settingsService.getString(StatusWatchScheduler.KEY_MILESTONES,
                         StatusWatchScheduler.DEFAULT_MILESTONES));
+        model.addAttribute("quoteFollowUpEnabled",
+                settingsService.isFeatureEnabled(QuoteFollowUpScheduler.FEATURE_KEY, false));
+        model.addAttribute("quoteFollowUpDelayHours",
+                settingsService.getString(QuoteFollowUpScheduler.KEY_DELAY_HOURS,
+                        String.valueOf(QuoteFollowUpScheduler.DEFAULT_DELAY_HOURS)));
         return "settings";
     }
 
@@ -158,6 +164,35 @@ public class SettingsController {
         settingsService.setString(StatusWatchScheduler.KEY_MILESTONES, normalised);
         redirectAttributes.addFlashAttribute("successMessage",
                 "Status-update automation saved" + (enabled ? "" : " (feature is off)") + ".");
+        return "redirect:/settings";
+    }
+
+    /**
+     * Updates the proactive quote-follow-up gates (Phase 2.5). The delay is a non-negative whole
+     * number of hours; a malformed value is rejected so the stored setting stays parseable by
+     * {@link QuoteFollowUpScheduler#delayHours}.
+     */
+    @PostMapping("/quotefollowup")
+    public String saveQuoteFollowUp(@RequestParam(name = "quoteFollowUpEnabled", defaultValue = "false") boolean enabled,
+                                    @RequestParam("quoteFollowUpDelayHours") String delayHours,
+                                    RedirectAttributes redirectAttributes) {
+        long parsed;
+        try {
+            parsed = Long.parseLong(delayHours.trim());
+        } catch (NumberFormatException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "Delay must be a whole number of hours — settings not saved.");
+            return "redirect:/settings";
+        }
+        if (parsed < 0) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "Delay cannot be negative — settings not saved.");
+            return "redirect:/settings";
+        }
+        settingsService.setString(QuoteFollowUpScheduler.FEATURE_KEY, enabled ? "true" : "false");
+        settingsService.setString(QuoteFollowUpScheduler.KEY_DELAY_HOURS, String.valueOf(parsed));
+        redirectAttributes.addFlashAttribute("successMessage",
+                "Quote follow-up automation saved" + (enabled ? "" : " (feature is off)") + ".");
         return "redirect:/settings";
     }
 

@@ -47,6 +47,12 @@ public class SettingsService {
      */
     public static final String KEY_STATUS_UPDATE_PROMPT = "ai.status-update-prompt";
 
+    /**
+     * Proactive quote-follow-up prompt template ({@code {originalEnquiry}} placeholder) for
+     * Phase 2.5 nudges on silent quotes. Seeded by migration V24.
+     */
+    public static final String KEY_QUOTE_FOLLOWUP_PROMPT = "ai.quote-followup-prompt";
+
     private final AppSettingRepository appSettings;
     private final TenantSettingRepository tenantSettings;
 

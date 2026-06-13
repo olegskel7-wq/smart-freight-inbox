@@ -1,5 +1,6 @@
 package com.smartfreight.inbox.service;
 
+import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.TrackedItem;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -139,6 +140,37 @@ class AiDraftingServiceTest {
         assertFalse(result.isBlank(), "Fallback notice must not be empty");
         assertTrue(result.contains("MSCU1234567"), "Fallback must contain the shipment identifier");
         assertTrue(result.contains("AT_PORT"), "Fallback must contain the current status");
+    }
+
+    // Phase 2.5: проактивный quote follow-up — Ollama вернул текст, возвращаем его
+    @Test
+    void generateQuoteFollowUp_ollamaReturnsDraft_returnsDraft() {
+        String aiDraft = "Hi, just following up on the freight quote we sent — happy to help if you have questions.";
+        stubOllama(Map.of("response", aiDraft, "done", true));
+
+        String result = service.generateQuoteFollowUp(rfqTicket("Quote for 2x40ft Felixstowe to Leeds"));
+
+        assertEquals(aiDraft, result);
+    }
+
+    // Phase 2.5: Ollama недоступен — fallback-нудж не пустой и звучит как вежливое напоминание
+    @Test
+    void generateQuoteFollowUp_ollamaFails_returnsPoliteFallback() {
+        stubOllamaError();
+
+        String result = service.generateQuoteFollowUp(rfqTicket("Quote please"));
+
+        assertNotNull(result);
+        assertFalse(result.isBlank(), "Fallback nudge must not be empty");
+        assertTrue(result.toLowerCase().contains("following up") || result.toLowerCase().contains("quote"),
+                "Fallback nudge should read like a quote follow-up");
+    }
+
+    private EmailTicket rfqTicket(String body) {
+        EmailTicket t = new EmailTicket();
+        t.setSubject("Freight quote");
+        t.setBody(body);
+        return t;
     }
 
     // Сценарий 4 (Phase 1.7): breaker ОТКРЫТ — исключение пробрасывается (без fallback-драфта),

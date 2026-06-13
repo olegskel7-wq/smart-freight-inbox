@@ -74,6 +74,7 @@ public class AutoSendService {
     private final SettingsService settingsService;
     private final SendRateLimiter sendRateLimiter;
     private final TicketAuditService auditService;
+    private final QuoteFollowUpService quoteFollowUpService;
     private final Counter autoSentCounter;
     private final Counter autoFailedCounter;
 
@@ -82,12 +83,14 @@ public class AutoSendService {
                            SettingsService settingsService,
                            SendRateLimiter sendRateLimiter,
                            TicketAuditService auditService,
+                           QuoteFollowUpService quoteFollowUpService,
                            MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
         this.settingsService = settingsService;
         this.sendRateLimiter = sendRateLimiter;
         this.auditService = auditService;
+        this.quoteFollowUpService = quoteFollowUpService;
         this.autoSentCounter = Counter.builder("smartfreight_autosend_total")
                 .description("Automatic reply send results")
                 .tag("result", "sent")
@@ -201,6 +204,9 @@ public class AutoSendService {
         autoSentCounter.increment();
         auditService.record(ticketId, TicketAuditService.ACTION_AUTO_SEND,
                 "to=" + ticket.getSenderEmail() + ", confidence=" + ticket.getAiConfidence());
+        // Phase 2.5: a sent RFQ quote arms a one-shot follow-up. No-op for proactive tickets
+        // (status updates, quote nudges) and non-RFQ types — guarded inside the service.
+        quoteFollowUpService.armFromTicket(ticket);
         log.info("Ticket {} auto-sent to {} (confidence {})",
                 ticketId, ticket.getSenderEmail(), ticket.getAiConfidence());
     }

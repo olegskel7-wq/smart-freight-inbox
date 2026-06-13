@@ -43,12 +43,16 @@ class AutoSendServiceTest {
     @Mock
     private TicketAuditService auditService;
 
+    @Mock
+    private QuoteFollowUpService quoteFollowUpService;
+
     private AutoSendService service;
 
     @BeforeEach
     void setUp() {
         service = new AutoSendService(emailTicketRepository, emailReplyService,
-                settingsService, sendRateLimiter, auditService, new SimpleMeterRegistry());
+                settingsService, sendRateLimiter, auditService, quoteFollowUpService,
+                new SimpleMeterRegistry());
     }
 
     private EmailTicket ticket(TicketStatus status, TicketType type, Double confidence) {
@@ -184,6 +188,9 @@ class AutoSendServiceTest {
         verify(emailTicketRepository).save(ticket);
         verify(auditService).record(eq(1L), eq(TicketAuditService.ACTION_AUTO_SEND),
                 contains("confidence=0.9"));
+        // Phase 2.5: a successful auto-send offers the ticket to the follow-up arming (the
+        // RFQ/proactive guard lives inside QuoteFollowUpService, tested separately).
+        verify(quoteFollowUpService).armFromTicket(ticket);
     }
 
     @Test
@@ -225,6 +232,8 @@ class AutoSendServiceTest {
         verify(emailTicketRepository, never()).save(any());
         verify(auditService).record(eq(1L), eq(TicketAuditService.ACTION_AUTO_SEND),
                 contains("FAILED"));
+        // A failed send must not arm a follow-up — the quote never went out.
+        verifyNoInteractions(quoteFollowUpService);
     }
 
     @Test

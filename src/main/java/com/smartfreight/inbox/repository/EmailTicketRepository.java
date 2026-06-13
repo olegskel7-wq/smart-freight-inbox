@@ -261,4 +261,25 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
            "   AND t.status NOT IN :exemptStatuses")
     int markSlaBreached(@Param("now") java.time.LocalDateTime now,
                         @Param("exemptStatuses") Collection<TicketStatus> exemptStatuses);
+
+    /**
+     * Whether the customer has sent any inbound mail since their quote went out (Phase 2.5).
+     *
+     * Sender-based reply detection for {@link com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler}:
+     * a fresh inbound ticket from the same address after {@code since} means the customer engaged,
+     * so the pending follow-up is satisfied and no nudge is sent. Proactive tickets (our own
+     * outbound nudges/updates) are excluded; the original quoted ticket is excluded by
+     * {@code createdAt > since}. {@code @TenantId} scopes the query to the current tenant and
+     * {@code @SQLRestriction} adds {@code deleted = false}.
+     *
+     * @param email cleaned, lower-cased customer address (matched within the raw senderEmail)
+     * @param since the moment the quote was sent (strictly after)
+     * @return true if any qualifying inbound ticket exists
+     */
+    @Query("SELECT COUNT(t) > 0 FROM EmailTicket t " +
+           " WHERE t.proactive = false " +
+           "   AND t.createdAt > :since " +
+           "   AND LOWER(t.senderEmail) LIKE CONCAT('%', :email, '%')")
+    boolean existsInboundReplyFrom(@Param("email") String email,
+                                   @Param("since") java.time.LocalDateTime since);
 }

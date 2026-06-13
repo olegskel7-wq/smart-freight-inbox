@@ -296,6 +296,45 @@
         </div>
     </div>
 
+    <!-- Quote Follow-up Automation (editable) -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold d-flex align-items-center gap-2">
+            Quote Follow-up Automation
+            <span th:if="${quoteFollowUpEnabled}" class="badge bg-success small">ON</span>
+            <span th:unless="${quoteFollowUpEnabled}" class="badge bg-secondary small">OFF</span>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                Chase silent quotes automatically. When a reply to an RFQ is sent, a one-shot
+                follow-up is scheduled; if the customer has not been in touch after the delay below,
+                a gentle "just following up on our quote" nudge is composed. Delivery reuses the
+                <strong>auto-send</strong> gate above: RFQ is not auto-sent by default, so each nudge
+                appears as a draft for review unless you allow-list RFQ for auto-send.
+            </p>
+            <form method="post" th:action="@{/settings/quotefollowup}">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="quoteFollowUpEnabled" name="quoteFollowUpEnabled" value="true"
+                           th:checked="${quoteFollowUpEnabled}">
+                    <label class="form-check-label" for="quoteFollowUpEnabled">
+                        Enable quote follow-ups
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="quoteFollowUpDelayHours">Delay (hours)</label>
+                    <input type="number" min="0" step="1" class="form-control" style="max-width: 200px;"
+                           id="quoteFollowUpDelayHours" name="quoteFollowUpDelayHours"
+                           th:value="${quoteFollowUpDelayHours}">
+                    <div class="form-text">
+                        Hours of customer silence after the quote was sent before a single nudge is
+                        sent (e.g. <code>48</code>). A reply from the customer cancels the nudge.
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Save quote follow-up settings</button>
+            </form>
+        </div>
+    </div>
+
     <!-- AI Prompts (editable) -->
     <div class="card shadow-sm mb-4">
         <div class="card-header fw-semibold">AI Prompts</div>
