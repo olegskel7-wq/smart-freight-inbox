@@ -8,7 +8,6 @@ import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -22,26 +21,22 @@ import org.springframework.stereotype.Service;
  * 3. {@link #sendReply} sends the message via SMTP to the sender's address
  * 4. In-Reply-To/References headers are set for correct threading
  *
- * Dependencies: {@link com.smartfreight.inbox.config.SmtpConfig} (JavaMailSender bean)
- * and SMTP environment variables.
+ * The SMTP transport and FROM address are resolved per send by {@link MailSenderProvider}:
+ * a tenant with its own mailbox SMTP configured sends from its own account, everyone else
+ * falls back to the platform SMTP account ({@link com.smartfreight.inbox.config.SmtpConfig}).
  */
 @Service
 public class EmailReplyService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailReplyService.class);
 
-    private final JavaMailSender mailSender;
+    private final MailSenderProvider mailSenderProvider;
     private final Counter replySentCounter;
     private final Counter replyFailedCounter;
 
-    /** Sender email address (from which operator replies are dispatched). */
-    private final String fromAddress;
-
-    public EmailReplyService(JavaMailSender mailSender,
-                             MeterRegistry meterRegistry,
-                             @Value("${smtp.username}") String fromAddress) {
-        this.mailSender = mailSender;
-        this.fromAddress = fromAddress;
+    public EmailReplyService(MailSenderProvider mailSenderProvider,
+                             MeterRegistry meterRegistry) {
+        this.mailSenderProvider = mailSenderProvider;
         this.replySentCounter = Counter.builder("smartfreight_replies_total")
                 .description("Operator reply send results")
                 .tag("result", "sent")
@@ -65,6 +60,8 @@ public class EmailReplyService {
      * @throws RuntimeException if SMTP sending failed
      */
     public void sendReply(EmailTicket ticket) {
+        MailSenderProvider.ResolvedSender resolved = mailSenderProvider.resolve();
+        JavaMailSender mailSender = resolved.sender();
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
@@ -74,7 +71,7 @@ public class EmailReplyService {
                 throw new IllegalArgumentException(
                         "Cannot send reply: invalid or missing recipient address for ticket " + ticket.getId());
             }
-            helper.setFrom(fromAddress);
+            helper.setFrom(resolved.from());
             helper.setTo(to);
             // Phase 2.4: a proactive status update is a fresh email, not a reply — its subject
             // stands on its own and its synthetic Message-ID belongs to no inbound thread, so no

@@ -45,6 +45,7 @@
                     <th>Host</th>
                     <th>Port</th>
                     <th>Username</th>
+                    <th>Sends as</th>
                     <th>Status</th>
                     <th class="text-end">Actions</th>
                 </tr>
@@ -54,6 +55,12 @@
                     <td><code th:text="${m.host}">imap.example.com</code></td>
                     <td th:text="${m.port}">993</td>
                     <td th:text="${m.username}">inbox@example.com</td>
+                    <td>
+                        <code th:if="${m.smtpHost != null}"
+                              th:text="${m.fromAddress != null ? m.fromAddress : m.username}">sales@acme.co.uk</code>
+                        <span th:if="${m.smtpHost == null}" class="text-muted small"
+                              title="No SMTP configured — replies use the platform account">platform</span>
+                    </td>
                     <td>
                         <span th:if="${m.enabled and adapterRunning[m.id]}" class="badge bg-success">Running</span>
                         <span th:if="${m.enabled and !adapterRunning[m.id]}" class="badge bg-warning text-dark"
@@ -98,6 +105,27 @@
                     <input type="password" class="form-control form-control-sm" name="password"
                            placeholder="Password" autocomplete="new-password" required>
                 </div>
+
+                <div class="col-12">
+                    <p class="form-text mb-1 mt-1">
+                        Outgoing mail (optional). Leave blank to send replies through the platform
+                        account. When set, replies for this tenant are sent from this SMTP account,
+                        reusing the password above.
+                    </p>
+                </div>
+                <div class="col-sm-4">
+                    <input type="text" class="form-control form-control-sm" name="smtpHost"
+                           placeholder="SMTP host (smtp.gmail.com)">
+                </div>
+                <div class="col-sm-2">
+                    <input type="number" class="form-control form-control-sm" name="smtpPort"
+                           placeholder="587" min="1" max="65535">
+                </div>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control form-control-sm" name="fromAddress"
+                           placeholder="From address (defaults to username)" autocomplete="off">
+                </div>
+
                 <div class="col-12">
                     <button type="submit" class="btn btn-primary btn-sm" th:disabled="${!cipherConfigured}">
                         Add mailbox
@@ -132,11 +160,12 @@
 
     <!-- SMTP (read-only) -->
     <div class="card shadow-sm mb-4">
-        <div class="card-header fw-semibold">Outgoing Mail (SMTP)</div>
+        <div class="card-header fw-semibold">Outgoing Mail (SMTP) — platform fallback</div>
         <div class="card-body">
             <p class="text-muted small mb-3">
-                Replies are sent through the platform SMTP account, configured via environment
-                variables. Per-tenant sender addresses are on the roadmap.
+                Replies are sent through this platform SMTP account unless a mailbox above has
+                its own SMTP configured, in which case that tenant sends from its own address.
+                These platform values come from environment variables.
             </p>
             <dl class="row mb-0">
                 <dt class="col-sm-4">SMTP host</dt>
@@ -313,7 +342,8 @@
         <div class="card-body">
             <p class="fw-semibold mb-2">How to change SMTP</p>
             <p class="small text-muted mb-2">
-                Incoming mailboxes are managed above — no restart needed. Outgoing SMTP still
+                Per-tenant outgoing SMTP is managed per mailbox above — no restart needed.
+                The platform fallback account (used when a mailbox has no SMTP of its own)
                 comes from the <code>.env</code> file in the project root:
             </p>
             <pre class="bg-white border rounded p-3 small mb-2">SMTP_HOST=smtp.gmail.com

@@ -22,13 +22,19 @@ class EmailReplyServiceTest {
     private JavaMailSender mailSender;
 
     @Mock
+    private MailSenderProvider mailSenderProvider;
+
+    @Mock
     private MimeMessage mimeMessage;
 
     private EmailReplyService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailReplyService(mailSender, new SimpleMeterRegistry(), "operator@smartfreight.com");
+        service = new EmailReplyService(mailSenderProvider, new SimpleMeterRegistry());
+        // Every send resolves the current tenant's sender; here it is the platform sender mock.
+        when(mailSenderProvider.resolve())
+                .thenReturn(new MailSenderProvider.ResolvedSender(mailSender, "operator@smartfreight.com"));
         when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
     }
 

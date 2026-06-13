@@ -55,6 +55,23 @@ public class TenantMailbox {
     @Column(name = "password_enc", nullable = false)
     private String passwordEnc;
 
+    /**
+     * Outbound SMTP host for this account (e.g. {@code smtp.gmail.com}). Null = inbound-only
+     * mailbox: replies for this tenant fall back to the platform SMTP account. The SMTP
+     * password reuses {@link #passwordEnc} — one account, one credential (Gmail/O365 app
+     * passwords work this way).
+     */
+    @Column(name = "smtp_host")
+    private String smtpHost;
+
+    /** SMTP port — 587 (STARTTLS) or 465 (SMTPS). Null until smtpHost is set. */
+    @Column(name = "smtp_port")
+    private Integer smtpPort;
+
+    /** Address replies are sent FROM. Null = use {@link #username}. */
+    @Column(name = "from_address")
+    private String fromAddress;
+
     /** Disabled rows keep their credentials but get no adapter — pause without deleting. */
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;

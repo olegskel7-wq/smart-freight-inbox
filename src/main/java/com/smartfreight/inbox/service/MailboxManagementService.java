@@ -39,11 +39,16 @@ public class MailboxManagementService {
     /**
      * Adds a mailbox for the current tenant.
      *
+     * <p>SMTP is optional: pass a blank {@code smtpHost} for an inbound-only mailbox, whose
+     * replies fall back to the platform SMTP account. When set, the SMTP password reuses the
+     * IMAP one ({@code rawPassword}) — one account, one credential.
+     *
      * @throws IllegalArgumentException on blank/invalid input
      * @throws IllegalStateException    when MAILBOX_ENCRYPTION_KEY is missing
      */
     @Transactional
-    public void create(String host, int port, String username, String rawPassword) {
+    public void create(String host, int port, String username, String rawPassword,
+                       String smtpHost, Integer smtpPort, String fromAddress) {
         if (host == null || host.isBlank()
                 || username == null || username.isBlank()
                 || rawPassword == null || rawPassword.isBlank()) {
@@ -58,6 +63,17 @@ public class MailboxManagementService {
         mailbox.setUsername(username.trim());
         mailbox.setPasswordEnc(secretCipher.encrypt(rawPassword));
         mailbox.setEnabled(true);
+
+        if (smtpHost != null && !smtpHost.isBlank()) {
+            int resolvedSmtpPort = smtpPort != null ? smtpPort : 587;
+            if (resolvedSmtpPort < 1 || resolvedSmtpPort > 65535) {
+                throw new IllegalArgumentException("SMTP port must be between 1 and 65535.");
+            }
+            mailbox.setSmtpHost(smtpHost.trim());
+            mailbox.setSmtpPort(resolvedSmtpPort);
+            mailbox.setFromAddress(fromAddress != null && !fromAddress.isBlank()
+                    ? fromAddress.trim() : null);
+        }
         mailboxes.save(mailbox);
     }
 

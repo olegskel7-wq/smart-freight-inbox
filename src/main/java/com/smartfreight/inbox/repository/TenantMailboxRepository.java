@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.TenantMailbox;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Access to per-tenant mailbox rows (Phase 2.2 S3).
@@ -16,4 +17,12 @@ public interface TenantMailboxRepository extends JpaRepository<TenantMailbox, Lo
 
     /** All adapters that should be running. System context → across all tenants. */
     List<TenantMailbox> findByEnabledTrue();
+
+    /**
+     * The current tenant's outbound sender: the first enabled mailbox that has SMTP
+     * configured (deterministic oldest-first). Tenant-filtered by {@code @TenantId}, so
+     * it must be called inside a tenant context. Empty → no per-tenant SMTP → the caller
+     * falls back to the platform account.
+     */
+    Optional<TenantMailbox> findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc();
 }

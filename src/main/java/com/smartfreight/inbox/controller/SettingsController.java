@@ -170,9 +170,12 @@ public class SettingsController {
                              @RequestParam(name = "port", defaultValue = "993") int port,
                              @RequestParam("username") String username,
                              @RequestParam("password") String password,
+                             @RequestParam(name = "smtpHost", required = false) String smtpHost,
+                             @RequestParam(name = "smtpPort", required = false) Integer smtpPort,
+                             @RequestParam(name = "fromAddress", required = false) String fromAddress,
                              RedirectAttributes redirectAttributes) {
         try {
-            mailboxService.create(host, port, username, password);
+            mailboxService.create(host, port, username, password, smtpHost, smtpPort, fromAddress);
             redirectAttributes.addFlashAttribute("successMessage",
                     "Mailbox added — its IMAP adapter starts within ~30 seconds.");
         } catch (DataIntegrityViolationException e) {
