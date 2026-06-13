@@ -34,16 +34,16 @@ class GlobalExceptionHandlerTest {
     }
 
     /**
-     * Testas: ContainerNotFoundException → 404 Not Found su JSON atsaku.
+     * Testas: ItemNotFoundException → 404 Not Found su JSON atsaku.
      *
-     * Tikrinami laukai: error = "CONTAINER_NOT_FOUND", message = konteinerio ID.
+     * Tikrinami laukai: error = "ITEM_NOT_FOUND", message = elemento ID.
      */
     @Test
-    void handleContainerNotFound_returns404WithErrorJson() throws Exception {
-        mockMvc.perform(get("/test/container-not-found"))
+    void handleItemNotFound_returns404WithErrorJson() throws Exception {
+        mockMvc.perform(get("/test/item-not-found"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error").value("CONTAINER_NOT_FOUND"))
-                .andExpect(jsonPath("$.message").value("Container MSCU0000001 not found"));
+                .andExpect(jsonPath("$.error").value("ITEM_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Item MSCU0000001 not found"));
     }
 
     /**
@@ -84,9 +84,9 @@ class GlobalExceptionHandlerTest {
     @RequestMapping("/test")
     static class TestThrowingController {
 
-        @GetMapping("/container-not-found")
-        String throwContainerNotFound() {
-            throw new ContainerNotFoundException("Container MSCU0000001 not found");
+        @GetMapping("/item-not-found")
+        String throwItemNotFound() {
+            throw new ItemNotFoundException("Item MSCU0000001 not found");
         }
 
         @GetMapping("/illegal-argument")

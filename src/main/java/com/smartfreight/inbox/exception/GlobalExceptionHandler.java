@@ -20,15 +20,15 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     /**
-     * Container not found → 404 Not Found.
+     * Tracked item not found → 404 Not Found.
      *
      * PortServiceItemLookup currently returns Optional.empty() instead of throwing,
      * but the handler is kept as a safety net.
      */
-    @ExceptionHandler(ContainerNotFoundException.class)
-    public ResponseEntity<Map<String, String>> handleContainerNotFound(ContainerNotFoundException ex) {
+    @ExceptionHandler(ItemNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleItemNotFound(ItemNotFoundException ex) {
         Map<String, String> response = new HashMap<>();
-        response.put("error", "CONTAINER_NOT_FOUND");
+        response.put("error", "ITEM_NOT_FOUND");
         response.put("message", ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }

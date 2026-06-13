@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -171,5 +172,39 @@ class AiExtractionServiceTest {
                 () -> service.extractIdentifier("Any update on MSCU1234567?"));
 
         verifyNoInteractions(webClient);
+    }
+
+    /**
+     * Сценарий 6 (Phase 0 debt close-out): другая вертикаль переопределяет fallback-regex.
+     *
+     * Ожидание: при сбое Ollama regex-fallback использует кастомный паттерн из настроек
+     * (а не захардкоженный ISO 6346) — извлекает идентификатор формата другой вертикали.
+     */
+    @Test
+    void customFallbackRegex_extractsVerticalIdentifierFromBody() {
+        when(settingsService.getString(eq(AiExtractionService.KEY_FALLBACK_REGEX), anyString()))
+                .thenReturn("\\b(ORD-\\d{5})\\b");
+        stubOllamaError();
+
+        String result = service.extractIdentifier("Hi, chasing order ORD-48217 please");
+
+        assertEquals("ORD-48217", result);
+    }
+
+    /**
+     * Сценарий 7: настроенный fallback-regex некорректен.
+     *
+     * Ожидание: битый паттерн НЕ ломает извлечение — деградация к дефолтному ISO 6346,
+     * номер контейнера из тела письма всё равно находится.
+     */
+    @Test
+    void malformedFallbackRegex_degradesToIso6346Default() {
+        when(settingsService.getString(eq(AiExtractionService.KEY_FALLBACK_REGEX), anyString()))
+                .thenReturn("[unclosed");
+        stubOllamaError();
+
+        String result = service.extractIdentifier("Update on MSCU1234567?");
+
+        assertEquals("MSCU1234567", result);
     }
 }
