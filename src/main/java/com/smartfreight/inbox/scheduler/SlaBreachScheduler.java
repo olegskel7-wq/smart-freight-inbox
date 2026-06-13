@@ -61,14 +61,20 @@ public class SlaBreachScheduler {
      */
     @Scheduled(fixedDelayString = "${sla.breach-check-interval-ms:60000}", initialDelay = 60_000)
     public void markBreachedTickets() {
-        if (!slaService.isEnabled()) {
-            return;
-        }
-
         // Phase 2.2: SYSTEM tenant state — one bulk UPDATE marks breaches across all
         // tenants. Context wraps the transaction (see RetryScheduler for why).
-        int breached = TenantContext.callAsSystem(() -> transactionTemplate.execute(tx ->
-                emailTicketRepository.markSlaBreached(LocalDateTime.now(), SLA_EXEMPT_STATUSES)));
+        //
+        // The flag check MUST run inside the system context too: SlaService.isEnabled()
+        // reads a setting through SettingsService, and since S3 an unset TenantContext
+        // fails loud. In system state the platform-level feature.sla-timer is read, which
+        // matches the cross-tenant scope of the bulk UPDATE.
+        int breached = TenantContext.callAsSystem(() -> {
+            if (!slaService.isEnabled()) {
+                return 0;
+            }
+            return transactionTemplate.execute(tx ->
+                    emailTicketRepository.markSlaBreached(LocalDateTime.now(), SLA_EXEMPT_STATUSES));
+        });
 
         if (breached > 0) {
             breachedCounter.increment(breached);
