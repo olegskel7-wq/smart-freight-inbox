@@ -68,14 +68,14 @@
                         <span th:unless="${m.enabled}" class="badge bg-secondary">Disabled</span>
                     </td>
                     <td class="text-end">
-                        <form method="post" th:action="@{'/settings/mailboxes/' + ${m.id} + '/toggle'}" class="d-inline">
+                        <form method="post" th:action="@{'/settings/mailboxes/' + ${m.id} + '/toggle'}" class="d-block mb-1">
                             <input type="hidden" name="enabled" th:value="${!m.enabled}">
-                            <button type="submit" class="btn btn-outline-secondary btn-sm"
+                            <button type="submit" class="btn btn-outline-secondary btn-sm" style="width: 90px;"
                                     th:text="${m.enabled} ? 'Disable' : 'Enable'">Disable</button>
                         </form>
-                        <form method="post" th:action="@{'/settings/mailboxes/' + ${m.id} + '/delete'}" class="d-inline"
+                        <form method="post" th:action="@{'/settings/mailboxes/' + ${m.id} + '/delete'}" class="d-block"
                               onsubmit="return confirm('Delete this mailbox? Its adapter stops within ~30 seconds.');">
-                            <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                            <button type="submit" class="btn btn-outline-danger btn-sm" style="width: 90px;">Delete</button>
                         </form>
                     </td>
                 </tr>
