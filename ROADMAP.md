@@ -33,7 +33,7 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 **Решения:**
 - `TicketStatus` остаётся enum — это state machine пайплайна, а не конфиг вертикали.
 - **port-service НЕ переименовываем** — он остаётся эталонным freight-бэкендом за `ItemLookupService` (имитация реального TMS клиента). Новая вертикаль = новая реализация интерфейса.
-- Отложенный долг: ISO 6346 regex-фолбэк в `AiExtractionService`, имя `ContainerNotFoundException`.
+- ~~Отложенный долг: ISO 6346 regex-фолбэк в `AiExtractionService`, имя `ContainerNotFoundException`.~~ ✅ ЗАКРЫТО 13.06.2026 (8caa56e): `ContainerNotFoundException` → `ItemNotFoundException`; regex-фолбэк вынесен в настройку `ai.extraction-fallback-regex` (per-tenant override, дефолт = ISO 6346, malformed → деградация).
 
 > Ветка: `phase0/configurable-ai-prompts`. Дальше — Phase 1.
 
