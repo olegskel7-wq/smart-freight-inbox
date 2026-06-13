@@ -1,5 +1,7 @@
 package com.smartfreight.inbox.config;
 
+import com.smartfreight.inbox.service.LoginRateLimiter;
+import com.smartfreight.inbox.web.LoginRateLimitFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -7,6 +9,9 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * Spring Security configuration for application security.
@@ -42,7 +47,9 @@ public class SecurityConfig {
      * @throws Exception on configuration error
      */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   LoginRateLimitFilter loginRateLimitFilter,
+                                                   LoginRateLimiter loginRateLimiter) throws Exception {
         http
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**").permitAll()
@@ -53,12 +60,14 @@ public class SecurityConfig {
                 .requestMatchers("/admin/**").hasRole("OPERATOR")
                 .anyRequest().authenticated()
             )
+            // Brute-force throttle (Phase 2.6): reject over-limit logins before authentication.
+            .addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
             .formLogin(form -> form
                 .loginPage("/login")
                 .loginProcessingUrl("/login")
                 .usernameParameter("email")
-                .defaultSuccessUrl("/tickets", true)
-                .failureUrl("/login?error=true")
+                .successHandler(loginSuccessHandler(loginRateLimiter))
+                .failureHandler(loginFailureHandler(loginRateLimiter))
                 .permitAll()
             )
             .logout(logout -> logout
@@ -72,6 +81,28 @@ public class SecurityConfig {
             );
 
         return http.build();
+    }
+
+    /**
+     * On success: clear the account's failure counter (Phase 2.6) and redirect to the tickets
+     * page — preserving the previous {@code defaultSuccessUrl("/tickets", true)} behaviour.
+     */
+    private AuthenticationSuccessHandler loginSuccessHandler(LoginRateLimiter loginRateLimiter) {
+        return (request, response, authentication) -> {
+            loginRateLimiter.reset(authentication.getName());
+            response.sendRedirect(request.getContextPath() + "/tickets");
+        };
+    }
+
+    /**
+     * On failure: record the failed attempt against the IP and email counters (Phase 2.6),
+     * then fall back to the standard {@code /login?error=true} redirect.
+     */
+    private AuthenticationFailureHandler loginFailureHandler(LoginRateLimiter loginRateLimiter) {
+        return (request, response, exception) -> {
+            loginRateLimiter.recordFailure(request.getRemoteAddr(), request.getParameter("email"));
+            response.sendRedirect(request.getContextPath() + "/login?error=true");
+        };
     }
 
     /**

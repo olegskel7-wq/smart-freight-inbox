@@ -15,6 +15,10 @@ import java.util.Collection;
  */
 public class TenantUserDetails extends User {
 
+    // Sessions are JDK-serialized into Redis (Phase 2.6); pin the version so a redeploy
+    // does not invalidate live sessions over an incidental class change. User is Serializable.
+    private static final long serialVersionUID = 1L;
+
     private final Long tenantId;
 
     public TenantUserDetails(String username, String password,

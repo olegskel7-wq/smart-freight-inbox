@@ -56,10 +56,13 @@ public class RateSheetService {
             DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale.ENGLISH);
 
     private final CarrierRateRepository repository;
+    private final RateSheetCache rateSheetCache;
     private final SettingsService settingsService;
 
-    public RateSheetService(CarrierRateRepository repository, SettingsService settingsService) {
+    public RateSheetService(CarrierRateRepository repository, RateSheetCache rateSheetCache,
+                            SettingsService settingsService) {
         this.repository = repository;
+        this.rateSheetCache = rateSheetCache;
         this.settingsService = settingsService;
     }
 
@@ -118,6 +121,9 @@ public class RateSheetService {
             }
         }
 
+        // The sheet changed — drop the cached valid-rate lists so drafts pick up new prices.
+        rateSheetCache.evictAll();
+
         log.info("Rate sheet import: {} inserted, {} updated, {} rejected rows",
                 inserted, updated, errors.size());
         return new ImportResult(inserted, updated, errors);
@@ -139,7 +145,7 @@ public class RateSheetService {
             return "";
         }
 
-        List<String> lines = repository.findAllValidOn(LocalDate.now()).stream()
+        List<String> lines = rateSheetCache.validRatesOn(LocalDate.now()).stream()
                 .filter(r -> containsWord(emailText, r.getOrigin()) && containsWord(emailText, r.getDestination()))
                 .limit(MAX_RATES_IN_PROMPT)
                 .map(this::formatRateLine)

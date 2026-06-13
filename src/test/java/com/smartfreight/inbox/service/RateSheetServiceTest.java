@@ -41,7 +41,9 @@ class RateSheetServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RateSheetService(repository, settingsService);
+        // Real RateSheetCache: without a Spring proxy its @Cacheable/@CacheEvict are inert,
+        // so validRatesOn just delegates to the mocked repository (existing stubs still apply).
+        service = new RateSheetService(repository, new RateSheetCache(repository), settingsService);
         lenient().when(settingsService.isFeatureEnabled(anyString(), anyBoolean())).thenReturn(true);
         lenient().when(repository.save(any(CarrierRate.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(repository.findByCarrierIgnoreCaseAndOriginIgnoreCaseAndDestinationIgnoreCase(

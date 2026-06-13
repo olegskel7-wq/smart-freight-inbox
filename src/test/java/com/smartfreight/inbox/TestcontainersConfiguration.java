@@ -4,6 +4,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
 
@@ -66,6 +67,17 @@ public class TestcontainersConfiguration {
 	@ServiceConnection
 	public RabbitMQContainer rabbitContainer() {
 		return new RabbitMQContainer("rabbitmq:3.13-alpine");
+	}
+
+	/**
+	 * Redis контейнер (Phase 2.6) — session store, кэш rate sheets, login rate-limit счётчики.
+	 * Без него полный контекст не стартует: автоконфиг Spring Session / cache.type=redis ждёт
+	 * соединение. @ServiceConnection(name="redis") подставляет host/port в spring.data.redis.*.
+	 */
+	@Bean
+	@ServiceConnection(name = "redis")
+	public GenericContainer<?> redisContainer() {
+		return new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
 	}
 
 }

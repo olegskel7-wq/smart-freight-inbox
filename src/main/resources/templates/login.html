@@ -19,6 +19,9 @@
             <h5 class="card-title mb-4">Sign In</h5>
 
             <div th:if="${param.error}" class="alert alert-danger py-2">Неверный email или пароль</div>
+            <div th:if="${param.blocked}" class="alert alert-warning py-2">
+                Слишком много неудачных попыток. Попробуйте позже.</div>
+            <div th:if="${param.expired}" class="alert alert-info py-2">Сессия истекла, войдите снова</div>
             <div th:if="${param.logout}" class="alert alert-success py-2">Вы вышли из системы</div>
 
             <form method="post" th:action="@{/login}">

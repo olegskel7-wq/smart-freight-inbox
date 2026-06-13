@@ -53,6 +53,32 @@ spring:
     # Publisher confirms: OutboxRelay marks an event published only after the broker acks it.
     publisher-confirm-type: correlated
 
+  # Redis (Phase 2.6) — HTTP session store, rate-sheet cache, login rate-limit counters.
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # We use Redis only as a session/cache/counter store, not for Spring Data Redis
+      # repositories — disabling the scan stops it from probing every JPA repository.
+      repositories:
+        enabled: false
+
+  # Sessions live in Redis: they survive a backend restart and are shared across instances
+  # (closes Known Issue "session-based auth does not scale horizontally"). The store type is
+  # auto-detected from the classpath in Boot 4 (no spring.session.store-type any more). Timeout
+  # is read from server.servlet.session.timeout (8h) above. JDK serialization — Boot 4 has no
+  # Jackson 2 ObjectMapper bean, so the principal (TenantUserDetails) must be Serializable.
+  session:
+    data:
+      redis:
+        namespace: smartfreight:session
+
+  # Rate-sheet lookups (RateSheetCache) are cached in Redis, keyed per tenant. TTL is a
+  # safety net (see CacheConfig); the authoritative invalidation is eviction on CSV import.
+  cache:
+    type: redis
+
   # Legacy single-mailbox config (pre-S3). Used ONLY by MailboxBootstrap to import the
   # mailbox into tenant_mailbox on first start (and by GmailDraftService for the Gmail
   # drafts feature). Adapters themselves are built from tenant_mailbox rows — manage
@@ -137,6 +163,18 @@ tenant:
 mailbox:
   reconcile-interval-ms: 30000
   encryption-key: ${MAILBOX_ENCRYPTION_KEY:}
+
+# Login brute-force throttling (Phase 2.6). Counters live in Redis keyed by client IP and
+# by submitted email; over either threshold within the window, POST /login is rejected for
+# block-seconds before authentication runs. Login happens before any tenant context, so this
+# is platform-level config (not a per-tenant feature flag). enabled=false disables the filter.
+ratelimit:
+  login:
+    enabled: true
+    max-ip-failures: 10
+    max-email-failures: 5
+    window-seconds: 900
+    block-seconds: 900
 
 management:
   endpoints:

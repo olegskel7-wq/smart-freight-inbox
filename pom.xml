@@ -61,6 +61,28 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+
+		<!-- Redis (Phase 2.6): session store (horizontal scaling), rate-sheet cache,
+		     login rate-limit counters. One Lettuce-backed connection serves all three.
+		     Versions managed by the Boot 4 BOM — do not pin. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
+		<!-- Boot 4 splits cache autoconfiguration into its own module (spring-boot-cache);
+		     the data-redis starter does not pull it. Needed for spring.cache.type=redis and
+		     RedisCacheManagerBuilderCustomizer. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-cache</artifactId>
+		</dependency>
+		<!-- Boot 4 starter: pulls the spring-boot-session autoconfiguration (wires the
+		     SessionRepositoryFilter and binds spring.session.*) plus spring-session-data-redis.
+		     The bare spring-session-data-redis library alone does NOT auto-activate sessions. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-session-data-redis</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webflux</artifactId>

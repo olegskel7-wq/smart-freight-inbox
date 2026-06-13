@@ -27,6 +27,9 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USER=${RABBITMQ_USER:-smartfreight}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-smartfreight}
+      # Phase 2.6: Redis backs HTTP sessions, the rate-sheet cache and login throttling.
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,6 +38,8 @@ services:
       port-service:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -129,6 +134,24 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    networks:
+      - llm_internal
+
+  redis:
+    # Phase 2.6: HTTP session store (sessions survive a backend restart and are shared
+    # across instances), rate-sheet cache, and login rate-limit counters. AOF persistence
+    # so cached/session state survives a redis restart too. Optional password via env.
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - llm_internal
 
@@ -245,6 +268,7 @@ services:
 volumes:
   postgres_data:
   rabbitmq_data:
+  redis_data:
   postgres_backups:
   ollama:
   prometheus_data:
