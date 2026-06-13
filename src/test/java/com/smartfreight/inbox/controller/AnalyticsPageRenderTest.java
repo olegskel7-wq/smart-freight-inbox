@@ -19,7 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -64,9 +66,24 @@ class AnalyticsPageRenderTest {
         mockMvc.perform(get("/analytics"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Inbox Analytics")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Ask your inbox")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("volumeChart")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("confidenceChart")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/webjars/chart.js/4.5.0/dist/chart.umd.js")));
+    }
+
+    @Test
+    @WithMockTenantOperator
+    void askEndpoint_rendersDashboardAndEchoesQuestion() throws Exception {
+        // POST the question and re-render. The answer itself depends on the LLM (absent in tests →
+        // graceful guidance), so we only assert the page renders and the question is preserved —
+        // deterministic regardless of whether Ollama is reachable.
+        mockMvc.perform(post("/analytics/ask").with(csrf())
+                        .param("q", "How many RFQs did we get?")
+                        .param("days", "30"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Inbox Analytics")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("How many RFQs did we get?")));
     }
 
     @Test

@@ -31,6 +31,31 @@
 
     <div th:if="${featureEnabled}" th:with="s=${summary}">
 
+        <!-- Ask your inbox (Phase 2.8) — natural-language query, metric-router over the figures below -->
+        <div th:if="${queryEnabled}" class="card shadow-sm mb-4">
+            <div class="card-body">
+                <label for="q" class="fw-semibold mb-2 d-block">Ask your inbox</label>
+                <form method="post" th:action="@{/analytics/ask}" class="d-flex gap-2">
+                    <input type="hidden" name="days" th:value="${days}">
+                    <input type="text" class="form-control" id="q" name="q"
+                           th:value="${question}"
+                           placeholder="e.g. How many RFQs did we get in the last 30 days?"
+                           autocomplete="off">
+                    <button type="submit" class="btn btn-primary">Ask</button>
+                </form>
+                <div th:if="${queryAnswer}" class="mt-3">
+                    <div class="alert mb-0"
+                         th:classappend="${queryAnswer.matched()} ? 'alert-primary' : 'alert-secondary'">
+                        <div th:text="${queryAnswer.answer()}" style="white-space: pre-line;">answer</div>
+                    </div>
+                    <div th:if="${queryAnswer.matched()}" class="small text-muted mt-1">
+                        Answered from <span class="fw-semibold" th:text="${queryAnswer.metric()}">METRIC</span>
+                        over <span th:text="${queryAnswer.periodDays()}">30</span> days.
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- KPI cards -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-md">

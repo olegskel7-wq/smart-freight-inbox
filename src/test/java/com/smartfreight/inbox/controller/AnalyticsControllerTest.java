@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.service.AnalyticsService;
+import com.smartfreight.inbox.service.InboxQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +30,9 @@ class AnalyticsControllerTest {
     @Mock
     private AnalyticsService analyticsService;
 
+    @Mock
+    private InboxQueryService inboxQueryService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -36,7 +40,7 @@ class AnalyticsControllerTest {
         // Explicit ViewResolver: the view name "analytics" equals the request path /analytics,
         // and the standalone default resolver would reject it as a circular view path.
         InternalResourceViewResolver viewResolver = new InternalResourceViewResolver("/templates/", ".html");
-        mockMvc = MockMvcBuilders.standaloneSetup(new AnalyticsController(analyticsService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new AnalyticsController(analyticsService, inboxQueryService))
                 .setViewResolvers(viewResolver)
                 .build();
     }
