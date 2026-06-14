@@ -1,16 +1,20 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.TenantDocument;
+import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.repository.TenantDocumentRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.javamail.JavaMailSender;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -27,11 +31,14 @@ class EmailReplyServiceTest {
     @Mock
     private MimeMessage mimeMessage;
 
+    @Mock
+    private TenantDocumentRepository documentRepository;
+
     private EmailReplyService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailReplyService(mailSenderProvider, new SimpleMeterRegistry());
+        service = new EmailReplyService(mailSenderProvider, documentRepository, new SimpleMeterRegistry());
         // Every send resolves the current tenant's sender; here it is the platform sender mock.
         when(mailSenderProvider.resolve())
                 .thenReturn(new MailSenderProvider.ResolvedSender(mailSender, "operator@smartfreight.com"));
@@ -142,6 +149,38 @@ class EmailReplyServiceTest {
 
         verify(mimeMessage, never()).setHeader(eq("In-Reply-To"), any());
         verify(mimeMessage, never()).setHeader(eq("References"), any());
+        verify(mailSender, times(1)).send(mimeMessage);
+    }
+
+    // Phase 2.7: ticket carries an attached document → the stored file is loaded and the message
+    // is built (multipart) without error; the lookup is keyed by the ticket's attachedDocumentId.
+    @Test
+    void sendReply_withAttachedDocument_loadsDocumentAndSends() throws Exception {
+        EmailTicket ticket = buildTicket("client@example.com", "POD request",
+                "Please find the document attached.", "<msg-doc@example.com>");
+        ticket.setAttachedDocumentId(7L);
+        TenantDocument doc = new TenantDocument();
+        doc.setId(7L);
+        doc.setFilename("pod.pdf");
+        doc.setContentType("application/pdf");
+        doc.setDocType(DocumentType.POD);
+        doc.setContent(new byte[]{1, 2, 3});
+        when(documentRepository.findById(7L)).thenReturn(Optional.of(doc));
+
+        assertDoesNotThrow(() -> service.sendReply(ticket));
+
+        verify(documentRepository).findById(7L);
+        verify(mailSender, times(1)).send(mimeMessage);
+    }
+
+    // No attachment id → the document store is never touched (text-only reply path unchanged).
+    @Test
+    void sendReply_noAttachment_doesNotTouchDocumentStore() throws Exception {
+        EmailTicket ticket = buildTicket("client@example.com", "Query", "Plain reply", null);
+
+        service.sendReply(ticket);
+
+        verify(documentRepository, never()).findById(any());
         verify(mailSender, times(1)).send(mimeMessage);
     }
 

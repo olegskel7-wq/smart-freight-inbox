@@ -2,6 +2,7 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.TrackedItem;
+import com.smartfreight.inbox.entity.enums.DocumentType;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -103,6 +104,35 @@ public class AiDraftingService {
             {originalEnquiry}
 
             Write only the email body (no subject line). Keep it to a few sentences.""";
+
+    /**
+     * Fallback prompt for document-request replies (Phase 2.7) when the DB-backed
+     * {@code ai.document-cover-prompt} row is missing or blank. Kept in sync with migration V26.
+     * {@code {documentType}} → the requested document, {@code {documentStatus}} → whether it is
+     * attached or being retrieved, {@code {itemContext}} → shipment data, {@code {email}} → enquiry.
+     */
+    private static final String DEFAULT_DOCUMENT_COVER_PROMPT = """
+            You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
+            The customer has requested a document. Write a concise, professional email reply.
+            Document requested: {documentType}
+            {documentStatus}
+            Use only the information provided. Be helpful, polite and factual. Do NOT invent information.
+
+            Shipment information:
+            {itemContext}
+
+            Customer's email:
+            {email}
+
+            Write only the email reply body (no subject line).""";
+
+    /** {@code {documentStatus}} text when the requested document is attached to the reply. */
+    private static final String DOC_STATUS_ATTACHED =
+            "The requested document is attached to this email.";
+
+    /** {@code {documentStatus}} text when no matching document is on file (operator escalation). */
+    private static final String DOC_STATUS_MISSING =
+            "We do not currently have this document on file; it is being retrieved and will follow shortly.";
 
     /**
      * Static fallback nudge used when Ollama is unavailable for a quote follow-up — there is no
@@ -239,6 +269,61 @@ public class AiDraftingService {
         String prompt = template.replace("{originalEnquiry}", enquiry);
 
         return callOllama(prompt, DEFAULT_FOLLOWUP_FALLBACK);
+    }
+
+    /**
+     * Generates a reply to a document request (Phase 2.7).
+     *
+     * <p>Uses the dedicated {@code ai.document-cover-prompt} template — the same shared {@link
+     * #callOllama} path, per-tenant endpoint, breaker and fallback as the reply path. The {@code
+     * attached} flag picks the {@code {documentStatus}} wording (and the static fallback) so one
+     * prompt serves both branches: the document is attached, or it is being retrieved (escalation).
+     *
+     * @param emailBody    customer email text (body + parsed attachments)
+     * @param documentType the detected requested document type
+     * @param item         looked-up shipment data (may be null if not found)
+     * @param attached     whether a matching document was found and will be attached
+     * @return generated or fallback reply body
+     */
+    public String generateDocumentReply(String emailBody, DocumentType documentType,
+                                        TrackedItem item, boolean attached) {
+        String itemContext = buildItemContext(item);
+        String truncatedBody = emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
+        String docLabel = documentType.getLabel();
+        String docStatus = attached ? DOC_STATUS_ATTACHED : DOC_STATUS_MISSING;
+
+        String template = settingsService.getString(
+                SettingsService.KEY_DOCUMENT_COVER_PROMPT, DEFAULT_DOCUMENT_COVER_PROMPT);
+        String prompt = template
+                .replace("{documentType}", docLabel)
+                .replace("{documentStatus}", docStatus)
+                .replace("{itemContext}", itemContext)
+                .replace("{email}", truncatedBody);
+
+        return callOllama(prompt, buildDocumentFallback(docLabel, attached));
+    }
+
+    /** Static document-request reply used when Ollama is unavailable, per branch. */
+    private String buildDocumentFallback(String docLabel, boolean attached) {
+        if (attached) {
+            return String.format("""
+                    Thank you for your enquiry.
+
+                    Please find the requested %s attached to this email.
+
+                    Do not hesitate to contact us if you require anything further.
+                    Kind regards,
+                    Customer Service Team
+                    """, docLabel);
+        }
+        return String.format("""
+                Thank you for your enquiry.
+
+                We have received your request for the %s and are retrieving it. We will send it to you shortly.
+
+                Kind regards,
+                Customer Service Team
+                """, docLabel);
     }
 
     /**

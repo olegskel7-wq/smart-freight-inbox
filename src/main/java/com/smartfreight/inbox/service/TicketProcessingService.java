@@ -2,6 +2,8 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.TenantDocument;
+import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
@@ -59,10 +61,14 @@ public class TicketProcessingService {
     private final SlaService slaService;
     private final AutoSendService autoSendService;
     private final ShipmentWatchService shipmentWatchService;
+    private final DocumentRequestService documentRequestService;
+    private final SettingsService settingsService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
     private final Counter parkedCounter;
+    private final Counter documentAttachedCounter;
+    private final Counter documentEscalatedCounter;
 
     /**
      * Self-reference to the Spring proxy so that @Transactional on processAttempt()
@@ -83,6 +89,8 @@ public class TicketProcessingService {
                                    SlaService slaService,
                                    AutoSendService autoSendService,
                                    ShipmentWatchService shipmentWatchService,
+                                   DocumentRequestService documentRequestService,
+                                   SettingsService settingsService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailClassificationService = emailClassificationService;
@@ -94,6 +102,8 @@ public class TicketProcessingService {
         this.slaService = slaService;
         this.autoSendService = autoSendService;
         this.shipmentWatchService = shipmentWatchService;
+        this.documentRequestService = documentRequestService;
+        this.settingsService = settingsService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -107,6 +117,14 @@ public class TicketProcessingService {
                 .register(meterRegistry);
         this.parkedCounter = Counter.builder("smartfreight_tickets_parked_total")
                 .description("Tickets parked as RETRY_LATER because a circuit breaker was open")
+                .register(meterRegistry);
+        this.documentAttachedCounter = Counter.builder("smartfreight_document_requests_total")
+                .tag("result", "attached")
+                .description("Document requests resolved by the Phase 2.7 pipeline")
+                .register(meterRegistry);
+        this.documentEscalatedCounter = Counter.builder("smartfreight_document_requests_total")
+                .tag("result", "escalated")
+                .description("Document requests resolved by the Phase 2.7 pipeline")
                 .register(meterRegistry);
     }
 
@@ -249,7 +267,33 @@ public class TicketProcessingService {
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
         // Phase 1.2: matched carrier rates (if any) let the model quote a real price.
         String rateContext = rateSheetService.buildRateContext(aiInput);
-        String draft = aiDraftingService.generateDraft(aiInput, item, rateContext);
+
+        String draft;
+        // Phase 2.7: a document request takes a dedicated path — determine which document is wanted,
+        // attach it if on file (it then rides the same auto-send/operator gate as any reply), else
+        // escalate: draft an acknowledgement and flag the requested type for the operator. The
+        // detection call propagates an open-breaker exception, so a parked ticket re-runs cleanly.
+        if (ticket.getTicketType() == TicketType.DOCUMENT_REQUEST
+                && settingsService.isFeatureEnabled(DocumentService.FEATURE_KEY, true)) {
+            DocumentType requested = documentRequestService.detectRequestedType(aiInput);
+            ticket.setRequestedDocType(requested);
+            Optional<TenantDocument> doc = identifier.isEmpty()
+                    ? Optional.empty()
+                    : documentRequestService.findDocument(identifier, requested);
+            if (doc.isPresent()) {
+                ticket.setAttachedDocumentId(doc.get().getId());
+                draft = aiDraftingService.generateDocumentReply(aiInput, requested, item, true);
+                documentAttachedCounter.increment();
+                log.info("Document request: attaching {} for '{}'", requested, identifier);
+            } else {
+                draft = aiDraftingService.generateDocumentReply(aiInput, requested, item, false);
+                documentEscalatedCounter.increment();
+                log.info("Document request: {} not on file for '{}' — escalating to operator",
+                        requested, identifier);
+            }
+        } else {
+            draft = aiDraftingService.generateDraft(aiInput, item, rateContext);
+        }
         ticket.setDraftReply(draft);
 
         // Phase 1.6: confidence is computed and stored on every run (even with auto-send off)

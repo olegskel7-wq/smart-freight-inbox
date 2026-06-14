@@ -173,6 +173,45 @@ class AiDraftingServiceTest {
         return t;
     }
 
+    // Phase 2.7: document reply — Ollama returned text, returned verbatim
+    @Test
+    void generateDocumentReply_ollamaReturnsDraft_returnsDraft() {
+        String aiDraft = "Dear customer, please find the proof of delivery attached.";
+        stubOllama(Map.of("response", aiDraft, "done", true));
+
+        String result = service.generateDocumentReply(
+                "Can you send me the POD for MSCU1234567?",
+                com.smartfreight.inbox.entity.enums.DocumentType.POD, buildItem("MSCU1234567"), true);
+
+        assertEquals(aiDraft, result);
+    }
+
+    // Phase 2.7: Ollama down + document attached → fallback reads like a cover note
+    @Test
+    void generateDocumentReply_attachedFallback_mentionsDocument() {
+        stubOllamaError();
+
+        String result = service.generateDocumentReply(
+                "POD please", com.smartfreight.inbox.entity.enums.DocumentType.POD, buildItem("MSCU1234567"), true);
+
+        assertNotNull(result);
+        assertTrue(result.toLowerCase().contains("attached"), "Attached fallback should mention the attachment");
+    }
+
+    // Phase 2.7: Ollama down + document NOT on file → fallback reads like an acknowledgement
+    @Test
+    void generateDocumentReply_missingFallback_acknowledgesRetrieval() {
+        stubOllamaError();
+
+        String result = service.generateDocumentReply(
+                "POD please", com.smartfreight.inbox.entity.enums.DocumentType.POD, null, false);
+
+        assertNotNull(result);
+        assertFalse(result.isBlank(), "Escalation fallback must not be empty");
+        assertTrue(result.toLowerCase().contains("retriev") || result.toLowerCase().contains("shortly"),
+                "Not-on-file fallback should acknowledge retrieval");
+    }
+
     // Сценарий 4 (Phase 1.7): breaker ОТКРЫТ — исключение пробрасывается (без fallback-драфта),
     // пайплайн припаркует тикет в RETRY_LATER; HTTP-вызов к Ollama не делается
     @Test

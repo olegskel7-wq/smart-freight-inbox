@@ -1,8 +1,11 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.TenantDocument;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.repository.TenantDocumentRepository;
 import com.smartfreight.inbox.service.EmailReplyService;
 import com.smartfreight.inbox.service.QuoteFollowUpService;
 import com.smartfreight.inbox.service.SendRateLimiter;
@@ -46,17 +49,20 @@ public class TicketViewController {
     private final TicketAuditService auditService;
     private final SendRateLimiter sendRateLimiter;
     private final QuoteFollowUpService quoteFollowUpService;
+    private final TenantDocumentRepository documentRepository;
 
     public TicketViewController(EmailTicketRepository emailTicketRepository,
                                 EmailReplyService emailReplyService,
                                 TicketAuditService auditService,
                                 SendRateLimiter sendRateLimiter,
-                                QuoteFollowUpService quoteFollowUpService) {
+                                QuoteFollowUpService quoteFollowUpService,
+                                TenantDocumentRepository documentRepository) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
         this.auditService = auditService;
         this.sendRateLimiter = sendRateLimiter;
         this.quoteFollowUpService = quoteFollowUpService;
+        this.documentRepository = documentRepository;
     }
 
     /** GET / — authenticated users go directly to tickets, others to login. */
@@ -162,7 +168,52 @@ public class TicketViewController {
         EmailTicket ticket = emailTicketRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Ticket not found: " + id));
         model.addAttribute("ticket", ticket);
+
+        // Phase 2.7: for document requests, surface the currently attached document and offer the
+        // documents on file for this shipment so the operator can attach one before sending.
+        if (ticket.getAttachedDocumentId() != null) {
+            model.addAttribute("attachedDocument",
+                    documentRepository.findById(ticket.getAttachedDocumentId()).orElse(null));
+        }
+        if (ticket.getTicketType() == TicketType.DOCUMENT_REQUEST
+                && ticket.getExtractedIdentifier() != null) {
+            model.addAttribute("availableDocuments",
+                    documentRepository.findByIdentifierOrderByUploadedAtDesc(ticket.getExtractedIdentifier()));
+        }
         return "ticket-detail";
+    }
+
+    /**
+     * POST /tickets/{id}/attach-document — operator manually attaches a stored document to a
+     * DOCUMENT_REQUEST reply (Phase 2.7) when none was matched automatically. The chosen document
+     * rides the next send (manual or auto) via {@link EmailReplyService}. An empty value detaches.
+     *
+     * @param id         ticket identifier
+     * @param documentId tenant_document id, or blank to clear the attachment
+     * @return redirect to the ticket detail page
+     */
+    @Transactional
+    @PostMapping("/tickets/{id}/attach-document")
+    public String attachDocument(@PathVariable Long id,
+                                 @RequestParam(name = "documentId", required = false) Long documentId,
+                                 RedirectAttributes redirectAttributes) {
+        EmailTicket ticket = emailTicketRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Ticket not found: " + id));
+        if (ticket.getStatus() == TicketStatus.CLOSED || ticket.getStatus() == TicketStatus.AUTO_SENT) {
+            return "redirect:/tickets/" + id; // terminal — the reply already went out
+        }
+        if (documentId == null) {
+            ticket.setAttachedDocumentId(null);
+            redirectAttributes.addFlashAttribute("successMessage", "Attachment removed.");
+        } else {
+            TenantDocument doc = documentRepository.findById(documentId)
+                    .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Document not found: " + documentId));
+            ticket.setAttachedDocumentId(doc.getId());
+            redirectAttributes.addFlashAttribute("successMessage", "Attached " + doc.getFilename() + ".");
+        }
+        ticket.setUpdatedAt(LocalDateTime.now());
+        emailTicketRepository.save(ticket);
+        return "redirect:/tickets/" + id;
     }
 
     /**

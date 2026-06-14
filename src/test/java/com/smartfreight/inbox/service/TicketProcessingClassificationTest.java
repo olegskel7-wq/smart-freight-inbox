@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.TenantDocument;
+import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.service.EmailClassificationService.ClassificationResult;
@@ -73,6 +75,12 @@ class TicketProcessingClassificationTest {
     @Mock
     private ShipmentWatchService shipmentWatchService;
 
+    @Mock
+    private DocumentRequestService documentRequestService;
+
+    @Mock
+    private SettingsService settingsService;
+
     private TicketProcessingService service;
 
     @BeforeEach
@@ -80,7 +88,8 @@ class TicketProcessingClassificationTest {
         service = new TicketProcessingService(
                 emailTicketRepository, emailClassificationService, aiExtractionService,
                 itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
-                slaService, autoSendService, shipmentWatchService, new SimpleMeterRegistry());
+                slaService, autoSendService, shipmentWatchService, documentRequestService,
+                settingsService, new SimpleMeterRegistry());
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);
@@ -247,6 +256,77 @@ class TicketProcessingClassificationTest {
         // The SMTP send itself must NOT happen inside the pipeline transaction.
         verify(autoSendService, never()).autoSend(any());
         verify(gmailDraftService, never()).saveDraft(any());
+    }
+
+    // ---- Phase 2.7: document request branch -------------------------------------------
+
+    /** A DOCUMENT_REQUEST ticket already typed (so classification is skipped) on the retry path. */
+    private EmailTicket documentTicket() {
+        EmailTicket t = ticket(TicketStatus.NEW);
+        t.setTicketType(TicketType.DOCUMENT_REQUEST);
+        return t;
+    }
+
+    private void stubDocumentPipelineCommon() {
+        when(aiExtractionService.extractIdentifier(anyString())).thenReturn("MSCU1234567");
+        when(itemLookupService.findByIdentifier("MSCU1234567")).thenReturn(Optional.empty());
+        when(rateSheetService.buildRateContext(anyString())).thenReturn("");
+        when(settingsService.isFeatureEnabled(eq(DocumentService.FEATURE_KEY), anyBoolean())).thenReturn(true);
+        when(documentRequestService.detectRequestedType(anyString())).thenReturn(DocumentType.POD);
+        when(aiDraftingService.generateDocumentReply(anyString(), eq(DocumentType.POD), any(), anyBoolean()))
+                .thenReturn("Please find the document attached.");
+        when(autoSendService.confidenceFor(any(), anyBoolean(), anyBoolean(), anyBoolean())).thenReturn(0.5);
+        when(autoSendService.shouldAutoSend(any())).thenReturn(false);
+    }
+
+    @Test
+    void documentRequest_documentOnFile_attachesAndDraftsCover() {
+        EmailTicket ticket = documentTicket();
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        stubDocumentPipelineCommon();
+        TenantDocument doc = new TenantDocument();
+        doc.setId(7L);
+        when(documentRequestService.findDocument("MSCU1234567", DocumentType.POD)).thenReturn(Optional.of(doc));
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
+        assertThat(ticket.getRequestedDocType()).isEqualTo(DocumentType.POD);
+        assertThat(ticket.getAttachedDocumentId()).isEqualTo(7L);
+        verify(aiDraftingService).generateDocumentReply(anyString(), eq(DocumentType.POD), any(), eq(true));
+        verify(aiDraftingService, never()).generateDraft(anyString(), any(), anyString());
+    }
+
+    @Test
+    void documentRequest_documentMissing_escalatesWithoutAttachment() {
+        EmailTicket ticket = documentTicket();
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        stubDocumentPipelineCommon();
+        when(documentRequestService.findDocument("MSCU1234567", DocumentType.POD)).thenReturn(Optional.empty());
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
+        assertThat(ticket.getRequestedDocType()).isEqualTo(DocumentType.POD);
+        assertThat(ticket.getAttachedDocumentId()).isNull();
+        verify(aiDraftingService).generateDocumentReply(anyString(), eq(DocumentType.POD), any(), eq(false));
+    }
+
+    @Test
+    void documentRequest_featureDisabled_usesGenericDraft() {
+        EmailTicket ticket = documentTicket();
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        stubHappyPipeline();
+        when(settingsService.isFeatureEnabled(eq(DocumentService.FEATURE_KEY), anyBoolean())).thenReturn(false);
+        when(autoSendService.confidenceFor(any(), anyBoolean(), anyBoolean(), anyBoolean())).thenReturn(0.5);
+        when(autoSendService.shouldAutoSend(any())).thenReturn(false);
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
+        assertThat(ticket.getAttachedDocumentId()).isNull();
+        verify(aiDraftingService).generateDraft(anyString(), any(), anyString());
+        verify(documentRequestService, never()).detectRequestedType(anyString());
     }
 
     // ---- Phase 1.7: circuit breaker open → park as RETRY_LATER ------------------------

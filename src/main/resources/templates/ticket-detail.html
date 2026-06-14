@@ -68,6 +68,11 @@
                           class="text-muted fst-italic">Not extracted</span>
                 </dd>
 
+                <dt class="col-sm-3" th:if="${ticket.requestedDocType != null}">Requested document</dt>
+                <dd class="col-sm-9" th:if="${ticket.requestedDocType != null}">
+                    <span class="badge bg-light text-dark border" th:text="${ticket.requestedDocType.label}">Proof of Delivery</span>
+                </dd>
+
                 <dt class="col-sm-3">AI confidence</dt>
                 <dd class="col-sm-9">
                     <span th:if="${ticket.aiConfidence != null}"
@@ -106,6 +111,49 @@
         <div class="card-body bg-light">
             <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.875rem;"
                  th:text="${ticket.body ?: '(empty)'}">—</pre>
+        </div>
+    </div>
+
+    <!-- Document attachment (Phase 2.7) — document requests only -->
+    <div class="card mb-3 shadow-sm"
+         th:if="${ticket.ticketType != null and ticket.ticketType.name() == 'DOCUMENT_REQUEST'}">
+        <div class="card-header fw-semibold d-flex align-items-center gap-2">
+            Document
+            <span th:if="${attachedDocument != null}" class="badge bg-success small">Attached</span>
+            <span th:if="${attachedDocument == null}" class="badge bg-warning text-dark small">Not on file</span>
+        </div>
+        <div class="card-body">
+            <!-- Currently attached -->
+            <p th:if="${attachedDocument != null}" class="mb-2">
+                <strong>Attached:</strong>
+                <a th:href="@{/documents/{id}/download(id=${attachedDocument.id})}"
+                   th:text="${attachedDocument.filename}">pod.pdf</a>
+                <span class="text-muted small" th:text="'(' + ${attachedDocument.docType.label} + ')'">(Proof of Delivery)</span>
+                — this file will be attached when the reply is sent.
+            </p>
+            <p th:if="${attachedDocument == null}" class="text-muted small mb-2">
+                No document is attached. The requested document was not on file for this shipment —
+                upload it under <a href="/documents">Documents</a>, then attach it below before sending.
+            </p>
+
+            <!-- Attach / change / remove — only while the ticket is still open -->
+            <form th:if="${ticket.status.name() != 'CLOSED' and ticket.status.name() != 'AUTO_SENT'}"
+                  method="post" th:action="@{/tickets/{id}/attach-document(id=${ticket.id})}"
+                  class="d-flex gap-2 align-items-center">
+                <select class="form-select form-select-sm" name="documentId" style="max-width: 380px;">
+                    <option value="">— none —</option>
+                    <option th:each="d : ${availableDocuments}" th:value="${d.id}"
+                            th:selected="${attachedDocument != null and d.id == attachedDocument.id}"
+                            th:text="${d.docType.label + ' · ' + d.filename}">Proof of Delivery · pod.pdf</option>
+                </select>
+                <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap">Set attachment</button>
+            </form>
+            <p th:if="${(availableDocuments == null or #lists.isEmpty(availableDocuments))
+                        and ticket.status.name() != 'CLOSED' and ticket.status.name() != 'AUTO_SENT'}"
+               class="text-muted small mb-0 mt-2">
+                No documents are stored for
+                <code th:text="${ticket.extractedIdentifier ?: 'this shipment'}">MSCU1234567</code> yet.
+            </p>
         </div>
     </div>
 

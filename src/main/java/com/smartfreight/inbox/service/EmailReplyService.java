@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.TenantDocument;
+import com.smartfreight.inbox.repository.TenantDocumentRepository;
 import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -8,9 +10,12 @@ import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+
+import java.util.Optional;
 
 /**
  * Operator email reply sending service.
@@ -31,12 +36,15 @@ public class EmailReplyService {
     private static final Logger log = LoggerFactory.getLogger(EmailReplyService.class);
 
     private final MailSenderProvider mailSenderProvider;
+    private final TenantDocumentRepository documentRepository;
     private final Counter replySentCounter;
     private final Counter replyFailedCounter;
 
     public EmailReplyService(MailSenderProvider mailSenderProvider,
+                             TenantDocumentRepository documentRepository,
                              MeterRegistry meterRegistry) {
         this.mailSenderProvider = mailSenderProvider;
+        this.documentRepository = documentRepository;
         this.replySentCounter = Counter.builder("smartfreight_replies_total")
                 .description("Operator reply send results")
                 .tag("result", "sent")
@@ -62,9 +70,15 @@ public class EmailReplyService {
     public void sendReply(EmailTicket ticket) {
         MailSenderProvider.ResolvedSender resolved = mailSenderProvider.resolve();
         JavaMailSender mailSender = resolved.sender();
+        // Phase 2.7: a document-request reply may carry an attachment. Resolve it up front so the
+        // helper is multipart ONLY when there is a file — text-only replies keep their exact prior
+        // MIME shape. The lookup is RLS-scoped (a tenant context is active at every send site).
+        Optional<TenantDocument> attachment = ticket.getAttachedDocumentId() == null
+                ? Optional.empty()
+                : documentRepository.findById(ticket.getAttachedDocumentId());
         try {
             MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
+            MimeMessageHelper helper = new MimeMessageHelper(message, attachment.isPresent(), "UTF-8");
 
             String to = EmailAddressUtils.extract(ticket.getSenderEmail());
             if (to.isBlank() || !isValidEmail(to)) {
@@ -79,6 +93,15 @@ public class EmailReplyService {
             String subject = ticket.getSubject() != null ? ticket.getSubject() : "";
             helper.setSubject(ticket.isProactive() ? subject : "Re: " + subject);
             helper.setText(ticket.getDraftReply() != null ? ticket.getDraftReply() : "");
+
+            if (attachment.isPresent()) {
+                TenantDocument doc = attachment.get();
+                helper.addAttachment(doc.getFilename(),
+                        new ByteArrayResource(doc.getContent()),
+                        doc.getContentType() != null ? doc.getContentType() : "application/octet-stream");
+                log.info("Attaching document {} ({}) to reply for ticket {}",
+                        doc.getId(), doc.getFilename(), ticket.getId());
+            }
 
             if (!ticket.isProactive() && ticket.getMessageId() != null) {
                 message.setHeader("In-Reply-To", ticket.getMessageId());

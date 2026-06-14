@@ -53,6 +53,18 @@ public class SettingsService {
      */
     public static final String KEY_QUOTE_FOLLOWUP_PROMPT = "ai.quote-followup-prompt";
 
+    /**
+     * Document-request detection prompt ({@code {email}} placeholder) — routes a DOCUMENT_REQUEST
+     * enquiry to one document type (Phase 2.7). Seeded by migration V26.
+     */
+    public static final String KEY_DOCUMENT_DETECT_PROMPT = "ai.document-detect-prompt";
+
+    /**
+     * Document-request reply prompt ({@code {email}}, {@code {documentType}}, {@code {itemContext}},
+     * {@code {documentStatus}} placeholders) for Phase 2.7. Seeded by migration V26.
+     */
+    public static final String KEY_DOCUMENT_COVER_PROMPT = "ai.document-cover-prompt";
+
     private final AppSettingRepository appSettings;
     private final TenantSettingRepository tenantSettings;
 

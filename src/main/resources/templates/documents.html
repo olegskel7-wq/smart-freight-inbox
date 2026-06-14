@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Documents — Smart Freight Inbox</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+</head>
+<body>
+
+<nav th:replace="~{fragments/navbar :: navbar('documents')}"></nav>
+
+<div class="container mt-4" style="max-width: 960px;">
+
+    <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show">
+        <span th:text="${successMessage}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show">
+        <span th:text="${errorMessage}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="mb-0">Document Store</h5>
+        <span th:if="${!featureEnabled}" class="badge text-bg-warning">
+            feature.document-request is disabled — document enquiries use the generic reply
+        </span>
+    </div>
+
+    <!-- Upload -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold">Upload document</div>
+        <div class="card-body">
+            <p class="text-muted small mb-2">
+                Store a document against the shipment identifier it relates to (e.g. a container number).
+                When a customer asks for that document, the AI attaches it to the reply automatically.
+            </p>
+            <form method="post" th:action="@{/documents/upload}" enctype="multipart/form-data"
+                  class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Shipment identifier</label>
+                    <input type="text" class="form-control form-control-sm" name="identifier"
+                           placeholder="MSCU1234567" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Type</label>
+                    <select class="form-select form-select-sm" name="docType" required>
+                        <option th:each="t : ${docTypes}" th:value="${t}" th:text="${t.label}">Proof of Delivery</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">File</label>
+                    <input type="file" class="form-control form-control-sm" name="file" required>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary btn-sm w-100">Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Documents table -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <span class="fw-semibold">Documents (<span th:text="${#lists.size(documents)}">0</span>)</span>
+        </div>
+        <div class="card-body p-0">
+            <p th:if="${#lists.isEmpty(documents)}" class="text-muted small p-3 mb-0">
+                No documents yet. Upload a file to let the AI fulfil document requests automatically.
+            </p>
+            <table class="table table-sm table-hover align-middle mb-0" th:if="${!#lists.isEmpty(documents)}">
+                <thead class="table-light">
+                <tr>
+                    <th class="ps-3">Identifier</th>
+                    <th>Type</th>
+                    <th>File</th>
+                    <th class="text-end">Size</th>
+                    <th>Uploaded</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="d : ${documents}">
+                    <td class="ps-3" th:text="${d.identifier}">MSCU1234567</td>
+                    <td th:text="${d.docType.label}">Proof of Delivery</td>
+                    <td>
+                        <a th:href="@{/documents/{id}/download(id=${d.id})}" th:text="${d.filename}">pod.pdf</a>
+                    </td>
+                    <td class="text-end"
+                        th:text="${#numbers.formatDecimal(d.fileSize / 1024.0, 1, 1)} + ' KB'">12.3 KB</td>
+                    <td th:text="${#temporals.format(d.uploadedAt, 'dd MMM yyyy, HH:mm')}">01 Jun 2026, 10:00</td>
+                    <td class="text-end pe-3">
+                        <form method="post" th:action="@{/documents/{id}/delete(id=${d.id})}" class="d-inline"
+                              onsubmit="return confirm('Delete this document?');">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm py-0">✕</button>
+                        </form>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 bg-light">
+        <div class="card-body small text-muted">
+            <p class="fw-semibold text-body mb-1">How documents reach the customer</p>
+            When an enquiry is classified as a document request, the AI determines which document is
+            wanted and looks it up here by the extracted shipment identifier. If a matching document is
+            on file it is attached to the reply draft; otherwise the ticket is flagged for the operator,
+            who can attach an available document from the ticket page before sending.
+        </div>
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -5,7 +5,7 @@
 <!--
   Shared navbar fragment.
   Usage: <nav th:replace="~{fragments/navbar :: navbar(active='tickets')}"></nav>
-  active = 'tickets' | 'analytics' | 'rates' | 'users' | 'settings' | 'tenants' — highlights the current section.
+  active = 'tickets' | 'analytics' | 'rates' | 'documents' | 'users' | 'settings' | 'tenants' — highlights the current section.
   The Tenants link is platform-admin only: isSuperAdmin comes from GlobalModelAttributes.
 -->
 <nav th:fragment="navbar(active)" class="navbar navbar-dark bg-dark">
@@ -21,6 +21,9 @@
             <a href="/rates"
                th:classappend="${active == 'rates'} ? 'btn-light' : 'btn-outline-light'"
                class="btn btn-sm">Rates</a>
+            <a href="/documents"
+               th:classappend="${active == 'documents'} ? 'btn-light' : 'btn-outline-light'"
+               class="btn btn-sm">Documents</a>
             <a href="/users"
                th:classappend="${active == 'users'} ? 'btn-light' : 'btn-outline-light'"
                class="btn btn-sm">Users</a>
