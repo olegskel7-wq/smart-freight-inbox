@@ -4,7 +4,7 @@ import com.smartfreight.inbox.service.UserManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -52,7 +52,7 @@ public class UserManagementController {
     }
 
     @PostMapping("/{id}/password")
-    public String changePassword(@PathVariable Long id,
+    public String changePassword(@PathVariable String id,
                                  @RequestParam String newPassword,
                                  RedirectAttributes redirectAttributes) {
         if (newPassword == null || newPassword.length() < 8) {
@@ -70,12 +70,12 @@ public class UserManagementController {
     }
 
     @PostMapping("/{id}/delete")
-    public String deleteUser(@PathVariable Long id,
-                             @AuthenticationPrincipal UserDetails currentUser,
+    public String deleteUser(@PathVariable String id,
+                             @AuthenticationPrincipal OidcUser currentUser,
                              RedirectAttributes redirectAttributes) {
         try {
-            userManagementService.deleteUser(id, currentUser.getUsername());
-            log.info("User id={} deleted by {}", id, currentUser.getUsername());
+            userManagementService.deleteUser(id, currentUser.getPreferredUsername());
+            log.info("User id={} deleted by {}", id, currentUser.getPreferredUsername());
             redirectAttributes.addFlashAttribute("successMessage", "User deleted.");
         } catch (IllegalArgumentException e) {
             redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());

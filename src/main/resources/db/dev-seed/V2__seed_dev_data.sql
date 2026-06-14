@@ -14,10 +14,6 @@ INSERT INTO container (container_number, status, eta, location) VALUES
     ('TEMU4448888', 'AT_PORT',     '2026-04-08 07:00:00', 'Felixstowe Terminal 1, Row B'),
     ('CAIU7773330', 'RELEASED',    '2026-04-07 10:00:00', 'Awaiting haulier collection');
 
--- Demo operator user. Password: "demo123" (BCrypt, cost 10).
--- Squashed from V2 + V3 + V6 — this is the single authoritative seed.
--- Rotate this password before any public deployment.
-INSERT INTO app_user (email, password, role) VALUES
-    ('operator@smartfreight.com',
-     '$2a$10$vDM1KvzVlZ9uQ8CSR.X5k.1qho.9gwoUdOSGIZh2V3LKuXWReWkra',
-     'OPERATOR');
+-- Operator seeding moved to Keycloak (Phase 2.3): the demo operator
+-- operator@smartfreight.com is imported from keycloak/realm-smartfreight.json. The app_user
+-- table was dropped in V27, so there is nothing to seed here anymore.

@@ -224,6 +224,14 @@
 			<version>${testcontainers.version}</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- Phase 2.3 S2: stub the Keycloak Admin REST API in KeycloakAdminServiceTest.
+		     MockWebServer drives the real WebClient against scripted HTTP responses. -->
+		<dependency>
+			<groupId>com.squareup.okhttp3</groupId>
+			<artifactId>mockwebserver</artifactId>
+			<version>4.12.0</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>

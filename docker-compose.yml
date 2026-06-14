@@ -36,6 +36,12 @@ services:
       - KEYCLOAK_ISSUER_URI=${KEYCLOAK_ISSUER_URI:-http://keycloak:8081/realms/smartfreight}
       - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-smartfreight-inbox}
       - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-smartfreight-inbox-secret}
+      # Phase 2.3 S2: Admin REST client for tenant/operator provisioning (KeycloakAdminService).
+      # Realm-less base URL over the compose network; its own service-account client + secret.
+      - KEYCLOAK_SERVER_URL=${KEYCLOAK_SERVER_URL:-http://keycloak:8081}
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM:-smartfreight}
+      - KEYCLOAK_ADMIN_CLIENT_ID=${KEYCLOAK_ADMIN_CLIENT_ID:-smartfreight-admin}
+      - KEYCLOAK_ADMIN_CLIENT_SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-smartfreight-admin-secret}
     depends_on:
       postgres:
         condition: service_healthy

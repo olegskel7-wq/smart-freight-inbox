@@ -1,11 +1,10 @@
 package com.smartfreight.inbox.config;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
@@ -33,6 +32,7 @@ import org.springframework.security.web.authentication.logout.LogoutSuccessHandl
  */
 @Configuration
 @EnableWebSecurity
+@EnableConfigurationProperties(KeycloakAdminProperties.class)
 public class SecurityConfig {
 
     @Bean
@@ -71,15 +71,5 @@ public class SecurityConfig {
                 new OidcClientInitiatedLogoutSuccessHandler(repo);
         handler.setPostLogoutRedirectUri("{baseUrl}/");
         return handler;
-    }
-
-    /**
-     * BCrypt encoder — retained for {@code UserManagementService} (operator password handling on
-     * the legacy {@code app_user} table) until Phase 2.3 S2 moves provisioning to the Keycloak
-     * Admin API. No longer used for login (Keycloak verifies credentials).
-     */
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
     }
 }

@@ -188,6 +188,17 @@ mailbox:
 # Login brute-force protection (Phase 2.3) is delegated to Keycloak (realm setting
 # bruteForceProtected) — the Phase 2.6 Redis login throttle was removed with form login.
 
+# Keycloak Admin REST client (Phase 2.3 S2). KeycloakAdminService provisions tenants' operators
+# (create/list/delete, tenant_id attribute, realm roles, password reset) via the realm Admin API.
+# server-url is the realm-less base (no /realms/...); the service-account client below holds the
+# realm-management roles (see keycloak/realm-smartfreight.json). NOT the same client as login.
+keycloak:
+  admin:
+    server-url: ${KEYCLOAK_SERVER_URL:http://keycloak:8081}
+    realm: ${KEYCLOAK_REALM:smartfreight}
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:smartfreight-admin}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:smartfreight-admin-secret}
+
 management:
   endpoints:
     web:

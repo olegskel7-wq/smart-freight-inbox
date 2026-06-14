@@ -74,9 +74,33 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "smartfreight-admin",
+      "name": "SmartFreight Admin (provisioning service account, Phase 2.3 S2)",
+      "description": "Backend-only client. Its service account holds realm-management roles so KeycloakAdminService can provision tenants' operators via the Admin REST API.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "smartfreight-admin-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
     }
   ],
   "users": [
+    {
+      "username": "service-account-smartfreight-admin",
+      "enabled": true,
+      "serviceAccountClientId": "smartfreight-admin",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users"
+        ]
+      }
+    },
     {
       "username": "operator@smartfreight.com",
       "email": "operator@smartfreight.com",
