@@ -11,6 +11,7 @@ import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.utility.DockerImageName;
 
 /**
  * Конфигурация Testcontainers для интеграционных тестов.
@@ -34,10 +35,15 @@ public class TestcontainersConfiguration {
 	 * приложение — под smartfreight_app (NOSUPERUSER, NOBYPASSRLS — роль создаёт V19).
 	 * Юзер контейнера — суперюзер, RLS его игнорирует: тесты изоляции под ним
 	 * молча проверяли бы пустоту.
+	 *
+	 * Phase 3.1: образ pgvector/pgvector:pg16 (вместо postgres:16-alpine) — V28 делает
+	 * CREATE EXTENSION vector. asCompatibleSubstituteFor("postgres") убеждает Testcontainers,
+	 * что это PostgreSQL-совместимый образ (иначе он не распознаёт нестандартное имя).
 	 */
 	@Bean
 	public PostgreSQLContainer<?> postgresContainer() {
-		return new PostgreSQLContainer<>("postgres:16-alpine");
+		return new PostgreSQLContainer<>(
+				DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"));
 	}
 
 	/**

@@ -21,5 +21,10 @@ ADDITIONAL_MODEL=${ADDITIONAL_MODEL:-llama3.1:8b}
 echo "Pulling model: $ADDITIONAL_MODEL"
 ollama pull "$ADDITIONAL_MODEL"
 
+# Phase 3.1: embedding model for the AI feedback loop (RAG over operator corrections)
+EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+echo "Pulling model: $EMBEDDING_MODEL"
+ollama pull "$EMBEDDING_MODEL"
+
 echo "All models ready. Ollama is accepting traffic."
 wait $SERVER_PID

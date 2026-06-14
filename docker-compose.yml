@@ -12,6 +12,8 @@ services:
       - DB_ADMIN_USER=${POSTGRES_USER:-postgres}
       - DB_ADMIN_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - OLLAMA_URL=http://ollama:11434
+      # Phase 3.1: local embedding model for the AI feedback loop.
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
       - PORT_SERVICE_URL=http://port-service:9000
       - PORT_SERVICE_API_KEY=${PORT_SERVICE_API_KEY:-smartfreight-port-secret}
       - IMAP_HOST=${IMAP_HOST:-imap.example.com}
@@ -69,7 +71,9 @@ services:
       - llm_internal
 
   postgres:
-    image: postgres:16
+    # Phase 3.1: pgvector image (PG16 + the `vector` extension) for the AI feedback loop's
+    # embedding similarity search. Drop-in for postgres:16 — same data, V28 enables the extension.
+    image: pgvector/pgvector:pg16
     environment:
       - POSTGRES_DB=smartfreight
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -98,6 +102,8 @@ services:
       - OLLAMA_HOST=0.0.0.0
       - MODEL_NAME=qwen2.5:7b
       - ADDITIONAL_MODEL=llama3.1:8b
+      # Phase 3.1: embedding model for the AI feedback loop (pulled by entrypoint.sh).
+      - EMBEDDING_MODEL=nomic-embed-text
       - OLLAMA_MAX_LOADED_MODELS=2
       # RTX 5080 16GB: обе модели занимают ~10GB, остаётся 6GB — хватает на 2 параллельных вывода
       - OLLAMA_NUM_PARALLEL=2

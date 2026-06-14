@@ -295,6 +295,9 @@ public class TicketProcessingService {
             draft = aiDraftingService.generateDraft(aiInput, item, rateContext);
         }
         ticket.setDraftReply(draft);
+        // Phase 3.1: preserve the unmodified AI draft so the feedback loop can compare it against
+        // what the operator actually sends. draftReply gets overwritten on edit; this does not.
+        ticket.setAiOriginalDraft(draft);
 
         // Phase 1.6: confidence is computed and stored on every run (even with auto-send off)
         // so the score distribution accumulates for threshold tuning.

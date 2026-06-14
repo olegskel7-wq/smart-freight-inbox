@@ -7,6 +7,7 @@ import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.repository.TenantDocumentRepository;
 import com.smartfreight.inbox.service.EmailReplyService;
+import com.smartfreight.inbox.service.FeedbackLoopService;
 import com.smartfreight.inbox.service.QuoteFollowUpService;
 import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
@@ -49,19 +50,22 @@ public class TicketViewController {
     private final SendRateLimiter sendRateLimiter;
     private final QuoteFollowUpService quoteFollowUpService;
     private final TenantDocumentRepository documentRepository;
+    private final FeedbackLoopService feedbackLoopService;
 
     public TicketViewController(EmailTicketRepository emailTicketRepository,
                                 EmailReplyService emailReplyService,
                                 TicketAuditService auditService,
                                 SendRateLimiter sendRateLimiter,
                                 QuoteFollowUpService quoteFollowUpService,
-                                TenantDocumentRepository documentRepository) {
+                                TenantDocumentRepository documentRepository,
+                                FeedbackLoopService feedbackLoopService) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
         this.auditService = auditService;
         this.sendRateLimiter = sendRateLimiter;
         this.quoteFollowUpService = quoteFollowUpService;
         this.documentRepository = documentRepository;
+        this.feedbackLoopService = feedbackLoopService;
     }
 
     /**
@@ -312,6 +316,10 @@ public class TicketViewController {
                 // Phase 2.5: a sent RFQ quote arms a one-shot follow-up (guarded inside the service —
                 // non-RFQ and proactive tickets are ignored).
                 quoteFollowUpService.armFromTicket(ticket);
+                // Phase 3.1: if the operator edited the AI draft before sending, capture the
+                // correction as a training example (diff-gated + guarded inside the service).
+                // draftReply now holds the operator's final text; aiOriginalDraft the AI's.
+                feedbackLoopService.captureIfEdited(ticket);
                 redirectAttributes.addFlashAttribute("successMessage",
                         "Reply sent to " + ticket.getSenderEmail());
             } catch (Exception e) {

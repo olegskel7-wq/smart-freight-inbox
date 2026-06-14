@@ -127,6 +127,15 @@ public class EmailTicket {
     private String draftReply;
 
     /**
+     * The unmodified AI-generated draft (Phase 3.1), captured by the pipeline alongside
+     * {@link #draftReply}. Unlike {@code draftReply} — which the operator's edits overwrite — this
+     * is never touched after generation, so the feedback loop can compare it against what the
+     * operator actually sent and learn from the difference. Null for pre-3.1 and proactive tickets.
+     */
+    @Column(name = "ai_original_draft", columnDefinition = "TEXT")
+    private String aiOriginalDraft;
+
+    /**
      * For DOCUMENT_REQUEST tickets (Phase 2.7): the document type the AI determined the customer
      * is asking for. Shown in the operator UI for every such ticket — even when no matching file
      * is on hand — so the operator knows what to provide. Null for non-document tickets.
