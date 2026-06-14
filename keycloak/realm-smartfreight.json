@@ -13,6 +13,7 @@
   "maxFailureWaitSeconds": 900,
   "failureFactor": 10,
   "waitIncrementSeconds": 60,
+  "passwordPolicy": "length(10) and upperCase(1) and lowerCase(1) and digits(1) and notUsername(undefined)",
   "roles": {
     "realm": [
       {
@@ -128,7 +129,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "operator",
+          "value": "Operator1Pass",
           "temporary": false
         }
       ],

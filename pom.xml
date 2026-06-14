@@ -28,7 +28,9 @@
 	</scm>
 	<properties>
 		<java.version>17</java.version>
-		<testcontainers.version>1.20.4</testcontainers.version>
+		<!-- 1.21.3 to align with testcontainers-keycloak 3.9.1 (Phase 2.3 S3 e2e), which
+		     pulls the testcontainers core at 1.21.x — keeping one version avoids core/module skew -->
+		<testcontainers.version>1.21.3</testcontainers.version>
 		<pdfbox.version>3.0.3</pdfbox.version>
 		<poi.version>5.3.0</poi.version>
 		<commons-csv.version>1.12.0</commons-csv.version>
@@ -224,6 +226,24 @@
 			<version>${testcontainers.version}</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- Phase 2.3 S3: spin up a real Keycloak 26 with our realm-import in
+		     KeycloakAdminServiceE2ETest. The 3.x line tracks testcontainers 1.21.x (matched by the
+		     property above); 4.x jumps to testcontainers 2.0 and would clash with the modules here.
+		     Keeps the project's "core libs over heavy starters" line — it's a thin container helper,
+		     used only in tests. Excludes its transitive keycloak-admin-client: we drive the Admin API
+		     with our own WebClient (KeycloakAdminService), the lib is exactly what we avoid in main. -->
+		<dependency>
+			<groupId>com.github.dasniko</groupId>
+			<artifactId>testcontainers-keycloak</artifactId>
+			<version>3.9.1</version>
+			<scope>test</scope>
+			<exclusions>
+				<exclusion>
+					<groupId>org.keycloak</groupId>
+					<artifactId>keycloak-admin-client</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
 		<!-- Phase 2.3 S2: stub the Keycloak Admin REST API in KeycloakAdminServiceTest.
 		     MockWebServer drives the real WebClient against scripted HTTP responses. -->
 		<dependency>
@@ -235,6 +255,20 @@
 	</dependencies>
 
 	<build>
+		<!-- Put the single-source realm-import on the test classpath so the Phase 2.3 S3
+		     e2e (KeycloakContainer.withRealmImportFile) boots the SAME realm we deploy — no
+		     duplicate copy under src/test/resources that could silently drift from keycloak/. -->
+		<testResources>
+			<testResource>
+				<directory>src/test/resources</directory>
+			</testResource>
+			<testResource>
+				<directory>keycloak</directory>
+				<includes>
+					<include>realm-smartfreight.json</include>
+				</includes>
+			</testResource>
+		</testResources>
 		<plugins>
 			<!-- JaCoCo: kodo padengimo matavimas ir ataskaita -->
 			<plugin>

@@ -46,7 +46,7 @@ Once the stack is up, you can access the services here:
 
 | Service | URL | Login Credentials |
 |---------|-----|-------------------|
-| **Web UI** | [http://localhost:8080/login](http://localhost:8080/login) | `operator@smartfreight.com` / `demo123` |
+| **Web UI** | [http://localhost:8080/login](http://localhost:8080/login) | `operator@smartfreight.com` / `Operator1Pass` (via Keycloak) |
 | **Grafana** | [http://localhost:3000](http://localhost:3000) | `admin` / `admin` (skip password change) |
 | **Prometheus** | [http://localhost:9090](http://localhost:9090) | *(No auth)* |
 | **Actuator Health** | [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health) | *(No auth)* |

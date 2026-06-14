@@ -72,7 +72,7 @@ Response should be:
 1. **View existing test tickets**
    - Open browser: `http://localhost:8080/login`
    - Email: `operator@smartfreight.com`
-   - Password: `demo123`
+   - Password: `Operator1Pass` (via Keycloak)
 
 2. **See pre-generated responses**
    - Navigate to `/tickets`
@@ -383,7 +383,7 @@ Use this checklist to verify end-to-end functionality:
 - [ ] PostgreSQL running and healthy
 - [ ] Ollama running with both models loaded
 - [ ] Spring Boot application started without errors
-- [ ] Login works (`operator@smartfreight.com` / `demo123`)
+- [ ] Login works (`operator@smartfreight.com` / `Operator1Pass`)
 - [ ] `/tickets` page loads with existing tickets
 - [ ] At least one NEW ticket visible
 - [ ] After 30 seconds, NEW ticket status changes to DRAFT_READY

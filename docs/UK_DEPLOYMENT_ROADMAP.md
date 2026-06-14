@@ -111,7 +111,7 @@ curl http://localhost:8080/actuator/health
 Access points after deploy:
 - App: `http://SERVER_IP:8080/login`
 - Grafana: `http://SERVER_IP:3000` (admin / GRAFANA_PASSWORD)
-- Demo login: `operator@smartfreight.com` / `demo123`
+- Demo login: `operator@smartfreight.com` / `Operator1Pass` (via Keycloak)
 
 ---
 
