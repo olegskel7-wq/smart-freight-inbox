@@ -162,7 +162,7 @@ Smart Freight Inbox combines **local AI**, **human oversight**, and **structured
 ## Repository
 
 - GitHub: [https://github.com/olegskel7-wq/smart-freight-inbox](https://github.com/olegskel7-wq/smart-freight-inbox)
-- Demo user: `operator@smartfreight.com` / `demo123`
+- Demo user: `operator@smartfreight.com` / `Operator1Pass` (Keycloak realm seed, SUPER_ADMIN)
 - Start with: `docker compose up --build`
 
 ---

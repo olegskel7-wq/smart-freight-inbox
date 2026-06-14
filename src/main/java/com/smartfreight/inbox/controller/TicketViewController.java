@@ -16,7 +16,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
@@ -36,7 +35,7 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 /**
  * Thymeleaf UI controller for the operator browser interface.
  *
- * Authentication via standard Spring Security form login (session cookie).
+ * Authentication via Keycloak OIDC (Phase 2.3); the session cookie still backs the login.
  * The only external controller — the REST API was removed as unnecessary for the demo version.
  */
 @Controller
@@ -65,16 +64,13 @@ public class TicketViewController {
         this.documentRepository = documentRepository;
     }
 
-    /** GET / — authenticated users go directly to tickets, others to login. */
+    /**
+     * GET / — go to tickets. Unauthenticated requests never reach here: Spring Security
+     * intercepts them and redirects to Keycloak (Phase 2.3, single oauth2 client).
+     */
     @GetMapping("/")
-    public String root(Authentication auth) {
-        return (auth != null && auth.isAuthenticated()) ? "redirect:/tickets" : "redirect:/login";
-    }
-
-    /** GET /login — renders the login form page. */
-    @GetMapping("/login")
-    public String loginPage() {
-        return "login";
+    public String root() {
+        return "redirect:/tickets";
     }
 
     /**

@@ -79,6 +79,27 @@ spring:
   cache:
     type: redis
 
+  # OAuth2/OIDC (Phase 2.3) — Keycloak is the sole identity provider. The login flow is
+  # authorization-code; tenant_id and roles arrive as token claims (TenantOidcUserService).
+  # issuer-uri MUST match the token `iss` for both the browser redirect and this backend's
+  # discovery call — hence one host:port (keycloak:8081) on both sides (dev hosts entry
+  # `127.0.0.1 keycloak`). See docker-compose.yml / CLAUDE.md.
+  security:
+    oauth2:
+      client:
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8081/realms/smartfreight}
+            # Keycloak exposes realm roles under realm_access.roles; the user-name claim is
+            # the email (preferred_username is the email in our realm).
+            user-name-attribute: preferred_username
+        registration:
+          keycloak:
+            client-id: ${KEYCLOAK_CLIENT_ID:smartfreight-inbox}
+            client-secret: ${KEYCLOAK_CLIENT_SECRET:smartfreight-inbox-secret}
+            authorization-grant-type: authorization_code
+            scope: openid,profile,email
+
   # Legacy single-mailbox config (pre-S3). Used ONLY by MailboxBootstrap to import the
   # mailbox into tenant_mailbox on first start (and by GmailDraftService for the Gmail
   # drafts feature). Adapters themselves are built from tenant_mailbox rows — manage
@@ -164,17 +185,19 @@ mailbox:
   reconcile-interval-ms: 30000
   encryption-key: ${MAILBOX_ENCRYPTION_KEY:}
 
-# Login brute-force throttling (Phase 2.6). Counters live in Redis keyed by client IP and
-# by submitted email; over either threshold within the window, POST /login is rejected for
-# block-seconds before authentication runs. Login happens before any tenant context, so this
-# is platform-level config (not a per-tenant feature flag). enabled=false disables the filter.
-ratelimit:
-  login:
-    enabled: true
-    max-ip-failures: 10
-    max-email-failures: 5
-    window-seconds: 900
-    block-seconds: 900
+# Login brute-force protection (Phase 2.3) is delegated to Keycloak (realm setting
+# bruteForceProtected) — the Phase 2.6 Redis login throttle was removed with form login.
+
+# Keycloak Admin REST client (Phase 2.3 S2). KeycloakAdminService provisions tenants' operators
+# (create/list/delete, tenant_id attribute, realm roles, password reset) via the realm Admin API.
+# server-url is the realm-less base (no /realms/...); the service-account client below holds the
+# realm-management roles (see keycloak/realm-smartfreight.json). NOT the same client as login.
+keycloak:
+  admin:
+    server-url: ${KEYCLOAK_SERVER_URL:http://keycloak:8081}
+    realm: ${KEYCLOAK_REALM:smartfreight}
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:smartfreight-admin}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:smartfreight-admin-secret}
 
 management:
   endpoints:

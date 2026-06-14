@@ -40,8 +40,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr th:each="u : ${users}">
-                        <td class="text-muted small" th:text="${u.id}">1</td>
+                    <tr th:each="u, stat : ${users}">
+                        <td class="text-muted small" th:text="${stat.count}">1</td>
                         <td th:text="${u.email}">user@example.com</td>
                         <td>
                             <span class="badge bg-secondary" th:text="${u.role ?: 'OPERATOR'}">OPERATOR</span>

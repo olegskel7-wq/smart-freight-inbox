@@ -30,8 +30,8 @@ public class TenantFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        try (TenantContext.Scope ignored = auth != null && auth.getPrincipal() instanceof TenantUserDetails user
-                ? TenantContext.openAs(user.getTenantId())
+        try (TenantContext.Scope ignored = auth != null && auth.getPrincipal() instanceof TenantPrincipal principal
+                ? TenantContext.openAs(principal.getTenantId())
                 : TenantContext.openAnonymous()) {
             filterChain.doFilter(request, response);
         }

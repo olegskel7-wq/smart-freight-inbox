@@ -1,88 +1,89 @@
 package com.smartfreight.inbox.service;
 
-import com.smartfreight.inbox.entity.User;
-import com.smartfreight.inbox.repository.UserRepository;
+import com.smartfreight.inbox.service.KeycloakAdminService.KeycloakUser;
 import com.smartfreight.inbox.tenancy.TenantContext;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 /**
- * CRUD facade for {@link User} accounts used by the operator self-service UI.
+ * CRUD facade for operator accounts used by the self-service UI (Phase 2.2 S2,
+ * reworked for Keycloak in Phase 2.3 S2).
  *
- * <p>Backed by the same {@code app_user} table that
- * {@link com.smartfreight.inbox.config.DbUserDetailsService} reads at login.
- * Password values are stored as BCrypt hashes; raw passwords never touch the DB.
+ * <p>Backing store is now <b>Keycloak</b> (decision 2, single realm): users carry a
+ * {@code tenant_id} attribute and a realm role, and passwords live in Keycloak — they never
+ * touch our DB. The legacy {@code app_user} table is gone (V27).
  *
- * <p>All mutating methods validate the input and run inside a transaction —
- * exceptions thrown here bubble up to the controller as flash error messages.
- *
- * <p>Phase 2.2: {@code app_user} sits OUTSIDE {@code @TenantId}/RLS (login bootstrap
- * table), so tenant scoping is enforced HERE, explicitly: lists are filtered by the
- * caller's tenant, created users inherit it, and cross-tenant targets read as
- * "not found". Email stays globally unique across tenants (it is the login key).
+ * <p>Tenant scoping is enforced HERE, explicitly: lists are filtered by the caller's tenant
+ * (Keycloak attribute search), created users inherit it, and cross-tenant targets read as
+ * "not found". Email stays globally unique across tenants (it is the login key, enforced by
+ * the realm).
  */
 @Service
 public class UserManagementService {
 
-    /** Minimum acceptable password length — short enough for usability, long enough to discourage trivial guesses. */
+    /** Minimum acceptable password length — matches the realm policy expectation for the pilot. */
     private static final int MIN_PASSWORD_LENGTH = 8;
 
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final KeycloakAdminService keycloakAdminService;
 
-    public UserManagementService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
+    public UserManagementService(KeycloakAdminService keycloakAdminService) {
+        this.keycloakAdminService = keycloakAdminService;
     }
 
-    /** Returns the caller's tenant users (no pagination — the operator team is expected to be small). */
-    public List<User> findAll() {
-        return userRepository.findByTenantId(currentTenantId());
+    /** Returns the caller's tenant operators (no pagination — the operator team is expected to be small). */
+    public List<KeycloakUser> findAll() {
+        return keycloakAdminService.listUsersByTenant(currentTenantId());
     }
 
     /**
-     * Creates a new operator account. Email is normalised (trim + lowercase) before persisting.
+     * Creates a new operator account in Keycloak, scoped to the caller's tenant.
      *
-     * @param email       login email — must be unique
-     * @param rawPassword plain-text password — encoded with BCrypt before storage
-     * @param role        Spring Security role name (without the {@code ROLE_} prefix)
+     * @param email       login email — must be globally unique
+     * @param rawPassword initial password — stored by Keycloak (non-temporary)
+     * @param role        realm role name (without the {@code ROLE_} prefix)
      * @throws IllegalArgumentException if the password is too short or the email is already taken
      */
-    @Transactional
     public void createUser(String email, String rawPassword, String role) {
         validatePassword(rawPassword);
-        if (userRepository.findByEmail(email).isPresent()) {
-            throw new IllegalArgumentException("User with email " + email + " already exists.");
+        String normalised = email.trim().toLowerCase();
+        if (keycloakAdminService.emailExists(normalised)) {
+            throw new IllegalArgumentException("User with email " + normalised + " already exists.");
         }
-        User user = User.builder()
-                .email(email.trim().toLowerCase())
-                .password(passwordEncoder.encode(rawPassword))
-                .role(role)
-                .tenantId(currentTenantId())
-                .build();
-        userRepository.save(user);
+        keycloakAdminService.createUser(normalised, rawPassword, currentTenantId(), role);
     }
 
     /**
-     * Replaces the password for an existing user. Used both for self-service password change
-     * and for operator-on-operator resets — authorisation is enforced at the controller layer.
+     * Resets the password for an existing operator. Used for operator-on-operator resets —
+     * authorisation is enforced at the controller layer.
      *
-     * @param userId      target user
-     * @param rawPassword new plain-text password
-     * @throws IllegalArgumentException if the password is too short or the user does not exist
+     * @param userId      Keycloak user id (UUID)
+     * @param rawPassword new password
+     * @throws IllegalArgumentException if the password is too short or the user is not in this tenant
      */
-    @Transactional
-    public void changePassword(Long userId, String rawPassword) {
+    public void changePassword(String userId, String rawPassword) {
         validatePassword(rawPassword);
-        User user = findInCurrentTenant(userId);
-        user.setPassword(passwordEncoder.encode(rawPassword));
-        userRepository.save(user);
+        requireInCurrentTenant(userId);
+        keycloakAdminService.resetPassword(userId, rawPassword);
     }
 
-    /** Cheap sanity check — does not enforce a complex password policy (out of scope for the pilot). */
+    /**
+     * Deletes an operator account. Prevents an operator from deleting themselves — accidental
+     * self-lockout would leave that tenant unable to manage its own users.
+     *
+     * @param userId           Keycloak user id (UUID)
+     * @param currentUserEmail email of the operator performing the action
+     * @throws IllegalArgumentException if the target is not in this tenant or matches the caller
+     */
+    public void deleteUser(String userId, String currentUserEmail) {
+        KeycloakUser user = requireInCurrentTenant(userId);
+        if (user.email() != null && user.email().equalsIgnoreCase(currentUserEmail)) {
+            throw new IllegalArgumentException("You cannot delete your own account.");
+        }
+        keycloakAdminService.deleteUser(userId);
+    }
+
+    /** Cheap sanity check — does not enforce a complex password policy (delegated to Keycloak). */
     private void validatePassword(String rawPassword) {
         if (rawPassword == null || rawPassword.length() < MIN_PASSWORD_LENGTH) {
             throw new IllegalArgumentException(
@@ -90,33 +91,16 @@ public class UserManagementService {
         }
     }
 
-    /**
-     * Deletes a user account. Prevents an operator from deleting themselves —
-     * accidental self-lockout would leave the system without any way to log in.
-     *
-     * @param userId           target user
-     * @param currentUserEmail email of the operator performing the action
-     * @throws IllegalArgumentException if the target does not exist or matches the caller
-     */
-    @Transactional
-    public void deleteUser(Long userId, String currentUserEmail) {
-        User user = findInCurrentTenant(userId);
-        if (user.getEmail().equalsIgnoreCase(currentUserEmail)) {
-            throw new IllegalArgumentException("You cannot delete your own account.");
-        }
-        userRepository.delete(user);
-    }
-
     /** Loads a user only if they belong to the caller's tenant — others read as "not found". */
-    private User findInCurrentTenant(Long userId) {
-        return userRepository.findById(userId)
-                .filter(u -> u.getTenantId().equals(currentTenantId()))
+    private KeycloakUser requireInCurrentTenant(String userId) {
+        return keycloakAdminService.findUser(userId)
+                .filter(u -> currentTenantId().equals(u.tenantId()))
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
     }
 
     private Long currentTenantId() {
-        // S3: user management is only reachable by an authenticated operator, whose
-        // tenant TenantFilter has already bound — an absent tenant is a bug, not default.
+        // User management is only reachable by an authenticated operator, whose tenant
+        // TenantFilter has already bound — an absent tenant is a bug, not a default.
         return TenantContext.requireTenantId();
     }
 }
