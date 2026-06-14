@@ -1,6 +1,5 @@
 package com.smartfreight.inbox.controller;
 
-import com.smartfreight.inbox.config.DbUserDetailsService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -16,9 +15,12 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 @ControllerAdvice
 public class GlobalModelAttributes {
 
+    /** Platform-admin authority (Keycloak realm role SUPER_ADMIN, mapped by TenantOidcUserService). */
+    private static final String SUPER_ADMIN_AUTHORITY = "ROLE_SUPER_ADMIN";
+
     @ModelAttribute("isSuperAdmin")
     public boolean isSuperAdmin(Authentication authentication) {
         return authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(a -> ("ROLE_" + DbUserDetailsService.SUPER_ADMIN_ROLE).equals(a.getAuthority()));
+                .anyMatch(a -> SUPER_ADMIN_AUTHORITY.equals(a.getAuthority()));
     }
 }

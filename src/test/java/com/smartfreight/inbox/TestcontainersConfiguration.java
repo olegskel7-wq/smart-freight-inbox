@@ -3,6 +3,10 @@ package com.smartfreight.inbox;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -78,6 +82,32 @@ public class TestcontainersConfiguration {
 	@ServiceConnection(name = "redis")
 	public GenericContainer<?> redisContainer() {
 		return new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
+	}
+
+	/**
+	 * Static Keycloak client registration for tests (Phase 2.3). The production config uses
+	 * {@code issuer-uri}, which makes Boot fetch the OIDC metadata at context startup — there is
+	 * no Keycloak in the test environment, so that would fail every full-context test. Supplying
+	 * our own {@link ClientRegistrationRepository} (the auto-configured one is
+	 * {@code @ConditionalOnMissingBean}) skips discovery entirely. The endpoints are never called:
+	 * tests authenticate via {@code @WithMockTenantOperator}, not a real login round-trip.
+	 */
+	@Bean
+	public ClientRegistrationRepository clientRegistrationRepository() {
+		ClientRegistration keycloak = ClientRegistration.withRegistrationId("keycloak")
+				.clientId("test-client")
+				.clientSecret("test-secret")
+				.authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+				.redirectUri("{baseUrl}/login/oauth2/code/keycloak")
+				.scope("openid", "profile", "email")
+				.authorizationUri("http://localhost/realms/smartfreight/protocol/openid-connect/auth")
+				.tokenUri("http://localhost/realms/smartfreight/protocol/openid-connect/token")
+				.jwkSetUri("http://localhost/realms/smartfreight/protocol/openid-connect/certs")
+				.userInfoUri("http://localhost/realms/smartfreight/protocol/openid-connect/userinfo")
+				.userNameAttributeName("preferred_username")
+				.clientName("Keycloak")
+				.build();
+		return new InMemoryClientRegistrationRepository(keycloak);
 	}
 
 }

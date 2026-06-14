@@ -61,6 +61,14 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+		<!-- OAuth2/OIDC login (Phase 2.3): Keycloak is the sole IdP. The oauth2-client
+		     starter drives the authorization-code login flow (we stay session-based —
+		     oauth2Login holds a server-side session in Redis). NOT oauth2-resource-server:
+		     there is no public bearer API (inter-service auth is a separate API key). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-client</artifactId>
+		</dependency>
 
 		<!-- Redis (Phase 2.6): session store (horizontal scaling), rate-sheet cache,
 		     login rate-limit counters. One Lettuce-backed connection serves all three.

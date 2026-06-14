@@ -6,8 +6,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
 /**
- * Like {@code @WithMockUser}, but the principal is a {@code TenantUserDetails} so the
- * production {@code TenantFilter} binds a real tenant to the request (S3 test support).
+ * Like {@code @WithMockUser}, but the principal is a {@code TenantOidcUser} so the
+ * production {@code TenantFilter} binds a real tenant to the request (Phase 2.3 test support).
  *
  * <p>A plain {@code @WithMockUser} principal is not tenant-aware, so since S3 the filter
  * scopes the request as anonymous (fail-closed) — RLS then hides every row and full-stack
