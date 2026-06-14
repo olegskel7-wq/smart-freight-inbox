@@ -2,6 +2,7 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.TrainingExample;
+import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.TrainingExampleRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -10,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -33,23 +35,33 @@ public class FeedbackLoopService {
 
     private static final Logger log = LoggerFactory.getLogger(FeedbackLoopService.class);
 
+    /** Per-example cap on enquiry / reply text in the injected block — keeps the prompt bounded. */
+    private static final int MAX_EXAMPLE_CHARS = 600;
+
     private final TrainingExampleRepository repository;
     private final EmbeddingService embeddingService;
     private final SettingsService settingsService;
     private final Counter capturedCounter;
+    private final Counter injectedCounter;
     private final double minChangeRatio;
+    private final int retrieveCount;
 
     public FeedbackLoopService(TrainingExampleRepository repository,
                                EmbeddingService embeddingService,
                                SettingsService settingsService,
                                MeterRegistry meterRegistry,
-                               @Value("${feedback.min-change-ratio:0.1}") double minChangeRatio) {
+                               @Value("${feedback.min-change-ratio:0.1}") double minChangeRatio,
+                               @Value("${feedback.retrieve-count:3}") int retrieveCount) {
         this.repository = repository;
         this.embeddingService = embeddingService;
         this.settingsService = settingsService;
         this.minChangeRatio = minChangeRatio;
+        this.retrieveCount = retrieveCount;
         this.capturedCounter = Counter.builder("smartfreight_training_examples_captured_total")
                 .description("Operator corrections captured as training examples")
+                .register(meterRegistry);
+        this.injectedCounter = Counter.builder("smartfreight_feedback_examples_injected_total")
+                .description("Past corrections injected into drafting prompts as few-shot examples")
                 .register(meterRegistry);
     }
 
@@ -110,6 +122,65 @@ public class FeedbackLoopService {
             log.warn("Failed to capture training example for ticket {}: {}",
                     ticket.getId(), e.getMessage());
         }
+    }
+
+    /**
+     * Retrieves past operator corrections similar to the incoming enquiry, formatted as a few-shot
+     * block for injection into the drafting prompt (Phase 3.1 S2 — the half that improves drafts).
+     *
+     * <p>Embeds the enquiry best-effort and ranks the current tenant's prior corrections of the same
+     * ticket type by pgvector cosine similarity. If the enquiry cannot be embedded (Ollama down /
+     * breaker open) it degrades to the most recent corrections of that type — the loop still helps,
+     * just less precisely (mirrors {@code InboxQueryService}). Returns "" when the feature is off,
+     * there is nothing to inject, or anything fails: retrieval is auxiliary and must never break the
+     * pipeline (the drafting call itself still propagates an open breaker to park the ticket).
+     *
+     * @param ticketType the incoming ticket's type (the pre-filter dimension; may be null)
+     * @param enquiry    the exact input the AI is drafting from (body + attachment text)
+     * @return a formatted example block (enquiry/approved-reply pairs), or "" if none
+     */
+    public String retrieveExamples(TicketType ticketType, String enquiry) {
+        try {
+            if (!settingsService.isFeatureEnabled(FEATURE_KEY, true)) {
+                return "";
+            }
+            if (enquiry == null || enquiry.isBlank() || retrieveCount <= 0) {
+                return "";
+            }
+            String typeName = ticketType == null ? null : ticketType.name();
+            Optional<float[]> embedding = embeddingService.embed(enquiry);
+            List<TrainingExample> matches = embedding
+                    .map(vec -> repository.findSimilar(typeName, EmbeddingService.toVectorLiteral(vec), retrieveCount))
+                    .orElseGet(() -> repository.findRecent(typeName, retrieveCount));
+            if (matches.isEmpty()) {
+                return "";
+            }
+            injectedCounter.increment(matches.size());
+            log.debug("Injecting {} training examples (type {}, embedded={})",
+                    matches.size(), ticketType, embedding.isPresent());
+            return buildExampleContext(matches);
+        } catch (Exception e) {
+            // Retrieval is auxiliary — a failure must never break drafting.
+            log.warn("Failed to retrieve training examples: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    /** Formats matched corrections as enquiry/approved-reply pairs; headers live in AiDraftingService. */
+    private String buildExampleContext(List<TrainingExample> examples) {
+        StringBuilder sb = new StringBuilder();
+        for (TrainingExample ex : examples) {
+            sb.append("Customer enquiry:\n").append(truncate(ex.getEnquiryText())).append("\n");
+            sb.append("Approved reply:\n").append(truncate(ex.getOperatorFinal())).append("\n\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private static String truncate(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= MAX_EXAMPLE_CHARS ? text : text.substring(0, MAX_EXAMPLE_CHARS);
     }
 
     /** The input the AI saw: email body + parsed attachment text (mirrors the pipeline). */

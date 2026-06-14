@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -210,6 +212,36 @@ class AiDraftingServiceTest {
         assertFalse(result.isBlank(), "Escalation fallback must not be empty");
         assertTrue(result.toLowerCase().contains("retriev") || result.toLowerCase().contains("shortly"),
                 "Not-on-file fallback should acknowledge retrieval");
+    }
+
+    // Phase 3.1 S2: few-shot examples are injected into the prompt via the {exampleContext} placeholder
+    @Test
+    void generateDraft_withExamples_injectsThemIntoPrompt() {
+        stubOllama(Map.of("response", "ok", "done", true));
+        ArgumentCaptor<Object> body = ArgumentCaptor.forClass(Object.class);
+
+        service.generateDraft("Need a quote London to Leeds", buildItem("MSCU1234567"),
+                "", "Customer enquiry:\nPast quote?\nApproved reply:\nWe quoted £450 last time.");
+
+        verify(requestBodySpec).bodyValue(body.capture());
+        String prompt = (String) ((Map<?, ?>) body.getValue()).get("prompt");
+        assertTrue(prompt.contains("We quoted £450 last time."), "Examples must reach the prompt");
+    }
+
+    // Phase 3.1 S2: a stored prompt predating {exampleContext} still gets the examples — appended.
+    @Test
+    void generateDraft_appendsExamples_whenTemplateLacksPlaceholder() {
+        when(settingsService.getString(anyString(), anyString())).thenReturn("Reply to this email: {email}");
+        stubOllama(Map.of("response", "ok", "done", true));
+        ArgumentCaptor<Object> body = ArgumentCaptor.forClass(Object.class);
+
+        service.generateDraft("Need a quote", null,
+                "", "Customer enquiry:\nQ\nApproved reply:\nReuse this approved reply.");
+
+        verify(requestBodySpec).bodyValue(body.capture());
+        String prompt = (String) ((Map<?, ?>) body.getValue()).get("prompt");
+        assertTrue(prompt.contains("Reuse this approved reply."), "Examples must be appended");
+        assertTrue(prompt.contains("Examples of how our team"), "Appended block must carry its header");
     }
 
     // Сценарий 4 (Phase 1.7): breaker ОТКРЫТ — исключение пробрасывается (без fallback-драфта),

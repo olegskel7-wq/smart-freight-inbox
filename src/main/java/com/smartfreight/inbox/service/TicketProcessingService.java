@@ -62,6 +62,7 @@ public class TicketProcessingService {
     private final AutoSendService autoSendService;
     private final ShipmentWatchService shipmentWatchService;
     private final DocumentRequestService documentRequestService;
+    private final FeedbackLoopService feedbackLoopService;
     private final SettingsService settingsService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
@@ -90,6 +91,7 @@ public class TicketProcessingService {
                                    AutoSendService autoSendService,
                                    ShipmentWatchService shipmentWatchService,
                                    DocumentRequestService documentRequestService,
+                                   FeedbackLoopService feedbackLoopService,
                                    SettingsService settingsService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
@@ -103,6 +105,7 @@ public class TicketProcessingService {
         this.autoSendService = autoSendService;
         this.shipmentWatchService = shipmentWatchService;
         this.documentRequestService = documentRequestService;
+        this.feedbackLoopService = feedbackLoopService;
         this.settingsService = settingsService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
@@ -292,7 +295,11 @@ public class TicketProcessingService {
                         requested, identifier);
             }
         } else {
-            draft = aiDraftingService.generateDraft(aiInput, item, rateContext);
+            // Phase 3.1 S2: inject the most similar past operator corrections (this tenant, this
+            // type) as few-shot examples so the draft improves as corrections accumulate. Auxiliary
+            // and graceful — retrieval failure returns "" and never blocks drafting.
+            String exampleContext = feedbackLoopService.retrieveExamples(ticket.getTicketType(), aiInput);
+            draft = aiDraftingService.generateDraft(aiInput, item, rateContext, exampleContext);
         }
         ticket.setDraftReply(draft);
         // Phase 3.1: preserve the unmodified AI draft so the feedback loop can compare it against

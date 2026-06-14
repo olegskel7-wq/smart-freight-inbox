@@ -79,6 +79,9 @@ class TicketProcessingClassificationTest {
     private DocumentRequestService documentRequestService;
 
     @Mock
+    private FeedbackLoopService feedbackLoopService;
+
+    @Mock
     private SettingsService settingsService;
 
     private TicketProcessingService service;
@@ -89,7 +92,7 @@ class TicketProcessingClassificationTest {
                 emailTicketRepository, emailClassificationService, aiExtractionService,
                 itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
                 slaService, autoSendService, shipmentWatchService, documentRequestService,
-                settingsService, new SimpleMeterRegistry());
+                feedbackLoopService, settingsService, new SimpleMeterRegistry());
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);
@@ -109,7 +112,8 @@ class TicketProcessingClassificationTest {
         when(aiExtractionService.extractIdentifier(anyString())).thenReturn("MSCU1234567");
         when(itemLookupService.findByIdentifier("MSCU1234567")).thenReturn(Optional.empty());
         when(rateSheetService.buildRateContext(anyString())).thenReturn("");
-        when(aiDraftingService.generateDraft(anyString(), any(), anyString())).thenReturn("Dear customer, ...");
+        when(feedbackLoopService.retrieveExamples(any(), anyString())).thenReturn("");
+        when(aiDraftingService.generateDraft(anyString(), any(), anyString(), anyString())).thenReturn("Dear customer, ...");
     }
 
     @Test
@@ -294,7 +298,7 @@ class TicketProcessingClassificationTest {
         assertThat(ticket.getRequestedDocType()).isEqualTo(DocumentType.POD);
         assertThat(ticket.getAttachedDocumentId()).isEqualTo(7L);
         verify(aiDraftingService).generateDocumentReply(anyString(), eq(DocumentType.POD), any(), eq(true));
-        verify(aiDraftingService, never()).generateDraft(anyString(), any(), anyString());
+        verify(aiDraftingService, never()).generateDraft(anyString(), any(), anyString(), anyString());
     }
 
     @Test
@@ -325,7 +329,7 @@ class TicketProcessingClassificationTest {
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
         assertThat(ticket.getAttachedDocumentId()).isNull();
-        verify(aiDraftingService).generateDraft(anyString(), any(), anyString());
+        verify(aiDraftingService).generateDraft(anyString(), any(), anyString(), anyString());
         verify(documentRequestService, never()).detectRequestedType(anyString());
     }
 

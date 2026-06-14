@@ -37,4 +37,46 @@ public interface TrainingExampleRepository extends JpaRepository<TrainingExample
     @Query(value = "UPDATE training_example SET embedding = CAST(:vector AS vector) WHERE id = :id",
             nativeQuery = true)
     void setEmbedding(@Param("id") Long id, @Param("vector") String vector);
+
+    /**
+     * The {@code limit} most semantically similar past corrections for a ticket type (Phase 3.1 S2).
+     *
+     * <p>Ranks by pgvector cosine distance ({@code <=>}) against the embedded incoming enquiry,
+     * pre-filtered to the same ticket type so a document-request correction never informs an RFQ
+     * draft. {@code IS NOT DISTINCT FROM} matches a null type to null (a GENERAL/unclassified
+     * enquiry). Examples without an embedding (model was down at capture, backfillable) are skipped
+     * — they cannot be ranked. RLS scopes the search to the current tenant; the entity does not map
+     * the {@code embedding} column, so the extra select column is simply ignored on mapping.
+     *
+     * @param ticketType TicketType enum name, or null for unclassified
+     * @param vector     pgvector text literal of the query enquiry's embedding
+     * @param limit      maximum examples to return
+     */
+    @Query(value = """
+            SELECT * FROM training_example
+            WHERE ticket_type IS NOT DISTINCT FROM :ticketType
+              AND embedding IS NOT NULL
+            ORDER BY embedding <=> CAST(:vector AS vector)
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<TrainingExample> findSimilar(@Param("ticketType") String ticketType,
+                                      @Param("vector") String vector,
+                                      @Param("limit") int limit);
+
+    /**
+     * Recency fallback for retrieval (Phase 3.1 S2): the newest {@code limit} corrections for a
+     * ticket type, used when the enquiry could not be embedded (Ollama down / breaker open) so the
+     * feedback loop still contributes examples — mirrors how {@code InboxQueryService} degrades.
+     *
+     * @param ticketType TicketType enum name, or null for unclassified
+     * @param limit      maximum examples to return
+     */
+    @Query(value = """
+            SELECT * FROM training_example
+            WHERE ticket_type IS NOT DISTINCT FROM :ticketType
+            ORDER BY created_at DESC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<TrainingExample> findRecent(@Param("ticketType") String ticketType,
+                                     @Param("limit") int limit);
 }

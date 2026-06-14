@@ -61,6 +61,9 @@ public class AiDraftingService {
             Rate information (prices already include our margin — quote them as-is, never mention margin):
             {rateContext}
 
+            Examples of how our team has previously replied to similar enquiries (match their tone and approach; ignore any details that do not apply here):
+            {exampleContext}
+
             Customer's email:
             {email}
 
@@ -68,6 +71,14 @@ public class AiDraftingService {
 
     /** Substituted for {@code {rateContext}} when no rates matched the enquiry. */
     private static final String NO_RATES_NOTE = "No rate information available for this enquiry. Do not quote any price.";
+
+    /** Substituted for {@code {exampleContext}} when no past corrections matched the enquiry. */
+    private static final String NO_EXAMPLES_NOTE = "No past examples available yet.";
+
+    /** Header for the example block when appended to a stored prompt that predates {@code {exampleContext}}. */
+    private static final String EXAMPLE_HEADER =
+            "Examples of how our team has previously replied to similar enquiries "
+            + "(match their tone and approach; ignore any details that do not apply here):";
 
     /**
      * Fallback prompt for proactive status updates (Phase 2.4) when the DB-backed
@@ -185,7 +196,7 @@ public class AiDraftingService {
      * @return generated or fallback draft
      */
     public String generateDraft(String emailBody, TrackedItem item) {
-        return generateDraft(emailBody, item, "");
+        return generateDraft(emailBody, item, "", "");
     }
 
     /**
@@ -202,9 +213,29 @@ public class AiDraftingService {
      * @return generated or fallback draft
      */
     public String generateDraft(String emailBody, TrackedItem item, String rateContext) {
+        return generateDraft(emailBody, item, rateContext, "");
+    }
+
+    /**
+     * Generates a reply draft with carrier rate context (Phase 1.2) and few-shot examples of past
+     * operator corrections (Phase 3.1 S2 — the AI Feedback Loop).
+     *
+     * <p>Both contexts are defensive about prompt history: when the stored {@code ai.drafting-prompt}
+     * template lacks the {@code {rateContext}} / {@code {exampleContext}} placeholder (it was seeded
+     * before those existed) but the caller supplied content, the block is appended to the prompt
+     * instead of being silently dropped — so no migration of the stored prompt is required.
+     *
+     * @param emailBody      customer email text (body + parsed attachments)
+     * @param item           tracked-item data (may be null if not found)
+     * @param rateContext    matched rate lines from {@link RateSheetService}, or empty
+     * @param exampleContext few-shot example block from {@link FeedbackLoopService}, or empty
+     * @return generated or fallback draft
+     */
+    public String generateDraft(String emailBody, TrackedItem item, String rateContext, String exampleContext) {
         String itemContext = buildItemContext(item);
         String truncatedBody = emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
         String rates = rateContext == null ? "" : rateContext.trim();
+        String examples = exampleContext == null ? "" : exampleContext.trim();
 
         String template = settingsService.getString(
                 SettingsService.KEY_DRAFTING_PROMPT, DEFAULT_DRAFTING_PROMPT);
@@ -217,6 +248,12 @@ public class AiDraftingService {
         } else if (!rates.isEmpty()) {
             prompt = prompt + "\n\nRate information (prices already include our margin — quote them as-is, "
                     + "never mention margin):\n" + rates;
+        }
+
+        if (template.contains("{exampleContext}")) {
+            prompt = prompt.replace("{exampleContext}", examples.isEmpty() ? NO_EXAMPLES_NOTE : examples);
+        } else if (!examples.isEmpty()) {
+            prompt = prompt + "\n\n" + EXAMPLE_HEADER + "\n" + examples;
         }
 
         return callOllama(prompt, buildFallbackDraft(item));
