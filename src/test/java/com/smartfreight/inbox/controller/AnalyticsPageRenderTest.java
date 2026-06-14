@@ -67,6 +67,7 @@ class AnalyticsPageRenderTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Inbox Analytics")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Ask your inbox")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("AI draft acceptance")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("volumeChart")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("confidenceChart")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/webjars/chart.js/4.5.0/dist/chart.umd.js")));

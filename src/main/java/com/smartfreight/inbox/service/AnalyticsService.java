@@ -2,6 +2,7 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.repository.AiDraftAcceptance;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.repository.TicketAuditLogRepository;
 import org.springframework.stereotype.Service;
@@ -109,8 +110,13 @@ public class AnalyticsService {
         long slaBreached = emailTicketRepository.countByCreatedAtGreaterThanEqualAndSlaBreachedTrue(since);
         Double avgResponseSeconds = auditLogRepository.avgFirstResponseSeconds(since);
 
+        AiDraftAcceptance acceptance = emailTicketRepository.aiDraftAcceptanceSince(since);
+        long aiDraftsSent = acceptance == null ? 0L : acceptance.getTotal();
+        long aiDraftsAccepted = acceptance == null ? 0L : acceptance.getAccepted();
+
         return new AnalyticsSummary(days, byStatus, byType, untyped[0], manualSends, autoSends,
-                slaBreached, avgResponseSeconds, volumeByDay(since), confidenceBins(since));
+                slaBreached, avgResponseSeconds, volumeByDay(since), confidenceBins(since),
+                aiDraftsSent, aiDraftsAccepted);
     }
 
     /**
@@ -156,7 +162,9 @@ public class AnalyticsService {
                                    long slaBreached,
                                    Double avgResponseSeconds,
                                    List<DayVolume> volumeByDay,
-                                   List<Long> confidenceBins) {
+                                   List<Long> confidenceBins,
+                                   long aiDraftsSent,
+                                   long aiDraftsAccepted) {
 
         /** Every email persisted in the period, junk included. */
         public long totalReceived() {
@@ -211,6 +219,24 @@ public class AnalyticsService {
         /** Breach share among relevant tickets — IRRELEVANT never carries an SLA clock. */
         public double slaBreachedPct() {
             return pct(slaBreached, relevant());
+        }
+
+        /** Replies edited before sending — the complement of acceptance. */
+        public long aiDraftsEdited() {
+            return aiDraftsSent - aiDraftsAccepted;
+        }
+
+        /** Share of AI-drafted replies sent unchanged — the feedback loop's learning signal. */
+        public double aiAcceptancePct() {
+            return pct(aiDraftsAccepted, aiDraftsSent);
+        }
+
+        /** Acceptance as a percentage string, or "—" when no AI-drafted reply was sent in the period. */
+        public String aiAcceptanceFormatted() {
+            if (aiDraftsSent == 0) {
+                return "—";
+            }
+            return String.format(Locale.ENGLISH, "%.1f%%", aiAcceptancePct());
         }
 
         /** Share of relevant tickets, for the per-type progress bars. */

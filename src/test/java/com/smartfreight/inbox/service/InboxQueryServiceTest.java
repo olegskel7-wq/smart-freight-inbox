@@ -197,6 +197,6 @@ class InboxQueryServiceTest {
         }
         byType.put(type, count);
         return new AnalyticsSummary(30, byStatus, byType, 0L, 0L, 0L, 0L, null,
-                List.<DayVolume>of(), List.<Long>of());
+                List.<DayVolume>of(), List.<Long>of(), 0L, 0L);
     }
 }

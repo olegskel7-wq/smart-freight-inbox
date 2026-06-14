@@ -2,6 +2,7 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.repository.AiDraftAcceptance;
 import com.smartfreight.inbox.repository.ConfidenceBucket;
 import com.smartfreight.inbox.repository.DailyVolume;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
@@ -63,7 +64,14 @@ class AnalyticsServiceTest {
     /** Summary with everything empty except the avg-response seconds — for format tests. */
     private static AnalyticsService.AnalyticsSummary summaryWithAvg(Double seconds) {
         return new AnalyticsService.AnalyticsSummary(
-                30, Map.of(), Map.of(), 0, 0, 0, 0, seconds, List.of(), List.of());
+                30, Map.of(), Map.of(), 0, 0, 0, 0, seconds, List.of(), List.of(), 0, 0);
+    }
+
+    private static AiDraftAcceptance acceptanceRow(long total, long accepted) {
+        return new AiDraftAcceptance() {
+            @Override public long getTotal() { return total; }
+            @Override public long getAccepted() { return accepted; }
+        };
     }
 
     @Test
@@ -149,6 +157,31 @@ class AnalyticsServiceTest {
         assertThat(s.confidenceBins().get(5)).isZero();
         assertThat(s.confidenceBins().get(9)).isEqualTo(2L);
         assertThat(s.confidenceCount()).isEqualTo(3L);
+    }
+
+    @Test
+    void summarise_aiAcceptance_computesShareAndComplement() {
+        when(emailTicketRepository.aiDraftAcceptanceSince(any())).thenReturn(acceptanceRow(8L, 6L));
+
+        AnalyticsService.AnalyticsSummary s = analyticsService.summarise(30);
+
+        assertThat(s.aiDraftsSent()).isEqualTo(8L);
+        assertThat(s.aiDraftsAccepted()).isEqualTo(6L);
+        assertThat(s.aiDraftsEdited()).isEqualTo(2L);
+        assertThat(s.aiAcceptancePct()).isEqualTo(75.0);
+        assertThat(s.aiAcceptanceFormatted()).isEqualTo("75.0%");
+    }
+
+    @Test
+    void summarise_aiAcceptance_noSends_readsAsDash() {
+        // Real repository returns null when the join yields nothing; service must not NPE.
+        when(emailTicketRepository.aiDraftAcceptanceSince(any())).thenReturn(null);
+
+        AnalyticsService.AnalyticsSummary s = analyticsService.summarise(30);
+
+        assertThat(s.aiDraftsSent()).isZero();
+        assertThat(s.aiAcceptancePct()).isZero();
+        assertThat(s.aiAcceptanceFormatted()).isEqualTo("—");
     }
 
     @Test

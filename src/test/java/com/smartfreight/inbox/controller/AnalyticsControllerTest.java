@@ -47,7 +47,7 @@ class AnalyticsControllerTest {
 
     private AnalyticsService.AnalyticsSummary emptySummary(int days) {
         return new AnalyticsService.AnalyticsSummary(
-                days, Map.of(), Map.of(), 0, 0, 0, 0, null, java.util.List.of(), java.util.List.of());
+                days, Map.of(), Map.of(), 0, 0, 0, 0, null, java.util.List.of(), java.util.List.of(), 0, 0);
     }
 
     @Test

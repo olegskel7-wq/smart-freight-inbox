@@ -241,6 +241,36 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     long countByCreatedAtGreaterThanEqualAndSlaBreachedTrue(java.time.LocalDateTime since);
 
     /**
+     * AI-draft acceptance for tickets first answered in the period (Phase 3.1 S3): of the replies
+     * that went out, how many matched the AI's original draft exactly versus were edited first.
+     * This is the feedback loop's headline learning signal — acceptance should trend up as captured
+     * corrections improve later drafts.
+     *
+     * <p>Attribution mirrors {@link TicketAuditLogRepository#avgFirstResponseSeconds}: one row per
+     * ticket keyed on its FIRST SEND/AUTO_SEND, so a ticket is counted once and belongs to the
+     * period that reply went out in. Only tickets carrying an {@code ai_original_draft} are in scope
+     * (proactive sends have none and are excluded by design — they are not reactive drafting).
+     * {@code accepted} compares the sent text ({@code draft_reply}) to the untouched AI draft;
+     * auto-sent replies match by construction (the operator never edited them). Native SQL, so the
+     * soft-delete predicate is explicit (see {@link #dailyVolumeSince}).
+     *
+     * @param since start of the reporting period (inclusive)
+     * @return total in-scope sends and how many went out as drafted (both 0 when nothing was sent)
+     */
+    @Query(nativeQuery = true, value =
+           "SELECT COUNT(*) AS total, " +
+           "       COUNT(*) FILTER (WHERE t.draft_reply = t.ai_original_draft) AS accepted " +
+           "  FROM (SELECT a.ticket_id, MIN(a.created_at) AS first_send " +
+           "          FROM ticket_audit_log a " +
+           "         WHERE a.action IN ('SEND', 'AUTO_SEND') " +
+           "         GROUP BY a.ticket_id) f " +
+           "  JOIN email_ticket t ON t.id = f.ticket_id AND t.deleted = false " +
+           " WHERE f.first_send >= :since " +
+           "   AND t.ai_original_draft IS NOT NULL " +
+           "   AND t.ai_original_draft <> ''")
+    AiDraftAcceptance aiDraftAcceptanceSince(@Param("since") java.time.LocalDateTime since);
+
+    /**
      * Flags open tickets whose SLA deadline has passed (Phase 1.5). Used by
      * {@link com.smartfreight.inbox.scheduler.SlaBreachScheduler}.
      *

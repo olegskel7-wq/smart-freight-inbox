@@ -119,6 +119,21 @@
                     </div>
                 </div>
             </div>
+            <!-- AI draft acceptance (Phase 3.1) — share of AI drafts sent unchanged; the feedback loop's learning signal -->
+            <div class="col-6 col-md">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small">AI draft acceptance</div>
+                        <div class="fs-2 fw-bold"
+                             th:classappend="${s.aiDraftsSent > 0 and s.aiAcceptancePct() >= 50} ? 'text-success'"
+                             th:text="${s.aiAcceptanceFormatted()}">—</div>
+                        <div class="small text-muted">
+                            <span th:text="${s.aiDraftsAccepted}">0</span> sent as drafted ·
+                            <span th:text="${s.aiDraftsEdited()}">0</span> edited
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Volume by day -->
