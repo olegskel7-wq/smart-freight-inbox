@@ -30,11 +30,16 @@ public class SpaWebConfig implements WebMvcConfigurer {
                 .addResolver(new PathResourceResolver() {
                     @Override
                     protected Resource getResource(String resourcePath, Resource location) throws IOException {
-                        Resource requested = location.createRelative(resourcePath);
-                        if (requested.exists() && requested.isReadable()) {
-                            return requested;
+                        // A real file under /app (assets, index.html) — serve it. A blank path is the
+                        // SPA root (/app/, e.g. the OIDC callback) and must NOT resolve to the
+                        // directory — fall through to the shell.
+                        if (!resourcePath.isBlank()) {
+                            Resource requested = location.createRelative(resourcePath);
+                            if (requested.exists() && requested.isReadable()) {
+                                return requested;
+                            }
                         }
-                        // Unknown path under /app — hand back the SPA shell for client-side routing.
+                        // Root or unknown path under /app — hand back the SPA shell for client-side routing.
                         Resource index = location.createRelative("index.html");
                         return (index.exists() && index.isReadable()) ? index : null;
                     }

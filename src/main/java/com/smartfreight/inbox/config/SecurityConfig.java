@@ -81,7 +81,11 @@ public class SecurityConfig {
         http
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**").permitAll()
-                // Static React bundle (Vite base "/app/"): HTML + assets. Data is protected at /api.
+                // Static React bundle (Vite base "/app/"): HTML + assets, served from
+                // classpath:/static/app/ by SpaWebConfig. "/app/**" matches every segmented SPA
+                // path (the OIDC callback lands on /app/tickets, not the bare /app/ root — the
+                // path matcher does not match a trailing "/app/", so the SPA never relies on it).
+                // Real data is protected at /api by the resource-server chain above.
                 .requestMatchers("/app/**").permitAll()
                 // Tenant administration is platform-level (Phase 2.2 S2). Matcher order matters:
                 // this rule must precede the broader /admin/** one.

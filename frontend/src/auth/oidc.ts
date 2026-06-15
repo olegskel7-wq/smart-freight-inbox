@@ -13,8 +13,11 @@ const clientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? 'smartfreight-spa'
 export const oidcConfig: AuthProviderProps = {
   authority,
   client_id: clientId,
-  redirect_uri: `${window.location.origin}/app/`,
-  post_logout_redirect_uri: `${window.location.origin}/app/`,
+  // Land the OIDC callback on a segmented path under /app (not the bare /app/ root): Spring
+  // Security permits /app/<segment> cleanly, whereas the trailing /app/ slips through the
+  // path matcher. /tickets is the SPA's home route, so the callback lands straight on it.
+  redirect_uri: `${window.location.origin}/app/tickets`,
+  post_logout_redirect_uri: `${window.location.origin}/app/tickets`,
   response_type: 'code',
   scope: 'openid profile email',
   // XSS mitigation (mandatory, Phase 3.2): tokens live in memory only — never localStorage or
