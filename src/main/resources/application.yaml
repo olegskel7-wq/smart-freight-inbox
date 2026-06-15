@@ -99,6 +99,12 @@ spring:
             client-secret: ${KEYCLOAK_CLIENT_SECRET:smartfreight-inbox-secret}
             authorization-grant-type: authorization_code
             scope: openid,profile,email
+      # Resource server (Phase 3.2) — the React SPA calls /api/** with a Keycloak bearer token.
+      # Same issuer as the login client above, so one realm signs both flows; the backend fetches
+      # the JWKS from this issuer over the compose network (keycloak:8081).
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8081/realms/smartfreight}
 
   # Legacy single-mailbox config (pre-S3). Used ONLY by MailboxBootstrap to import the
   # mailbox into tenant_mailbox on first start (and by GmailDraftService for the Gmail
