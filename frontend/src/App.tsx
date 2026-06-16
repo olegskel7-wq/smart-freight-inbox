@@ -3,6 +3,7 @@ import { useAuth } from 'react-oidc-context'
 import Layout from './components/Layout.tsx'
 import TicketsListPage from './pages/TicketsListPage.tsx'
 import TicketDetailPage from './pages/TicketDetailPage.tsx'
+import AnalyticsPage from './pages/AnalyticsPage.tsx'
 
 // Auth gate: while Keycloak is resolving, show a spinner; if not signed in, redirect to
 // Keycloak (the SSO cookie usually makes this instant). Tokens are in memory, so a reload
@@ -31,6 +32,7 @@ export default function App() {
         <Route index element={<Navigate to="/tickets" replace />} />
         <Route path="tickets" element={<TicketsListPage />} />
         <Route path="tickets/:id" element={<TicketDetailPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="*" element={<Navigate to="/tickets" replace />} />
       </Route>
     </Routes>

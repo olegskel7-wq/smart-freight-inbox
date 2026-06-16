@@ -24,8 +24,15 @@ export default function Layout() {
                 Tickets
               </NavLink>
             </li>
+            <li className="nav-item">
+              <NavLink
+                to="/analytics"
+                className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
+              >
+                Analytics
+              </NavLink>
+            </li>
             {/* Not yet migrated — full-page links to the Thymeleaf UI. */}
-            <li className="nav-item"><a className="nav-link" href="/analytics">Analytics</a></li>
             <li className="nav-item"><a className="nav-link" href="/rates">Rates</a></li>
             <li className="nav-item"><a className="nav-link" href="/documents">Documents</a></li>
             <li className="nav-item"><a className="nav-link" href="/training-examples">Learning</a></li>

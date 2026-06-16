@@ -61,3 +61,62 @@ export const TICKET_STATUSES = [
   'RECEIVED', 'NEW', 'PROCESSING', 'DRAFT_READY', 'FAILED',
   'RETRY_LATER', 'IRRELEVANT', 'CLOSED', 'AUTO_SENT',
 ] as const
+
+// Analytics DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2).
+
+export interface TypeCount {
+  type: string
+  count: number
+  pct: number
+}
+
+export interface StatusCount {
+  status: string
+  count: number
+  pct: number
+}
+
+export interface AnalyticsSummary {
+  periodDays: number
+  totalReceived: number
+  relevant: number
+  irrelevant: number
+  irrelevantPct: number
+  manualSends: number
+  autoSends: number
+  totalSends: number
+  autoSendPct: number
+  avgResponseFormatted: string
+  slaBreached: number
+  slaBreachedPct: number
+  aiDraftsSent: number
+  aiDraftsAccepted: number
+  aiDraftsEdited: number
+  aiAcceptancePct: number
+  aiAcceptanceFormatted: string
+  byType: TypeCount[]
+  untyped: number
+  untypedPct: number
+  byStatus: StatusCount[]
+  volumeLabels: string[]
+  volumeRelevant: number[]
+  volumeJunk: number[]
+  confidenceBins: number[]
+  confidenceCount: number
+}
+
+export interface AnalyticsResponse {
+  featureEnabled: boolean
+  queryEnabled: boolean
+  days: number
+  allowedPeriods: number[]
+  summary: AnalyticsSummary | null
+}
+
+export interface InboxAnswer {
+  question: string
+  answer: string
+  metric: string
+  periodDays: number
+  matched: boolean
+}
