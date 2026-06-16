@@ -120,3 +120,36 @@ export interface InboxAnswer {
   periodDays: number
   matched: boolean
 }
+
+// Settings DTOs — mirror com.smartfreight.inbox.controller.dto.SettingsResponse (Phase 3.2).
+
+export interface MailboxRow {
+  id: number
+  host: string
+  port: number
+  username: string
+  sendsAs: string | null
+  enabled: boolean
+  running: boolean
+}
+
+export interface Settings {
+  cipherConfigured: boolean
+  platformOllamaUrl: string
+  ollamaUrlOverride: string
+  smtpHost: string
+  smtpPort: number
+  smtpUser: string
+  draftEnabled: boolean
+  extractionPrompt: string
+  draftingPrompt: string
+  autoSendEnabled: boolean
+  autoSendThreshold: string
+  autoSendTypes: string[]
+  allTicketTypes: string[]
+  statusUpdateEnabled: boolean
+  statusUpdateMilestones: string
+  quoteFollowUpEnabled: boolean
+  quoteFollowUpDelayHours: string
+  mailboxes: MailboxRow[]
+}

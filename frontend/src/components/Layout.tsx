@@ -37,7 +37,14 @@ export default function Layout() {
             <li className="nav-item"><a className="nav-link" href="/documents">Documents</a></li>
             <li className="nav-item"><a className="nav-link" href="/training-examples">Learning</a></li>
             <li className="nav-item"><a className="nav-link" href="/users">Users</a></li>
-            <li className="nav-item"><a className="nav-link" href="/settings">Settings</a></li>
+            <li className="nav-item">
+              <NavLink
+                to="/settings"
+                className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
+              >
+                Settings
+              </NavLink>
+            </li>
             {isSuperAdmin && (
               <li className="nav-item"><a className="nav-link" href="/admin/tenants">Tenants</a></li>
             )}

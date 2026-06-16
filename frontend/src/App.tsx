@@ -4,6 +4,7 @@ import Layout from './components/Layout.tsx'
 import TicketsListPage from './pages/TicketsListPage.tsx'
 import TicketDetailPage from './pages/TicketDetailPage.tsx'
 import AnalyticsPage from './pages/AnalyticsPage.tsx'
+import SettingsPage from './pages/SettingsPage.tsx'
 
 // Auth gate: while Keycloak is resolving, show a spinner; if not signed in, redirect to
 // Keycloak (the SSO cookie usually makes this instant). Tokens are in memory, so a reload
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="tickets" element={<TicketsListPage />} />
         <Route path="tickets/:id" element={<TicketDetailPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/tickets" replace />} />
       </Route>
     </Routes>
