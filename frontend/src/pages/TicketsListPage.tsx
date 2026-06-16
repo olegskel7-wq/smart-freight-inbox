@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useApi } from '../api/useApi.ts'
+import { useTicketStream } from '../api/useTicketStream.ts'
 import type { Page, TicketSummary } from '../types.ts'
 import { TICKET_STATUSES } from '../types.ts'
 import { formatConfidence, formatDateTime, statusBadgeClass } from '../util/format.ts'
@@ -49,6 +50,16 @@ export default function TicketsListPage() {
     void load()
   }, [load])
 
+  // Live updates (Phase 3.2): the backend pushes a ticket-changed event per tenant; we re-fetch the
+  // current query so the list always reflects the active filter/sort/page. A ref keeps the stream
+  // subscription stable across filter changes (no reconnect just because `load` was recreated).
+  const loadRef = useRef(load)
+  useEffect(() => {
+    loadRef.current = load
+  }, [load])
+  const onLiveEvent = useCallback(() => void loadRef.current(), [])
+  const live = useTicketStream(onLiveEvent)
+
   const update = (next: Record<string, string>) => {
     const merged = new URLSearchParams(params)
     Object.entries(next).forEach(([k, v]) => (v ? merged.set(k, v) : merged.delete(k)))
@@ -63,7 +74,15 @@ export default function TicketsListPage() {
   return (
     <div>
       <div className="d-flex justify-content-between align-items-center mb-3">
-        <h1 className="h4 mb-0">Tickets</h1>
+        <div className="d-flex align-items-center gap-2">
+          <h1 className="h4 mb-0">Tickets</h1>
+          <span
+            className={`badge rounded-pill ${live ? 'bg-success' : 'bg-secondary'}`}
+            title={live ? 'Live updates connected' : 'Live updates disconnected'}
+          >
+            {live ? '● Live' : '○ Offline'}
+          </span>
+        </div>
         <div className="d-flex align-items-center gap-2">
           <label className="text-muted small mb-0">Status</label>
           <select

@@ -87,6 +87,10 @@ public class SecurityConfig {
                 // path matcher does not match a trailing "/app/", so the SPA never relies on it).
                 // Real data is protected at /api by the resource-server chain above.
                 .requestMatchers("/app/**").permitAll()
+                // STOMP WebSocket handshake (Phase 3.2): the browser cannot send a bearer on the
+                // handshake, so it is permitted here and the CONNECT frame is authenticated by
+                // StompAuthChannelInterceptor instead (see WebSocketConfig).
+                .requestMatchers("/ws/**").permitAll()
                 // Tenant administration is platform-level (Phase 2.2 S2). Matcher order matters:
                 // this rule must precede the broader /admin/** one.
                 .requestMatchers("/admin/tenants/**").hasRole("SUPER_ADMIN")

@@ -36,8 +36,6 @@ public class TenantFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(TenantFilter.class);
 
-    private static final String TENANT_CLAIM = "tenant_id";
-
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
@@ -60,31 +58,16 @@ public class TenantFilter extends OncePerRequestFilter {
             return tenantPrincipal.getTenantId();
         }
         if (principal instanceof Jwt jwt) {
-            return parseTenantClaim(jwt.getClaim(TENANT_CLAIM), jwt.getSubject());
-        }
-        return null;
-    }
-
-    /**
-     * Reads the {@code tenant_id} claim from a bearer JWT. The realm mapper emits it as a JSON
-     * number; tolerate a string too (mirrors {@code TenantOidcUserService.parseTenantId}). Unlike
-     * login — which rejects a tenantless principal outright — here we degrade to the fail-closed
-     * anonymous scope (RLS returns zero rows), so a misconfigured token can never read another
-     * tenant's data.
-     */
-    private Long parseTenantClaim(Object raw, String subject) {
-        if (raw instanceof Number n) {
-            return n.longValue();
-        }
-        if (raw instanceof String s && !s.isBlank()) {
-            try {
-                return Long.parseLong(s.trim());
-            } catch (NumberFormatException ignored) {
-                // fall through to the warn + anonymous branch
+            // Unlike login — which rejects a tenantless principal outright — here we degrade to the
+            // fail-closed anonymous scope (RLS returns zero rows), so a misconfigured token can
+            // never read another tenant's data.
+            Long tenantId = TenantClaims.fromJwt(jwt);
+            if (tenantId == null) {
+                log.warn("Bearer token missing or with unparseable tenant_id claim (subject {}); "
+                        + "request runs in anonymous scope", jwt.getSubject());
             }
+            return tenantId;
         }
-        log.warn("Bearer token missing or with unparseable tenant_id claim (subject {}); "
-                + "request runs in anonymous scope", subject);
         return null;
     }
 }

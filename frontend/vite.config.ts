@@ -17,6 +17,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://localhost:8080',
+      // STOMP WebSocket (Phase 3.2) — ws:true upgrades the connection to the backend.
+      '/ws': { target: 'http://localhost:8080', ws: true },
     },
   },
 })
