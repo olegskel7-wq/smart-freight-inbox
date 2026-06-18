@@ -6,6 +6,7 @@ import TicketDetailPage from './pages/TicketDetailPage.tsx'
 import AnalyticsPage from './pages/AnalyticsPage.tsx'
 import RatesPage from './pages/RatesPage.tsx'
 import DocumentsPage from './pages/DocumentsPage.tsx'
+import TrainingExamplesPage from './pages/TrainingExamplesPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
 
 // Auth gate: while Keycloak is resolving, show a spinner; if not signed in, redirect to
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="rates" element={<RatesPage />} />
         <Route path="documents" element={<DocumentsPage />} />
+        <Route path="training-examples" element={<TrainingExamplesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/tickets" replace />} />
       </Route>

@@ -173,6 +173,22 @@ export interface RateUploadResponse {
   snapshot: RatesResponse
 }
 
+// Training-examples DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2). The text
+// fields are previews abbreviated server-side; ticketType is the enum name or null (Unclassified).
+export interface TrainingExample {
+  id: number
+  ticketType: string | null
+  enquiryPreview: string
+  aiDraftPreview: string
+  operatorFinalPreview: string
+  createdAt: string
+}
+
+export interface TrainingExamplesResponse {
+  featureEnabled: boolean
+  examples: TrainingExample[]
+}
+
 export interface Settings {
   cipherConfigured: boolean
   platformOllamaUrl: string
