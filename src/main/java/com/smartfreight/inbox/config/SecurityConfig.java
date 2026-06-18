@@ -7,34 +7,30 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
 /**
  * Spring Security configuration.
  *
- * <p><b>Two filter chains coexist (Phase 3.2 — React migration):</b>
+ * <p><b>Two filter chains coexist (post Phase 3.2 cutover — the app is now a React SPA):</b>
  * <ol>
  *   <li><b>{@code /api/**}</b> — a stateless OAuth2 <i>resource server</i>. The React SPA obtains a
  *       Keycloak access token (authorization-code + PKCE, public client {@code smartfreight-spa})
  *       and calls the JSON API with a bearer token; this chain validates the JWT against the realm
  *       JWKS and maps the {@code roles} claim to authorities. No session, no CSRF (bearer tokens).</li>
- *   <li><b>everything else</b> — the original Keycloak <i>OIDC login</i> ({@code oauth2Login}) with a
- *       Redis-backed session, serving the Thymeleaf pages unchanged. The static SPA shell
- *       ({@code /app/**}) is {@code permitAll} — it is just files; real data is protected at
- *       {@code /api}. CSRF stays enabled for the Thymeleaf forms.</li>
+ *   <li><b>everything else</b> — the public static surface: the SPA shell + assets (served from
+ *       {@code classpath:/static/app/} by {@link SpaWebConfig}), {@code /actuator/**} and the STOMP
+ *       {@code /ws} handshake. These carry no secrets — every piece of real data is behind
+ *       {@code /api} (chain 1) and the WebSocket is authenticated on its CONNECT frame
+ *       ({@code StompAuthChannelInterceptor}). The browser performs OIDC login directly against
+ *       Keycloak (PKCE), so there is no server-side {@code oauth2Login} flow anymore.</li>
  * </ol>
- * Both chains grant the SAME authorities for a user (see {@link KeycloakJwtRoleConverter} /
- * {@link TenantOidcUserService}); access rules are mirrored so the API enforces the same roles as
- * the UI. As pages migrate to React the Thymeleaf chain shrinks and is eventually dropped.
  *
- * <p>The principal is a {@link com.smartfreight.inbox.tenancy.TenantOidcUser} (login chain) or a
- * {@code Jwt} (API chain); {@link com.smartfreight.inbox.tenancy.TenantFilter} reads the tenant off
- * either. Access rules: {@code /actuator/**} public, {@code /admin/tenants/**} SUPER_ADMIN,
- * {@code /admin/**} OPERATOR, the rest authenticated.
+ * <p>The API principal is a {@code Jwt}; {@link com.smartfreight.inbox.tenancy.TenantFilter} reads
+ * the tenant off the {@code tenant_id} claim. Access rules (API chain): {@code /api/admin/tenants/**}
+ * SUPER_ADMIN, {@code /api/admin/**} OPERATOR (covers ticket reprocess + DLQ maintenance), the rest
+ * authenticated.
  */
 @Configuration
 @EnableWebSecurity
@@ -69,42 +65,20 @@ public class SecurityConfig {
     }
 
     /**
-     * Default OIDC-login chain (the pre-3.2 behaviour) for the Thymeleaf UI. Matches every request
-     * not claimed by the API chain. The static SPA shell is public; its data calls go through /api.
+     * Public static chain for everything not claimed by the API chain: the SPA shell + assets,
+     * the actuator endpoints and the STOMP {@code /ws} handshake. None of it is sensitive — the
+     * SPA is just files, real data is enforced at {@code /api} (chain 1), and the WebSocket
+     * authenticates its CONNECT frame in {@code StompAuthChannelInterceptor}. There is no
+     * server-side login: the browser does PKCE directly against Keycloak and logs out the same way.
+     * Stateless and CSRF-off because nothing here is cookie-authenticated.
      */
     @Bean
     @Order(2)
-    public SecurityFilterChain webSecurityFilterChain(HttpSecurity http,
-                                                      TenantOidcUserService tenantOidcUserService,
-                                                      ClientRegistrationRepository clientRegistrationRepository)
-            throws Exception {
+    public SecurityFilterChain webSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/**").permitAll()
-                // Static React bundle (Vite base "/app/"): HTML + assets, served from
-                // classpath:/static/app/ by SpaWebConfig. "/app/**" matches every segmented SPA
-                // path (the OIDC callback lands on /app/tickets, not the bare /app/ root — the
-                // path matcher does not match a trailing "/app/", so the SPA never relies on it).
-                // Real data is protected at /api by the resource-server chain above.
-                .requestMatchers("/app/**").permitAll()
-                // STOMP WebSocket handshake (Phase 3.2): the browser cannot send a bearer on the
-                // handshake, so it is permitted here and the CONNECT frame is authenticated by
-                // StompAuthChannelInterceptor instead (see WebSocketConfig).
-                .requestMatchers("/ws/**").permitAll()
-                // Tenant administration is platform-level (Phase 2.2 S2). Matcher order matters:
-                // this rule must precede the broader /admin/** one.
-                .requestMatchers("/admin/tenants/**").hasRole("SUPER_ADMIN")
-                .requestMatchers("/admin/**").hasRole("OPERATOR")
-                .anyRequest().authenticated()
-            )
-            // OIDC login against Keycloak; the custom service maps tenant_id + roles claims.
-            .oauth2Login(oauth -> oauth
-                .userInfoEndpoint(userInfo -> userInfo.oidcUserService(tenantOidcUserService))
-            )
-            // RP-initiated logout: end the Keycloak SSO session too, not just the local one.
-            .logout(logout -> logout
-                .logoutSuccessHandler(oidcLogoutSuccessHandler(clientRegistrationRepository))
-            );
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(csrf -> csrf.disable());
 
         return http.build();
     }
@@ -117,17 +91,5 @@ public class SecurityConfig {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(new KeycloakJwtRoleConverter());
         return converter;
-    }
-
-    /**
-     * RP-initiated logout handler. After clearing the local session it redirects the browser
-     * to Keycloak's end-session endpoint, then back to the app root — where Spring, seeing no
-     * authentication, sends the user to the Keycloak login page.
-     */
-    private LogoutSuccessHandler oidcLogoutSuccessHandler(ClientRegistrationRepository repo) {
-        OidcClientInitiatedLogoutSuccessHandler handler =
-                new OidcClientInitiatedLogoutSuccessHandler(repo);
-        handler.setPostLogoutRedirectUri("{baseUrl}/");
-        return handler;
     }
 }

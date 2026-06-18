@@ -9,13 +9,20 @@ import org.springframework.web.servlet.resource.PathResourceResolver;
 import java.io.IOException;
 
 /**
- * Serves the React SPA bundle (Phase 3.2) and makes client-side deep links work.
+ * Serves the React SPA bundle and makes client-side deep links work.
  *
- * <p>The Vite build lands in {@code classpath:/static/app/} (base {@code /app/}). Real files
- * (assets, index.html) are served directly; any other {@code /app/**} path — e.g.
- * {@code /app/tickets/42} entered or refreshed in the browser — falls back to {@code index.html}
- * so React Router can resolve the route. The handler is scoped to {@code /app/**}, so it never
- * shadows the Thymeleaf routes or {@code /api}.
+ * <p>Since the Phase 3.2 cutover the SPA is the application UI and is served from the root.
+ * The Vite build still lands in {@code classpath:/static/app/} (the build outDir is unchanged;
+ * only the public base moved from {@code /app/} to {@code /}). Real files (assets, index.html,
+ * favicon) are served directly; any other path — e.g. {@code /tickets} or {@code /tickets/42}
+ * entered or refreshed in the browser — falls back to {@code index.html} so React Router can
+ * resolve the route.
+ *
+ * <p>The handler is a {@code /**} catch-all, which is the LOWEST-priority handler mapping:
+ * {@code @RestController}s ({@code /api/**}, {@code /api/admin/**}), the actuator endpoints and
+ * the STOMP {@code /ws} endpoint are all higher-precedence handler mappings and win, so this
+ * never shadows the API, the metrics or the WebSocket. Only genuinely unmapped paths reach here
+ * and are handed the SPA shell.
  */
 @Configuration
 public class SpaWebConfig implements WebMvcConfigurer {
@@ -24,22 +31,21 @@ public class SpaWebConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        registry.addResourceHandler("/app/**")
+        registry.addResourceHandler("/**")
                 .addResourceLocations(LOCATION)
                 .resourceChain(true)
                 .addResolver(new PathResourceResolver() {
                     @Override
                     protected Resource getResource(String resourcePath, Resource location) throws IOException {
-                        // A real file under /app (assets, index.html) — serve it. A blank path is the
-                        // SPA root (/app/, e.g. the OIDC callback) and must NOT resolve to the
-                        // directory — fall through to the shell.
+                        // A real file in the bundle (assets, index.html, favicon) — serve it.
                         if (!resourcePath.isBlank()) {
                             Resource requested = location.createRelative(resourcePath);
                             if (requested.exists() && requested.isReadable()) {
                                 return requested;
                             }
                         }
-                        // Root or unknown path under /app — hand back the SPA shell for client-side routing.
+                        // Root or an unmapped client-side route — hand back the SPA shell so
+                        // React Router can take over.
                         Resource index = location.createRelative("index.html");
                         return (index.exists() && index.isReadable()) ? index : null;
                     }

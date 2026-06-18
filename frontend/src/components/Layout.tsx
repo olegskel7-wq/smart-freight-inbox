@@ -1,9 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 
-// Shared chrome for the SPA — replaces fragments/navbar.html. Pages already migrated to React
-// are NavLinks (client-side routing under /app); pages still on Thymeleaf are plain anchors to
-// their absolute server routes, so navigation keeps working across the half-migrated app.
+// Shared chrome for the SPA — replaces the old fragments/navbar.html. Every page is React now
+// (the Thymeleaf UI was dropped at cutover), so all nav items are client-side NavLinks.
 export default function Layout() {
   const auth = useAuth()
   const profile = auth.user?.profile as { preferred_username?: string; roles?: string[] } | undefined

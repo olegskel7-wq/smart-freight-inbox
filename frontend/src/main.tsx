@@ -9,7 +9,7 @@ import { oidcConfig } from './auth/oidc.ts'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider {...oidcConfig}>
-      <BrowserRouter basename="/app">
+      <BrowserRouter>
         <App />
       </BrowserRouter>
     </AuthProvider>

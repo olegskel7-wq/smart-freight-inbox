@@ -8,9 +8,9 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: build the Spring Boot jar. The SPA bundle is copied into the backend resources so the
-# repackaged jar serves it under /app/; -DskipFrontend skips the frontend-maven-plugin (the SPA
-# is already built above).
+# Stage 2: build the Spring Boot jar. The SPA bundle is copied into the backend resources
+# (classpath:/static/app) so the repackaged jar serves it from the root (SpaWebConfig maps it to
+# /); -DskipFrontend skips the frontend-maven-plugin (the SPA is already built above).
 FROM maven:3.9-eclipse-temurin-17-alpine AS build
 
 WORKDIR /build

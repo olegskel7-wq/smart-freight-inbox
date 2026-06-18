@@ -21,10 +21,13 @@ import java.util.List;
 /**
  * Administrative endpoints for ticket maintenance.
  *
- * Requires ROLE_OPERATOR (enforced by the Spring Security filter chain).
+ * <p>Under {@code /api/admin/**}, so the resource-server chain (SecurityConfig @Order(1)) gates it
+ * with ROLE_OPERATOR — the same authority the old Thymeleaf chain enforced. {@code reprocess} is
+ * surfaced as a button on the React {@code /tickets} page; the DLQ operations stay API-only (rare,
+ * dangerous platform maintenance — a runbook/curl surface, not an everyday operator control).
  */
 @RestController
-@RequestMapping("/admin")
+@RequestMapping("/api/admin")
 public class AdminController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminController.class);

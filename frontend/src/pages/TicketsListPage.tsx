@@ -30,6 +30,8 @@ export default function TicketsListPage() {
   const [data, setData] = useState<Page<TicketSummary> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [reprocessing, setReprocessing] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -71,6 +73,24 @@ export default function TicketsListPage() {
     update({ sort: key, dir: nextDir, page: '0' })
   }
 
+  // Re-queue stuck/failed tickets through the AI pipeline (POST /api/admin/reprocess, OPERATOR-
+  // gated, tenant-scoped). Used after Ollama recovers or an operator rejected a draft. The
+  // endpoint returns a plain-text summary; the live stream refreshes the list as tickets move.
+  const reprocess = useCallback(async () => {
+    setReprocessing(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const result = await api.post<string>('/api/admin/reprocess')
+      setNotice(typeof result === 'string' ? result : 'Reprocess queued.')
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Reprocess failed')
+    } finally {
+      setReprocessing(false)
+    }
+  }, [api, load])
+
   return (
     <div>
       <div className="d-flex justify-content-between align-items-center mb-3">
@@ -84,6 +104,15 @@ export default function TicketsListPage() {
           </span>
         </div>
         <div className="d-flex align-items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-outline-primary btn-sm"
+            onClick={() => void reprocess()}
+            disabled={reprocessing}
+            title="Re-queue stuck/failed tickets through the AI pipeline"
+          >
+            {reprocessing ? 'Reprocessing…' : 'Reprocess stuck'}
+          </button>
           <label className="text-muted small mb-0">Status</label>
           <select
             className="form-select form-select-sm"
@@ -99,6 +128,12 @@ export default function TicketsListPage() {
         </div>
       </div>
 
+      {notice && (
+        <div className="alert alert-info alert-dismissible">
+          {notice}
+          <button type="button" className="btn-close" onClick={() => setNotice(null)} />
+        </div>
+      )}
       {error && <div className="alert alert-danger">{error}</div>}
 
       <div className="table-responsive">
