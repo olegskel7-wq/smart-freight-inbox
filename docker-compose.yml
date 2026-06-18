@@ -315,7 +315,11 @@ services:
     volumes:
       - ./monitoring/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./monitoring/nginx/entrypoint.sh:/docker-entrypoint.d/00-generate-cert.sh:ro
-      - nginx_certs:/etc/nginx/certs
+      # Dev TLS cert. If monitoring/nginx/certs/ holds a server.crt/key (e.g. an mkcert-issued,
+      # locally-trusted pair → green padlock on https://localhost), nginx uses it; the entrypoint
+      # only generates a throwaway self-signed cert when the dir is empty (fresh clone). The dir is
+      # gitignored — mkcert certs are machine-specific (signed by each dev's local CA).
+      - ./monitoring/nginx/certs:/etc/nginx/certs
     depends_on:
       backend:
         condition: service_healthy

@@ -1,5 +1,7 @@
 HELP.md
 .env
+# Dev TLS certs (mkcert-issued, machine-specific — never commit the private key)
+monitoring/nginx/certs/
 # IntelliJ run configs with secrets (IMAP passwords)
 .run/
 # Local launch script with secrets
