@@ -37,6 +37,11 @@
 		<resilience4j.version>2.3.0</resilience4j.version>
 		<!-- Referenced by hardcoded version in templates/analytics.html — keep the two in sync -->
 		<chartjs.version>4.5.0</chartjs.version>
+		<!-- Phase 3.2: set -DskipFrontend=true to skip the React build (backend-only iteration;
+		     also passed in the Dockerfile, which builds the SPA in a dedicated node stage). -->
+		<skipFrontend>false</skipFrontend>
+		<frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
+		<node.version>v20.18.0</node.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -63,13 +68,14 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
-		<!-- OAuth2/OIDC login (Phase 2.3): Keycloak is the sole IdP. The oauth2-client
-		     starter drives the authorization-code login flow (we stay session-based —
-		     oauth2Login holds a server-side session in Redis). NOT oauth2-resource-server:
-		     there is no public bearer API (inter-service auth is a separate API key). -->
+		<!-- OAuth2 resource server (Phase 2.3 / 3.2): Keycloak is the sole IdP. The React SPA
+		     logs in directly against Keycloak (authorization-code + PKCE, public client
+		     smartfreight-spa) and calls /api/** with a bearer token; this validates the JWT
+		     against the realm JWKS on a stateless filter chain. The server-side oauth2-client
+		     login flow was removed at the 3.2 cutover (the SPA replaced the Thymeleaf UI). -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-oauth2-client</artifactId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
 		</dependency>
 
 		<!-- Redis (Phase 2.6): session store (horizontal scaling), rate-sheet cache,
@@ -104,6 +110,11 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-thymeleaf</artifactId>
+		</dependency>
+		<!-- WebSocket / STOMP (Phase 3.2): real-time ticket updates pushed to the React SPA -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-websocket</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
@@ -270,6 +281,47 @@
 			</testResource>
 		</testResources>
 		<plugins>
+			<!-- Phase 3.2: build the React SPA (frontend/) into target/classes/static/app so a
+			     plain `mvn package` ships it inside the jar (served same-origin under /app/).
+			     Bound to prepare-package so `mvn test` stays fast (no node download on test runs);
+			     skipped entirely with -DskipFrontend=true. The Dockerfile builds the SPA in a
+			     separate node stage instead, so it passes -DskipFrontend=true. -->
+			<plugin>
+				<groupId>com.github.eirslett</groupId>
+				<artifactId>frontend-maven-plugin</artifactId>
+				<version>${frontend-maven-plugin.version}</version>
+				<configuration>
+					<workingDirectory>frontend</workingDirectory>
+					<skip>${skipFrontend}</skip>
+				</configuration>
+				<executions>
+					<execution>
+						<id>install-node-and-npm</id>
+						<goals><goal>install-node-and-npm</goal></goals>
+						<phase>prepare-package</phase>
+						<configuration>
+							<nodeVersion>${node.version}</nodeVersion>
+						</configuration>
+					</execution>
+					<execution>
+						<id>npm-ci</id>
+						<goals><goal>npm</goal></goals>
+						<phase>prepare-package</phase>
+						<configuration>
+							<arguments>ci</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<id>npm-build</id>
+						<goals><goal>npm</goal></goals>
+						<phase>prepare-package</phase>
+						<configuration>
+							<arguments>run build</arguments>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
 			<!-- JaCoCo: kodo padengimo matavimas ir ataskaita -->
 			<plugin>
 				<groupId>org.jacoco</groupId>

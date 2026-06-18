@@ -28,25 +28,40 @@
   },
   "clients": [
     {
-      "clientId": "smartfreight-inbox",
-      "name": "SmartFreight Inbox (web UI)",
+      "clientId": "smartfreight-admin",
+      "name": "SmartFreight Admin (provisioning service account, Phase 2.3 S2)",
+      "description": "Backend-only client. Its service account holds realm-management roles so KeycloakAdminService can provision tenants' operators via the Admin REST API.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
-      "secret": "smartfreight-inbox-secret",
+      "secret": "smartfreight-admin-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "smartfreight-spa",
+      "name": "SmartFreight SPA (React UI)",
+      "description": "Public browser client for the React SPA (Phase 3.2). Authorization-code + PKCE; no secret. The access token carries tenant_id + roles (mappers below) for the /api resource server.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://localhost:8080/login/oauth2/code/keycloak",
-        "https://localhost/login/oauth2/code/keycloak"
+        "http://localhost:5173/*",
+        "http://localhost:8080/*",
+        "https://localhost/*"
       ],
       "webOrigins": [
+        "http://localhost:5173",
         "http://localhost:8080",
         "https://localhost"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "http://localhost:8080/*##https://localhost/*"
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:8080/*##https://localhost/*"
       },
       "protocolMappers": [
         {
@@ -78,18 +93,6 @@
           }
         }
       ]
-    },
-    {
-      "clientId": "smartfreight-admin",
-      "name": "SmartFreight Admin (provisioning service account, Phase 2.3 S2)",
-      "description": "Backend-only client. Its service account holds realm-management roles so KeycloakAdminService can provision tenants' operators via the Admin REST API.",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "smartfreight-admin-secret",
-      "standardFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": true
     }
   ],
   "components": {

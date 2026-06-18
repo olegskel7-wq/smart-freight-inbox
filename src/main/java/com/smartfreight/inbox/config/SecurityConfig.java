@@ -3,73 +3,93 @@ package com.smartfreight.inbox.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
 /**
- * Spring Security configuration (Phase 2.3 — Keycloak OIDC).
+ * Spring Security configuration.
  *
- * Login is delegated entirely to Keycloak via the OIDC authorization-code flow
- * ({@code oauth2Login}). There is a single registered client, so Spring redirects any
- * unauthenticated request straight to Keycloak — no local login page. The session is still
- * stored server-side (JSESSIONID cookie, Redis-backed, Phase 2.6); brute-force protection now
- * lives in Keycloak (realm setting), replacing the Phase 2.6 login throttle.
+ * <p><b>Two filter chains coexist (post Phase 3.2 cutover — the app is now a React SPA):</b>
+ * <ol>
+ *   <li><b>{@code /api/**}</b> — a stateless OAuth2 <i>resource server</i>. The React SPA obtains a
+ *       Keycloak access token (authorization-code + PKCE, public client {@code smartfreight-spa})
+ *       and calls the JSON API with a bearer token; this chain validates the JWT against the realm
+ *       JWKS and maps the {@code roles} claim to authorities. No session, no CSRF (bearer tokens).</li>
+ *   <li><b>everything else</b> — the public static surface: the SPA shell + assets (served from
+ *       {@code classpath:/static/app/} by {@link SpaWebConfig}), {@code /actuator/**} and the STOMP
+ *       {@code /ws} handshake. These carry no secrets — every piece of real data is behind
+ *       {@code /api} (chain 1) and the WebSocket is authenticated on its CONNECT frame
+ *       ({@code StompAuthChannelInterceptor}). The browser performs OIDC login directly against
+ *       Keycloak (PKCE), so there is no server-side {@code oauth2Login} flow anymore.</li>
+ * </ol>
  *
- * Access rules (unchanged from form login):
- * — {@code /actuator/**} — public (health-check for the load balancer and Prometheus)
- * — {@code /admin/tenants/**} — SUPER_ADMIN (platform tenant administration)
- * — {@code /admin/**} — OPERATOR
- * — everything else — authenticated
- *
- * The principal is a {@link com.smartfreight.inbox.tenancy.TenantOidcUser} built by
- * {@link TenantOidcUserService} from the token's {@code tenant_id} and {@code roles} claims.
- * CSRF stays enabled — Thymeleaf forms with {@code th:action} receive a token via Boot's
- * RequestDataValueProcessor.
+ * <p>The API principal is a {@code Jwt}; {@link com.smartfreight.inbox.tenancy.TenantFilter} reads
+ * the tenant off the {@code tenant_id} claim. Access rules (API chain): {@code /api/admin/tenants/**}
+ * SUPER_ADMIN, {@code /api/admin/**} OPERATOR (covers ticket reprocess + DLQ maintenance), the rest
+ * authenticated.
  */
 @Configuration
 @EnableWebSecurity
 @EnableConfigurationProperties(KeycloakAdminProperties.class)
 public class SecurityConfig {
 
+    /**
+     * Stateless resource-server chain for the SPA's JSON API. Ordered first so its
+     * {@code securityMatcher("/api/**")} wins before the catch-all login chain below.
+     */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   TenantOidcUserService tenantOidcUserService,
-                                                   ClientRegistrationRepository clientRegistrationRepository)
-            throws Exception {
+    @Order(1)
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
         http
+            .securityMatcher("/api/**")
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/**").permitAll()
-                // Tenant administration is platform-level (Phase 2.2 S2). Matcher order matters:
-                // this rule must precede the broader /admin/** one.
-                .requestMatchers("/admin/tenants/**").hasRole("SUPER_ADMIN")
-                .requestMatchers("/admin/**").hasRole("OPERATOR")
+                // Mirror the UI chain's rules. Matcher order matters: tenants before the broader /admin.
+                .requestMatchers("/api/admin/tenants/**").hasRole("SUPER_ADMIN")
+                .requestMatchers("/api/admin/**").hasRole("OPERATOR")
                 .anyRequest().authenticated()
             )
-            // OIDC login against Keycloak; the custom service maps tenant_id + roles claims.
-            .oauth2Login(oauth -> oauth
-                .userInfoEndpoint(userInfo -> userInfo.oidcUserService(tenantOidcUserService))
+            // Bearer JWTs from Keycloak; the converter maps the realm roles claim to ROLE_* authorities.
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
             )
-            // RP-initiated logout: end the Keycloak SSO session too, not just the local one.
-            .logout(logout -> logout
-                .logoutSuccessHandler(oidcLogoutSuccessHandler(clientRegistrationRepository))
-            );
+            // No server-side session for the API; identity rides in the token on every request.
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // CSRF protects session-cookie forms; a bearer-token API is not cookie-authenticated.
+            .csrf(csrf -> csrf.disable());
 
         return http.build();
     }
 
     /**
-     * RP-initiated logout handler. After clearing the local session it redirects the browser
-     * to Keycloak's end-session endpoint, then back to the app root — where Spring, seeing no
-     * authentication, sends the user to the Keycloak login page.
+     * Public static chain for everything not claimed by the API chain: the SPA shell + assets,
+     * the actuator endpoints and the STOMP {@code /ws} handshake. None of it is sensitive — the
+     * SPA is just files, real data is enforced at {@code /api} (chain 1), and the WebSocket
+     * authenticates its CONNECT frame in {@code StompAuthChannelInterceptor}. There is no
+     * server-side login: the browser does PKCE directly against Keycloak and logs out the same way.
+     * Stateless and CSRF-off because nothing here is cookie-authenticated.
      */
-    private LogoutSuccessHandler oidcLogoutSuccessHandler(ClientRegistrationRepository repo) {
-        OidcClientInitiatedLogoutSuccessHandler handler =
-                new OidcClientInitiatedLogoutSuccessHandler(repo);
-        handler.setPostLogoutRedirectUri("{baseUrl}/");
-        return handler;
+    @Bean
+    @Order(2)
+    public SecurityFilterChain webSecurityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(csrf -> csrf.disable());
+
+        return http.build();
+    }
+
+    /**
+     * Converts a validated Keycloak JWT into an authentication carrying ROLE_* authorities derived
+     * from the realm {@code roles} claim (see {@link KeycloakJwtRoleConverter}).
+     */
+    private JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(new KeycloakJwtRoleConverter());
+        return converter;
     }
 }

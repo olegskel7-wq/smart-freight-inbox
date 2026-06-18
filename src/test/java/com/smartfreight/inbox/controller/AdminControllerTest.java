@@ -73,7 +73,7 @@ class AdminControllerTest {
         when(emailTicketRepository.findIdsByStatusIn(any())).thenReturn(List.of(1L, 2L));
 
         try (var ignored = TenantContext.openAs(TENANT)) {
-            mockMvc.perform(post("/admin/reprocess"))
+            mockMvc.perform(post("/api/admin/reprocess"))
                     .andExpect(status().isOk())
                     .andExpect(content().string(containsString("2 tickets")));
         }
@@ -89,7 +89,7 @@ class AdminControllerTest {
         when(emailTicketRepository.findIdsByStatusIn(any())).thenReturn(List.of(1L));
 
         // S3: no unset-equals-default fallback — reprocess outside a tenant scope is a bug.
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> mockMvc.perform(post("/admin/reprocess")))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> mockMvc.perform(post("/api/admin/reprocess")))
                 .hasCauseInstanceOf(IllegalStateException.class);
         verifyNoInteractions(ticketEventPublisher);
     }
@@ -99,7 +99,7 @@ class AdminControllerTest {
         when(ticketProcessingService.prepareForRetry()).thenReturn(3);
         when(emailTicketRepository.findIdsByStatusIn(any())).thenReturn(List.of());
 
-        mockMvc.perform(post("/admin/reprocess"))
+        mockMvc.perform(post("/api/admin/reprocess"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("No tickets to reprocess")));
 
@@ -111,7 +111,7 @@ class AdminControllerTest {
         when(ticketProcessingService.prepareForRetry()).thenReturn(5);
         when(emailTicketRepository.findIdsByStatusIn(any())).thenReturn(List.of());
 
-        mockMvc.perform(post("/admin/reprocess"))
+        mockMvc.perform(post("/api/admin/reprocess"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("5")));
     }
@@ -122,7 +122,7 @@ class AdminControllerTest {
         when(emailTicketRepository.findIdsByStatusIn(
                 List.of(TicketStatus.NEW, TicketStatus.RETRY_LATER))).thenReturn(List.of());
 
-        mockMvc.perform(post("/admin/reprocess"));
+        mockMvc.perform(post("/api/admin/reprocess"));
 
         var inOrder = inOrder(ticketProcessingService, emailTicketRepository);
         inOrder.verify(ticketProcessingService).prepareForRetry();
@@ -133,7 +133,7 @@ class AdminControllerTest {
     void dlqStatus_reportsMessageCount() throws Exception {
         when(dlqAdminService.messageCount()).thenReturn(4L);
 
-        mockMvc.perform(get("/admin/dlq"))
+        mockMvc.perform(get("/api/admin/dlq"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("4 message(s)")));
     }
@@ -142,7 +142,7 @@ class AdminControllerTest {
     void dlqRequeue_defaultLimit_movesMessagesAndReportsCount() throws Exception {
         when(dlqAdminService.requeue(100)).thenReturn(2);
 
-        mockMvc.perform(post("/admin/dlq/requeue"))
+        mockMvc.perform(post("/api/admin/dlq/requeue"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Requeued 2")));
 
@@ -153,7 +153,7 @@ class AdminControllerTest {
     void dlqRequeue_customLimit_passedThrough() throws Exception {
         when(dlqAdminService.requeue(5)).thenReturn(5);
 
-        mockMvc.perform(post("/admin/dlq/requeue").param("limit", "5"))
+        mockMvc.perform(post("/api/admin/dlq/requeue").param("limit", "5"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Requeued 5")));
 
@@ -164,7 +164,7 @@ class AdminControllerTest {
     void dlqPurge_reportsPurgedCount() throws Exception {
         when(dlqAdminService.purge()).thenReturn(3);
 
-        mockMvc.perform(post("/admin/dlq/purge"))
+        mockMvc.perform(post("/api/admin/dlq/purge"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Purged 3")));
     }

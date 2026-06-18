@@ -1,6 +1,11 @@
-# Whitelist style: the Dockerfile only COPYs pom.xml and src/, so send the daemon
+# Whitelist style: the Dockerfile only COPYs pom.xml, src/ and frontend/, so send the daemon
 # nothing else — keeps the build context small (.git, target/, port-service/ etc.
 # previously went over the wire on every `docker compose build`).
 *
 !pom.xml
 !src
+!frontend
+# …but never ship the frontend's installed deps or build output — the node stage rebuilds them.
+frontend/node_modules
+frontend/dist
+frontend/node

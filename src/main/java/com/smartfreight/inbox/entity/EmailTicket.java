@@ -3,6 +3,7 @@ package com.smartfreight.inbox.entity;
 import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.messaging.TicketLiveEventListener;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
@@ -28,6 +29,8 @@ import java.time.LocalDateTime;
     name = "email_ticket",
     uniqueConstraints = @UniqueConstraint(columnNames = {"tenant_id", "message_id"})
 )
+// Phase 3.2: broadcast a real-time event to the tenant's STOMP topic on every write.
+@EntityListeners(TicketLiveEventListener.class)
 @Getter
 @Setter
 @NoArgsConstructor
