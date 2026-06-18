@@ -111,6 +111,31 @@ class UserApiControllerTest {
     }
 
     @Test
+    void changeRolePassesCurrentEmailFromJwt() throws Exception {
+        authenticateAs("admin@sf.com");
+
+        mockMvc.perform(post("/api/users/uuid-2/role")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"ADMIN\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("uuid-1"));
+
+        verify(userManagementService).changeRole(eq("uuid-2"), eq("ADMIN"), eq("admin@sf.com"));
+    }
+
+    @Test
+    void changeRoleSelfIsBadRequest() throws Exception {
+        authenticateAs("alice@sf.com");
+        doThrow(new IllegalArgumentException("You cannot change your own role."))
+                .when(userManagementService).changeRole(eq("uuid-1"), eq("OPERATOR"), eq("alice@sf.com"));
+
+        mockMvc.perform(post("/api/users/uuid-1/role")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"OPERATOR\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void changePasswordReturnsSnapshot() throws Exception {
         mockMvc.perform(post("/api/users/uuid-1/password")
                         .contentType(MediaType.APPLICATION_JSON)

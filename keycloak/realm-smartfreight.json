@@ -21,8 +21,12 @@
         "description": "Inbox operator — reviews and sends replies for their own tenant."
       },
       {
+        "name": "ADMIN",
+        "description": "Tenant admin (Phase 3.3) — manages this tenant's operators, settings and mailboxes. Implies OPERATOR (granted in KeycloakJwtRoleConverter)."
+      },
+      {
         "name": "SUPER_ADMIN",
-        "description": "Platform admin — manages tenants. Implies OPERATOR (granted at login by TenantOidcUserService)."
+        "description": "Platform admin — manages tenants. Implies ADMIN ⇒ OPERATOR (granted in KeycloakJwtRoleConverter)."
       }
     ]
   },

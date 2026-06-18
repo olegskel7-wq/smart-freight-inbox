@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import type { ReactElement } from 'react'
 import { useAuth } from 'react-oidc-context'
+import { useRoles } from './auth/roles.ts'
 import Layout from './components/Layout.tsx'
 import TicketsListPage from './pages/TicketsListPage.tsx'
 import TicketDetailPage from './pages/TicketDetailPage.tsx'
@@ -10,6 +12,14 @@ import TrainingExamplesPage from './pages/TrainingExamplesPage.tsx'
 import UsersPage from './pages/UsersPage.tsx'
 import TenantsPage from './pages/TenantsPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
+
+// Client-side guard for tenant-admin pages (Phase 3.3): an operator who deep-links to /users or
+// /settings is bounced to /tickets. The API enforces the ADMIN role regardless — this just avoids
+// rendering a page whose every call would 403.
+function RequireAdmin({ children }: { children: ReactElement }) {
+  const { isAdmin } = useRoles()
+  return isAdmin ? children : <Navigate to="/tickets" replace />
+}
 
 // Auth gate: while Keycloak is resolving, show a spinner; if not signed in, redirect to
 // Keycloak (the SSO cookie usually makes this instant). Tokens are in memory, so a reload
@@ -42,9 +52,9 @@ export default function App() {
         <Route path="rates" element={<RatesPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="training-examples" element={<TrainingExamplesPage />} />
-        <Route path="users" element={<UsersPage />} />
+        <Route path="users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         <Route path="tenants" element={<TenantsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
         <Route path="*" element={<Navigate to="/tickets" replace />} />
       </Route>
     </Routes>

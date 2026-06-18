@@ -74,6 +74,64 @@ class UserManagementServiceTest {
     }
 
     @Test
+    void createUser_rejectsNonAssignableRole() {
+        try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
+            assertThatThrownBy(() -> service.createUser("new@acme.co", "secret-pass", "SUPER_ADMIN"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Invalid role");
+        }
+        verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void changeRole_swapsRoleForOwnTenantUser() {
+        KeycloakUser u = new KeycloakUser("id-7", "op@acme.co", "OPERATOR", TENANT);
+        when(keycloakAdminService.findUser("id-7")).thenReturn(Optional.of(u));
+
+        try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
+            service.changeRole("id-7", "ADMIN", "me@acme.co");
+        }
+
+        verify(keycloakAdminService).setRealmRole("id-7", "ADMIN");
+    }
+
+    @Test
+    void changeRole_rejectsInvalidRole() {
+        try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
+            assertThatThrownBy(() -> service.changeRole("id-7", "SUPER_ADMIN", "me@acme.co"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Invalid role");
+        }
+        verify(keycloakAdminService, never()).setRealmRole(anyString(), anyString());
+    }
+
+    @Test
+    void changeRole_preventsSelfRoleChange() {
+        KeycloakUser me = new KeycloakUser("id-7", "me@acme.co", "ADMIN", TENANT);
+        when(keycloakAdminService.findUser("id-7")).thenReturn(Optional.of(me));
+
+        try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
+            assertThatThrownBy(() -> service.changeRole("id-7", "OPERATOR", "ME@acme.co"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("your own role");
+        }
+        verify(keycloakAdminService, never()).setRealmRole(anyString(), anyString());
+    }
+
+    @Test
+    void changeRole_rejectsCrossTenantUser() {
+        KeycloakUser other = new KeycloakUser("id-7", "op@other.co", "OPERATOR", 2L);
+        when(keycloakAdminService.findUser("id-7")).thenReturn(Optional.of(other));
+
+        try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
+            assertThatThrownBy(() -> service.changeRole("id-7", "ADMIN", "me@acme.co"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("not found");
+        }
+        verify(keycloakAdminService, never()).setRealmRole(anyString(), anyString());
+    }
+
+    @Test
     void changePassword_resetsForOwnTenantUser() {
         KeycloakUser u = new KeycloakUser("id-9", "op@acme.co", "OPERATOR", TENANT);
         when(keycloakAdminService.findUser("id-9")).thenReturn(Optional.of(u));

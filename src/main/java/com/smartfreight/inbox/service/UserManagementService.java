@@ -5,6 +5,7 @@ import com.smartfreight.inbox.tenancy.TenantContext;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * CRUD facade for operator accounts used by the self-service UI (Phase 2.2 S2,
@@ -24,6 +25,12 @@ public class UserManagementService {
 
     /** Minimum acceptable password length — matches the realm policy expectation for the pilot. */
     private static final int MIN_PASSWORD_LENGTH = 8;
+
+    /**
+     * Tenant-level roles an admin may hand out (Phase 3.3). SUPER_ADMIN is platform-level and only
+     * granted via the realm seed — it must never be assignable from the tenant self-service UI.
+     */
+    private static final Set<String> ASSIGNABLE_ROLES = Set.of("OPERATOR", "ADMIN");
 
     private final KeycloakAdminService keycloakAdminService;
 
@@ -46,11 +53,32 @@ public class UserManagementService {
      */
     public void createUser(String email, String rawPassword, String role) {
         validatePassword(rawPassword);
+        validateRole(role);
         String normalised = email.trim().toLowerCase();
         if (keycloakAdminService.emailExists(normalised)) {
             throw new IllegalArgumentException("User with email " + normalised + " already exists.");
         }
         keycloakAdminService.createUser(normalised, rawPassword, currentTenantId(), role);
+    }
+
+    /**
+     * Changes an operator's tenant role (OPERATOR ↔ ADMIN, Phase 3.3). Refuses to change the
+     * caller's own role — an admin demoting themselves could lock the tenant out of its own
+     * management surface (mirrors the {@link #deleteUser} self-guard).
+     *
+     * @param userId           Keycloak user id (UUID)
+     * @param role             new role — must be one of {@link #ASSIGNABLE_ROLES}
+     * @param currentUserEmail email of the operator performing the action
+     * @throws IllegalArgumentException if the role is invalid, the target is not in this tenant,
+     *                                  or the target is the caller
+     */
+    public void changeRole(String userId, String role, String currentUserEmail) {
+        validateRole(role);
+        KeycloakUser user = requireInCurrentTenant(userId);
+        if (user.email() != null && user.email().equalsIgnoreCase(currentUserEmail)) {
+            throw new IllegalArgumentException("You cannot change your own role.");
+        }
+        keycloakAdminService.setRealmRole(userId, role);
     }
 
     /**
@@ -81,6 +109,13 @@ public class UserManagementService {
             throw new IllegalArgumentException("You cannot delete your own account.");
         }
         keycloakAdminService.deleteUser(userId);
+    }
+
+    /** Rejects a role the tenant UI must not assign (anything but OPERATOR/ADMIN — notably SUPER_ADMIN). */
+    private void validateRole(String role) {
+        if (role == null || !ASSIGNABLE_ROLES.contains(role)) {
+            throw new IllegalArgumentException("Invalid role: " + role);
+        }
     }
 
     /** Cheap sanity check — does not enforce a complex password policy (delegated to Keycloak). */
