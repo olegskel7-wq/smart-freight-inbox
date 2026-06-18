@@ -173,6 +173,14 @@ export interface RateUploadResponse {
   snapshot: RatesResponse
 }
 
+// Users DTO — mirrors com.smartfreight.inbox.controller.dto.UserDto (Phase 3.2). role may be null
+// (the page falls back to "OPERATOR"); id is the Keycloak user UUID.
+export interface User {
+  id: string
+  email: string
+  role: string | null
+}
+
 // Training-examples DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2). The text
 // fields are previews abbreviated server-side; ticketType is the enum name or null (Unclassified).
 export interface TrainingExample {

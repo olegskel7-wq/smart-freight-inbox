@@ -56,8 +56,14 @@ export default function Layout() {
                 Learning
               </NavLink>
             </li>
-            {/* Not yet migrated — full-page links to the Thymeleaf UI. */}
-            <li className="nav-item"><a className="nav-link" href="/users">Users</a></li>
+            <li className="nav-item">
+              <NavLink
+                to="/users"
+                className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
+              >
+                Users
+              </NavLink>
+            </li>
             <li className="nav-item">
               <NavLink
                 to="/settings"
@@ -66,6 +72,7 @@ export default function Layout() {
                 Settings
               </NavLink>
             </li>
+            {/* Not yet migrated — full-page link to the Thymeleaf UI. */}
             {isSuperAdmin && (
               <li className="nav-item"><a className="nav-link" href="/admin/tenants">Tenants</a></li>
             )}
