@@ -56,7 +56,24 @@ export function useApi() {
       upload: <T>(path: string, form: FormData) =>
         request<T>(path, { method: 'POST', body: form }),
       del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+      // Binary fetch for file downloads — a plain <a href> can't carry the bearer token, so we pull
+      // the bytes as a blob and let the caller trigger the save. Mirrors request()'s auth + 401 path.
+      download: async (path: string): Promise<{ blob: Blob; filename: string }> => {
+        const headers = new Headers()
+        if (token) headers.set('Authorization', `Bearer ${token}`)
+        const res = await fetch(path, { headers })
+        if (res.status === 401) {
+          void auth.signinRedirect()
+          throw new ApiError(401, 'Unauthorized')
+        }
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new ApiError(res.status, text || res.statusText)
+        }
+        const match = /filename="?([^"]+)"?/.exec(res.headers.get('content-disposition') ?? '')
+        return { blob: await res.blob(), filename: match ? match[1] : 'document' }
+      },
     }),
-    [request],
+    [request, token, auth],
   )
 }

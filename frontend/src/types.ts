@@ -49,6 +49,18 @@ export interface TicketDetail {
   updatedAt: string
 }
 
+// Documents DTOs — mirror com.smartfreight.inbox.controller.dto.DocumentsResponse (Phase 3.2).
+export interface DocTypeOption {
+  value: string
+  label: string
+}
+
+export interface DocumentsResponse {
+  featureEnabled: boolean
+  documents: DocumentRef[]
+  docTypes: DocTypeOption[]
+}
+
 export interface Page<T> {
   content: T[]
   page: number
