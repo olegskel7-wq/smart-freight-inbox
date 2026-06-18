@@ -72,9 +72,16 @@ export default function Layout() {
                 Settings
               </NavLink>
             </li>
-            {/* Not yet migrated — full-page link to the Thymeleaf UI. */}
+            {/* Platform admin — only SUPER_ADMIN sees it (the API enforces the role regardless). */}
             {isSuperAdmin && (
-              <li className="nav-item"><a className="nav-link" href="/admin/tenants">Tenants</a></li>
+              <li className="nav-item">
+                <NavLink
+                  to="/tenants"
+                  className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
+                >
+                  Tenants
+                </NavLink>
+              </li>
             )}
           </ul>
           <span className="navbar-text text-light me-3">{username}</span>

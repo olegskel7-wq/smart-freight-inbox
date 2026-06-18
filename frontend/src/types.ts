@@ -181,6 +181,15 @@ export interface User {
   role: string | null
 }
 
+// Tenant DTO — mirrors com.smartfreight.inbox.controller.dto.TenantSummaryDto (Phase 3.2).
+// Platform admin (SUPER_ADMIN) view: one client organisation + its Keycloak operator count.
+export interface Tenant {
+  id: number
+  name: string
+  userCount: number
+  createdAt: string
+}
+
 // Training-examples DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2). The text
 // fields are previews abbreviated server-side; ticketType is the enum name or null (Unclassified).
 export interface TrainingExample {
