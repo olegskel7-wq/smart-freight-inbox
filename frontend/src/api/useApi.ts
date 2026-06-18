@@ -25,7 +25,8 @@ export function useApi() {
     async <T>(path: string, init?: RequestInit): Promise<T> => {
       const headers = new Headers(init?.headers)
       if (token) headers.set('Authorization', `Bearer ${token}`)
-      if (init?.body) headers.set('Content-Type', 'application/json')
+      // FormData (file upload) must keep the browser-set multipart Content-Type + boundary.
+      if (init?.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
 
       const res = await fetch(path, { ...init, headers })
 
@@ -52,6 +53,8 @@ export function useApi() {
           method: 'POST',
           body: body != null ? JSON.stringify(body) : undefined,
         }),
+      upload: <T>(path: string, form: FormData) =>
+        request<T>(path, { method: 'POST', body: form }),
       del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
     }),
     [request],

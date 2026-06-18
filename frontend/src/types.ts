@@ -133,6 +133,34 @@ export interface MailboxRow {
   running: boolean
 }
 
+// Rates DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2). Monetary fields are
+// strings (exact BigDecimal text); sellPrice and expired are computed server-side.
+export interface Rate {
+  id: number
+  carrier: string
+  origin: string
+  destination: string
+  rate: string
+  currency: string
+  marginPercent: string
+  sellPrice: string
+  validUntil: string | null
+  expired: boolean
+}
+
+export interface RatesResponse {
+  featureEnabled: boolean
+  rates: Rate[]
+}
+
+export interface RateUploadResponse {
+  inserted: number
+  updated: number
+  total: number
+  errors: string[]
+  snapshot: RatesResponse
+}
+
 export interface Settings {
   cipherConfigured: boolean
   platformOllamaUrl: string
