@@ -3,11 +3,12 @@ import type { AuthProviderProps } from 'react-oidc-context'
 
 // Keycloak OIDC settings for the SPA (Phase 3.2). Authorization-code + PKCE against the
 // `smartfreight-spa` public client; the resulting access token carries tenant_id + roles for
-// the /api resource server. The authority must be reachable from the BROWSER — in dev that is
-// http://keycloak:8081 via the `127.0.0.1 keycloak` hosts entry (same issuer the backend uses,
-// so token `iss` matches on both sides).
+// the /api resource server. Keycloak is fronted by nginx on the SAME TLS origin as the SPA, so
+// the authority is https://localhost/realms/smartfreight — same scheme/host as the page, no
+// mixed-content block, one cert to trust, no `127.0.0.1 keycloak` hosts entry. The backend pins
+// the matching issuer (token `iss` is this URL). Override with VITE_KEYCLOAK_AUTHORITY if needed.
 const authority =
-  import.meta.env.VITE_KEYCLOAK_AUTHORITY ?? 'http://keycloak:8081/realms/smartfreight'
+  import.meta.env.VITE_KEYCLOAK_AUTHORITY ?? 'https://localhost/realms/smartfreight'
 const clientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? 'smartfreight-spa'
 
 export const oidcConfig: AuthProviderProps = {

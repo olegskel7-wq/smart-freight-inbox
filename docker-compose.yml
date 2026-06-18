@@ -32,12 +32,15 @@ services:
       # Phase 2.6: Redis backs HTTP sessions, the rate-sheet cache and login throttling.
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
-      # Phase 2.3: Keycloak is the sole IdP. The issuer must be the SAME host:port for the
-      # browser (PKCE login) and this backend's resource-server JWKS/discovery call — both use
-      # keycloak:8081 (browsers need a `127.0.0.1 keycloak` hosts entry on the dev machine;
-      # see CLAUDE.md). Since the 3.2 cutover there is no server-side oauth2-client, so the
-      # old KEYCLOAK_CLIENT_ID/SECRET (confidential web client) are gone.
-      - KEYCLOAK_ISSUER_URI=${KEYCLOAK_ISSUER_URI:-http://keycloak:8081/realms/smartfreight}
+      # Phase 2.3 / 3.2 https login: Keycloak is the sole IdP, fronted by nginx on the SAME TLS
+      # origin as the SPA (https://localhost/realms/...), so token `iss` is https://localhost —
+      # no mixed content for the browser. The backend can't reach https://localhost (that's
+      # itself), so it does NOT discover the issuer: it validates the `iss` claim against
+      # KEYCLOAK_ISSUER_URI and fetches the signing keys over the compose network via
+      # KEYCLOAK_JWKS_URI (keycloak:8081). Since the 3.2 cutover there is no server-side
+      # oauth2-client, so the old KEYCLOAK_CLIENT_ID/SECRET (confidential web client) are gone.
+      - KEYCLOAK_ISSUER_URI=${KEYCLOAK_ISSUER_URI:-https://localhost/realms/smartfreight}
+      - KEYCLOAK_JWKS_URI=${KEYCLOAK_JWKS_URI:-http://keycloak:8081/realms/smartfreight/protocol/openid-connect/certs}
       # Phase 2.3 S2: Admin REST client for tenant/operator provisioning (KeycloakAdminService).
       # Realm-less base URL over the compose network; its own service-account client + secret.
       - KEYCLOAK_SERVER_URL=${KEYCLOAK_SERVER_URL:-http://keycloak:8081}
@@ -176,12 +179,15 @@ services:
       - llm_internal
 
   keycloak:
-    # Phase 2.3: sole identity provider (OIDC). Realm `smartfreight` is imported on first
-    # start from ./keycloak. Runs on port 8081 — the SAME host:port the browser and the
-    # backend both use (KC_HOSTNAME pins the issuer to http://keycloak:8081), so the token
-    # `iss` matches on the front channel (browser, via a `127.0.0.1 keycloak` hosts entry)
-    # and the back channel (backend, over the compose network). start-dev is fine for the
-    # pilot; switch to `start` + a real hostname/TLS for production.
+    # Phase 2.3 / 3.2 https login: sole identity provider (OIDC). Realm `smartfreight` is
+    # imported on first start from ./keycloak. Fronted by nginx on the SAME TLS origin as the
+    # SPA: the FRONT channel is https://localhost/realms/... (KC_HOSTNAME=https://localhost +
+    # KC_PROXY_HEADERS=xforwarded → Keycloak trusts nginx's X-Forwarded-Proto and builds https
+    # URLs, so the token `iss` is https://localhost). The BACK channel stays internal http on
+    # keycloak:8081 (backend fetches JWKS there, KeycloakAdminService provisions there);
+    # KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true lets those internal calls keep using keycloak:8081.
+    # No mixed content, one cert, no `127.0.0.1 keycloak` browser hosts entry needed.
+    # start-dev is fine for the pilot; switch to `start` + a real hostname/TLS for production.
     image: quay.io/keycloak/keycloak:26.0
     command: ["start-dev", "--import-realm", "--http-port=8081"]
     environment:
@@ -191,8 +197,9 @@ services:
       - KC_DB_URL=jdbc:postgresql://keycloak-db:5432/keycloak
       - KC_DB_USERNAME=${KEYCLOAK_DB_USER:-keycloak}
       - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak}
-      - KC_HOSTNAME=http://keycloak:8081
-      - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=false
+      - KC_HOSTNAME=${KEYCLOAK_FRONTEND_URL:-https://localhost}
+      - KC_PROXY_HEADERS=xforwarded
+      - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
       - KC_HTTP_ENABLED=true
       - KC_HEALTH_ENABLED=true
     volumes:

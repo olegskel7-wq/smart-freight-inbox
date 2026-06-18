@@ -85,13 +85,18 @@ spring:
   # only validates the SPA's bearer tokens as a resource server below.
   security:
     oauth2:
-      # Resource server (Phase 3.2) — the React SPA calls /api/** with a Keycloak bearer token.
-      # The backend fetches the JWKS from this issuer over the compose network (keycloak:8081);
-      # issuer-uri MUST match the token `iss`, hence one host:port on both sides (dev hosts entry
-      # `127.0.0.1 keycloak`). See docker-compose.yml / CLAUDE.md.
+      # Resource server (Phase 3.2 / https login) — the React SPA calls /api/** (and connects the
+      # STOMP /ws) with a Keycloak bearer token. Keycloak is fronted by nginx, so the token `iss`
+      # is the public https://localhost/realms/smartfreight, which the backend CANNOT reach (that
+      # host is the backend itself). So we split the two concerns: validate the `iss` claim against
+      # issuer-uri (no discovery call), and fetch the signing keys from jwk-set-uri over the compose
+      # network (keycloak:8081). Setting both makes Spring build the decoder from jwk-set-uri and add
+      # an issuer validator for issuer-uri — no network call to the public issuer. The same JwtDecoder
+      # bean backs both the /api chain and StompAuthChannelInterceptor.
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8081/realms/smartfreight}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:https://localhost/realms/smartfreight}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://keycloak:8081/realms/smartfreight/protocol/openid-connect/certs}
 
   # Legacy single-mailbox config (pre-S3). Used ONLY by MailboxBootstrap to import the
   # mailbox into tenant_mailbox on first start (and by GmailDraftService for the Gmail
