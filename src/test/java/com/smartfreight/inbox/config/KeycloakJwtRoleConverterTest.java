@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for the bearer-token role mapping (Phase 3.2). Must match
- * {@link TenantOidcUserServiceTest} exactly — the API and the UI grant identical authorities.
+ * Unit tests for the bearer-token role mapping (Phase 3.2): no roles → OPERATOR, and
+ * SUPER_ADMIN implies OPERATOR.
  */
 class KeycloakJwtRoleConverterTest {
 

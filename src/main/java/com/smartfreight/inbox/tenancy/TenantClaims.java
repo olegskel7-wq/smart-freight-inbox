@@ -8,8 +8,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * <p>Shared by {@link TenantFilter} (the {@code /api/**} request thread) and
  * {@code StompAuthChannelInterceptor} (the WebSocket CONNECT/SUBSCRIBE frames) so both resolve the
  * tenant identically. The realm mapper emits the claim as a JSON number, but we tolerate a string
- * too (mirrors {@code TenantOidcUserService.parseTenantId}). A missing or unparseable claim yields
- * {@code null} — callers degrade to the fail-closed anonymous scope rather than trusting the token.
+ * too. A missing or unparseable claim yields {@code null} — callers degrade to the fail-closed
+ * anonymous scope rather than trusting the token.
  */
 public final class TenantClaims {
 

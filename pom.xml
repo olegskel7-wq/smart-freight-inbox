@@ -68,17 +68,11 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
-		<!-- OAuth2/OIDC login (Phase 2.3): Keycloak is the sole IdP. The oauth2-client
-		     starter drives the authorization-code login flow for the Thymeleaf UI (session-based —
-		     oauth2Login holds a server-side session in Redis). -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-oauth2-client</artifactId>
-		</dependency>
-		<!-- OAuth2 resource server (Phase 3.2): the React SPA calls /api/** with a Keycloak
-		     bearer token (authorization-code + PKCE, public client smartfreight-spa). This
-		     validates the JWT against the realm JWKS on a stateless filter chain. Coexists with
-		     the login client above — the two SecurityFilterChains are matcher-scoped. -->
+		<!-- OAuth2 resource server (Phase 2.3 / 3.2): Keycloak is the sole IdP. The React SPA
+		     logs in directly against Keycloak (authorization-code + PKCE, public client
+		     smartfreight-spa) and calls /api/** with a bearer token; this validates the JWT
+		     against the realm JWKS on a stateless filter chain. The server-side oauth2-client
+		     login flow was removed at the 3.2 cutover (the SPA replaced the Thymeleaf UI). -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>

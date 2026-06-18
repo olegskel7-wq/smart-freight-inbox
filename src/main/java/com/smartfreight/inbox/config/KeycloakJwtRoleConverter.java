@@ -14,15 +14,14 @@ import java.util.Set;
  * Maps a Keycloak access-token's {@code roles} claim to Spring {@code ROLE_*} authorities
  * (Phase 3.2 — the {@code /api/**} resource-server chain).
  *
- * <p>Deliberately mirrors {@link TenantOidcUserService#mapAuthorities} so the JWT-secured API
- * and the session-secured Thymeleaf UI grant <b>identical</b> authorities for the same user:
- * a user with no roles defaults to {@code OPERATOR}, and {@code SUPER_ADMIN} implies
- * {@code OPERATOR} (granted alongside, not via a role-hierarchy bean). The realm role mapper
- * emits {@code roles} into the access token (see {@code keycloak/realm-smartfreight.json}).
+ * <p>A user with no roles defaults to {@code OPERATOR}, and {@code SUPER_ADMIN} implies
+ * {@code OPERATOR} (granted alongside, not via a role-hierarchy bean) — the authority rules the
+ * removed OIDC-login path used to apply. The realm role mapper emits {@code roles} into the
+ * access token (see {@code keycloak/realm-smartfreight.json}).
  */
 public class KeycloakJwtRoleConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
 
-    /** Default role when a token carries none — same fallback as the OIDC login path. */
+    /** Default role when a token carries none. */
     private static final String DEFAULT_ROLE = "OPERATOR";
     /** Platform admin — implies OPERATOR. */
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";

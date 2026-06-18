@@ -28,58 +28,6 @@
   },
   "clients": [
     {
-      "clientId": "smartfreight-inbox",
-      "name": "SmartFreight Inbox (web UI)",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "smartfreight-inbox-secret",
-      "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false,
-      "redirectUris": [
-        "http://localhost:8080/login/oauth2/code/keycloak",
-        "https://localhost/login/oauth2/code/keycloak"
-      ],
-      "webOrigins": [
-        "http://localhost:8080",
-        "https://localhost"
-      ],
-      "attributes": {
-        "post.logout.redirect.uris": "http://localhost:8080/*##https://localhost/*"
-      },
-      "protocolMappers": [
-        {
-          "name": "tenant_id",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-attribute-mapper",
-          "consentRequired": false,
-          "config": {
-            "user.attribute": "tenant_id",
-            "claim.name": "tenant_id",
-            "jsonType.label": "long",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "true"
-          }
-        },
-        {
-          "name": "realm-roles",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-realm-role-mapper",
-          "consentRequired": false,
-          "config": {
-            "claim.name": "roles",
-            "jsonType.label": "String",
-            "multivalued": "true",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "true"
-          }
-        }
-      ]
-    },
-    {
       "clientId": "smartfreight-admin",
       "name": "SmartFreight Admin (provisioning service account, Phase 2.3 S2)",
       "description": "Backend-only client. Its service account holds realm-management roles so KeycloakAdminService can provision tenants' operators via the Admin REST API.",

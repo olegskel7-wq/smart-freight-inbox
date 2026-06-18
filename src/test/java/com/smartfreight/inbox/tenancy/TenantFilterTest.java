@@ -5,7 +5,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -16,9 +15,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests how {@link TenantFilter} resolves the tenant for each principal shape (Phase 3.2): a
- * {@link TenantPrincipal} (OIDC login) and a {@code Jwt} (resource server), plus the fail-closed
- * anonymous fallbacks. Captures the {@link TenantContext} state seen by the wrapped chain.
+ * Tests how {@link TenantFilter} resolves the tenant from a {@code Jwt} principal (resource
+ * server), plus the fail-closed anonymous fallbacks. Captures the {@link TenantContext} state
+ * seen by the wrapped chain.
  */
 class TenantFilterTest {
 
@@ -75,15 +74,6 @@ class TenantFilterTest {
 
         assertThat(tenantSeenByChain()).isNull();
         assertThat(lastAnonymous).isTrue();
-    }
-
-    @Test
-    void readsTenantFromTenantPrincipal() throws Exception {
-        TenantPrincipal principal = () -> 5L;
-        SecurityContextHolder.getContext().setAuthentication(
-                new TestingAuthenticationToken(principal, "creds"));
-
-        assertThat(tenantSeenByChain()).isEqualTo(5L);
     }
 
     @Test

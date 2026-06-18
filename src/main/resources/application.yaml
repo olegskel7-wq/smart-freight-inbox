@@ -79,29 +79,16 @@ spring:
   cache:
     type: redis
 
-  # OAuth2/OIDC (Phase 2.3) — Keycloak is the sole identity provider. The login flow is
-  # authorization-code; tenant_id and roles arrive as token claims (TenantOidcUserService).
-  # issuer-uri MUST match the token `iss` for both the browser redirect and this backend's
-  # discovery call — hence one host:port (keycloak:8081) on both sides (dev hosts entry
-  # `127.0.0.1 keycloak`). See docker-compose.yml / CLAUDE.md.
+  # OAuth2/OIDC (Phase 2.3) — Keycloak is the sole identity provider. Since the Phase 3.2
+  # cutover the browser logs in directly against Keycloak via PKCE (public client
+  # `smartfreight-spa`); there is no server-side oauth2-client login flow anymore. The backend
+  # only validates the SPA's bearer tokens as a resource server below.
   security:
     oauth2:
-      client:
-        provider:
-          keycloak:
-            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8081/realms/smartfreight}
-            # Keycloak exposes realm roles under realm_access.roles; the user-name claim is
-            # the email (preferred_username is the email in our realm).
-            user-name-attribute: preferred_username
-        registration:
-          keycloak:
-            client-id: ${KEYCLOAK_CLIENT_ID:smartfreight-inbox}
-            client-secret: ${KEYCLOAK_CLIENT_SECRET:smartfreight-inbox-secret}
-            authorization-grant-type: authorization_code
-            scope: openid,profile,email
       # Resource server (Phase 3.2) — the React SPA calls /api/** with a Keycloak bearer token.
-      # Same issuer as the login client above, so one realm signs both flows; the backend fetches
-      # the JWKS from this issuer over the compose network (keycloak:8081).
+      # The backend fetches the JWKS from this issuer over the compose network (keycloak:8081);
+      # issuer-uri MUST match the token `iss`, hence one host:port on both sides (dev hosts entry
+      # `127.0.0.1 keycloak`). See docker-compose.yml / CLAUDE.md.
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8081/realms/smartfreight}

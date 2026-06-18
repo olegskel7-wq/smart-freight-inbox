@@ -21,12 +21,12 @@ import java.io.IOException;
  * chain (order -100), so the authentication is already populated. Everything downstream —
  * controllers, services, Hibernate sessions, RLS GUCs — sees the tenant from the principal.
  *
- * <p>Two principal shapes are supported (Phase 3.2): a {@link TenantPrincipal} (the Thymeleaf
- * OIDC-login chain, tenant parsed once at login) and a {@code Jwt} (the {@code /api/**}
- * resource-server chain, tenant read from the {@code tenant_id} claim per request).
+ * <p>Since the Phase 3.2 cutover the only authenticated principal is a {@code Jwt} (the
+ * {@code /api/**} resource-server chain, tenant read from the {@code tenant_id} claim per
+ * request) — the server-side OIDC-login flow and its session principal are gone.
  *
- * <p>Principals without a tenant (the login page, actuator scrapes, static resources, or a
- * token missing/with an unparseable {@code tenant_id}) get the fail-closed <b>anonymous</b>
+ * <p>Requests without a tenant (the static SPA shell, actuator scrapes, or a token
+ * missing/with an unparseable {@code tenant_id}) get the fail-closed <b>anonymous</b>
  * scope (S3): tenant entities read as empty, writes fail on the FK. Every request therefore
  * leaves this filter with an explicitly declared state — the unset-equals-default S1
  * compromise is gone.
@@ -54,9 +54,6 @@ public class TenantFilter extends OncePerRequestFilter {
             return null;
         }
         Object principal = auth.getPrincipal();
-        if (principal instanceof TenantPrincipal tenantPrincipal) {
-            return tenantPrincipal.getTenantId();
-        }
         if (principal instanceof Jwt jwt) {
             // Unlike login — which rejects a tenantless principal outright — here we degrade to the
             // fail-closed anonymous scope (RLS returns zero rows), so a misconfigured token can
