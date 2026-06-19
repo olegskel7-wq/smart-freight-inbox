@@ -7,6 +7,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,9 +59,37 @@ class UserManagementServiceTest {
         try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
             assertThatThrownBy(() -> service.createUser("new@acme.co", "short", "OPERATOR"))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("at least 8");
+                    .hasMessageContaining("at least 10");
         }
         verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void createUser_translatesKeycloakPolicyRejectionToBadRequest() {
+        when(keycloakAdminService.emailExists("new@acme.co")).thenReturn(false);
+        when(keycloakAdminService.createUser(anyString(), anyString(), any(), anyString()))
+                .thenThrow(WebClientResponseException.create(
+                        400, "Bad Request", HttpHeaders.EMPTY, new byte[0], null));
+
+        try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
+            assertThatThrownBy(() -> service.createUser("new@acme.co", "weakpasswordnouppercase", "OPERATOR"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("security policy");
+        }
+    }
+
+    @Test
+    void changePassword_translatesKeycloakPolicyRejectionToBadRequest() {
+        KeycloakUser u = new KeycloakUser("id-9", "op@acme.co", "OPERATOR", TENANT);
+        when(keycloakAdminService.findUser("id-9")).thenReturn(Optional.of(u));
+        doThrow(WebClientResponseException.create(400, "Bad Request", HttpHeaders.EMPTY, new byte[0], null))
+                .when(keycloakAdminService).resetPassword(anyString(), anyString());
+
+        try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
+            assertThatThrownBy(() -> service.changePassword("id-9", "weakpasswordnouppercase"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("security policy");
+        }
     }
 
     @Test

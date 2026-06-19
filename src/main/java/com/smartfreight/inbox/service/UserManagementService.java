@@ -3,6 +3,7 @@ package com.smartfreight.inbox.service;
 import com.smartfreight.inbox.service.KeycloakAdminService.KeycloakUser;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
 import java.util.Set;
@@ -23,8 +24,18 @@ import java.util.Set;
 @Service
 public class UserManagementService {
 
-    /** Minimum acceptable password length — matches the realm policy expectation for the pilot. */
-    private static final int MIN_PASSWORD_LENGTH = 8;
+    /** Minimum acceptable password length — matches the realm {@code passwordPolicy} (length(10)). */
+    private static final int MIN_PASSWORD_LENGTH = 10;
+
+    /**
+     * User-facing description of the realm password policy (length(10) + upperCase + lowerCase +
+     * digits + notUsername). Surfaced when Keycloak rejects a password we only length-checked, so the
+     * operator gets the actual rule instead of an opaque 500 — the realm stays the single source of
+     * truth for the full policy, we just translate its rejection.
+     */
+    private static final String PASSWORD_POLICY_MESSAGE =
+            "Password does not meet the security policy: at least 10 characters, including an uppercase "
+            + "letter, a lowercase letter and a digit, and it must not be the same as the email.";
 
     /**
      * Tenant-level roles an admin may hand out (Phase 3.3). SUPER_ADMIN is platform-level and only
@@ -58,7 +69,13 @@ public class UserManagementService {
         if (keycloakAdminService.emailExists(normalised)) {
             throw new IllegalArgumentException("User with email " + normalised + " already exists.");
         }
-        keycloakAdminService.createUser(normalised, rawPassword, currentTenantId(), role);
+        try {
+            keycloakAdminService.createUser(normalised, rawPassword, currentTenantId(), role);
+        } catch (WebClientResponseException.BadRequest e) {
+            // Keycloak enforces the full realm passwordPolicy (upper/lower/digit/notUsername) that our
+            // cheap length check cannot — translate its 400 into a clear message, not an opaque 500.
+            throw new IllegalArgumentException(PASSWORD_POLICY_MESSAGE);
+        }
     }
 
     /**
@@ -92,7 +109,11 @@ public class UserManagementService {
     public void changePassword(String userId, String rawPassword) {
         validatePassword(rawPassword);
         requireInCurrentTenant(userId);
-        keycloakAdminService.resetPassword(userId, rawPassword);
+        try {
+            keycloakAdminService.resetPassword(userId, rawPassword);
+        } catch (WebClientResponseException.BadRequest e) {
+            throw new IllegalArgumentException(PASSWORD_POLICY_MESSAGE);
+        }
     }
 
     /**
@@ -118,7 +139,12 @@ public class UserManagementService {
         }
     }
 
-    /** Cheap sanity check — does not enforce a complex password policy (delegated to Keycloak). */
+    /**
+     * Cheap length pre-check for instant feedback. The full character-class policy
+     * (upper/lower/digit/notUsername) is enforced by Keycloak and surfaced via the
+     * {@link #PASSWORD_POLICY_MESSAGE} translation — not duplicated here, to keep the realm the single
+     * source of truth.
+     */
     private void validatePassword(String rawPassword) {
         if (rawPassword == null || rawPassword.length() < MIN_PASSWORD_LENGTH) {
             throw new IllegalArgumentException(

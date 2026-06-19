@@ -113,9 +113,10 @@ export default function UsersPage() {
             </div>
             <div className="col-md-3">
               <label className="form-label small mb-1">
-                Password <span className="text-muted">(min 8)</span>
+                Password <span className="text-muted">(min 10, Aa1)</span>
               </label>
-              <input type="password" className="form-control form-control-sm" minLength={8}
+              <input type="password" className="form-control form-control-sm" minLength={10}
+                     placeholder="10+ chars, mixed case + digit"
                      value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
             <div className="col-md-2">
@@ -173,8 +174,8 @@ export default function UsersPage() {
                       {pwForId === u.id ? (
                         <form onSubmit={(e) => void changePassword(u.id, e)}
                               className="d-inline-flex gap-1 align-items-center">
-                          <input type="password" className="form-control form-control-sm" minLength={8}
-                                 placeholder="New password" value={pwValue}
+                          <input type="password" className="form-control form-control-sm" minLength={10}
+                                 placeholder="10+ chars, Aa1" value={pwValue}
                                  onChange={(e) => setPwValue(e.target.value)} required autoFocus
                                  style={{ width: 160 }} />
                           <button type="submit" className="btn btn-primary btn-sm py-0">Save</button>
