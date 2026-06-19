@@ -19,10 +19,21 @@ public record TicketSummaryDto(
         LocalDateTime slaDeadlineAt,
         boolean slaBreached,
         boolean proactive,
+        String assigneeUserId,
+        String assigneeEmail,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
+    /** Convenience overload — no resolved assignee email (used where the email isn't looked up). */
     public static TicketSummaryDto from(EmailTicket t) {
+        return from(t, null);
+    }
+
+    /**
+     * @param assigneeEmail the assignee's email resolved from Keycloak (Phase 3.3 S2), or null when
+     *                      the ticket is unassigned or the email could not be resolved.
+     */
+    public static TicketSummaryDto from(EmailTicket t, String assigneeEmail) {
         return new TicketSummaryDto(
                 t.getId(),
                 t.getSenderEmail(),
@@ -34,6 +45,8 @@ public record TicketSummaryDto(
                 t.getSlaDeadlineAt(),
                 t.isSlaBreached(),
                 t.isProactive(),
+                t.getAssigneeUserId(),
+                assigneeEmail,
                 t.getCreatedAt(),
                 t.getUpdatedAt()
         );

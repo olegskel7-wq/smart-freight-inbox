@@ -31,13 +31,16 @@ public record TicketDetailDto(
         String requestedDocType,
         DocumentRefDto attachedDocument,
         List<DocumentRefDto> availableDocuments,
+        String assigneeUserId,
+        String assigneeEmail,
         Integer retryCount,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
     public static TicketDetailDto from(EmailTicket t,
                                        TenantDocument attached,
-                                       List<TenantDocument> available) {
+                                       List<TenantDocument> available,
+                                       String assigneeEmail) {
         return new TicketDetailDto(
                 t.getId(),
                 t.getMessageId(),
@@ -57,6 +60,8 @@ public record TicketDetailDto(
                 t.getRequestedDocType() == null ? null : t.getRequestedDocType().name(),
                 attached == null ? null : DocumentRefDto.from(attached),
                 available == null ? List.of() : available.stream().map(DocumentRefDto::from).toList(),
+                t.getAssigneeUserId(),
+                assigneeEmail,
                 t.getRetryCount(),
                 t.getCreatedAt(),
                 t.getUpdatedAt()

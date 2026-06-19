@@ -44,6 +44,36 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     Page<EmailTicket> findByStatus(TicketStatus status, Pageable pageable);
 
     /**
+     * Tickets assigned to one operator (Phase 3.3 S2), with an optional status filter. Backs the
+     * "Mine" filter on the shared queue. The {@code :status IS NULL} guard makes the status
+     * predicate optional in a single query (Hibernate binds the typed enum parameter).
+     *
+     * @param userId   the Keycloak user UUID owning the tickets
+     * @param status   status to filter by, or null for any status
+     * @param pageable page and sort specification
+     * @return page of that operator's tickets
+     */
+    @Query("SELECT t FROM EmailTicket t " +
+           " WHERE t.assigneeUserId = :userId " +
+           "   AND (:status IS NULL OR t.status = :status)")
+    Page<EmailTicket> findByAssignee(@Param("userId") String userId,
+                                     @Param("status") TicketStatus status,
+                                     Pageable pageable);
+
+    /**
+     * Unclaimed tickets (Phase 3.3 S2), with an optional status filter. Backs the "Unassigned"
+     * filter on the shared queue — the work nobody has picked up yet.
+     *
+     * @param status   status to filter by, or null for any status
+     * @param pageable page and sort specification
+     * @return page of unassigned tickets
+     */
+    @Query("SELECT t FROM EmailTicket t " +
+           " WHERE t.assigneeUserId IS NULL " +
+           "   AND (:status IS NULL OR t.status = :status)")
+    Page<EmailTicket> findUnassigned(@Param("status") TicketStatus status, Pageable pageable);
+
+    /**
      * Counts how many tickets exist with the specified status.
      * Used for metrics export (Gauge).
      *

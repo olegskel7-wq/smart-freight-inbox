@@ -244,6 +244,23 @@ public class KeycloakAdminService {
         return rawUsersByTenant(tenantId).size();
     }
 
+    /**
+     * Maps each operator's Keycloak id to their email for one tenant in a single Admin call (no
+     * per-user role lookups). Used to resolve ticket assignees to a display email (Phase 3.3 S2) —
+     * the ticket only stores the UUID, the UI shows who.
+     */
+    public Map<String, String> userEmailsByTenant(Long tenantId) {
+        Map<String, String> emails = new java.util.HashMap<>();
+        for (Map<String, Object> u : rawUsersByTenant(tenantId)) {
+            Object id = u.get("id");
+            Object email = u.get("email");
+            if (id != null && email != null) {
+                emails.put(id.toString(), email.toString());
+            }
+        }
+        return emails;
+    }
+
     /** A single user, if present — used to verify tenant ownership before mutation. */
     public Optional<KeycloakUser> findUser(String userId) {
         try {

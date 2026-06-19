@@ -11,9 +11,11 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.repository.TenantDocumentRepository;
 import com.smartfreight.inbox.service.EmailReplyService;
 import com.smartfreight.inbox.service.FeedbackLoopService;
+import com.smartfreight.inbox.service.KeycloakAdminService;
 import com.smartfreight.inbox.service.QuoteFollowUpService;
 import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
+import com.smartfreight.inbox.tenancy.TenantClaims;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -22,6 +24,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +38,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -66,6 +72,7 @@ public class TicketApiController {
     private final QuoteFollowUpService quoteFollowUpService;
     private final TenantDocumentRepository documentRepository;
     private final FeedbackLoopService feedbackLoopService;
+    private final KeycloakAdminService keycloakAdminService;
 
     public TicketApiController(EmailTicketRepository emailTicketRepository,
                                EmailReplyService emailReplyService,
@@ -73,7 +80,8 @@ public class TicketApiController {
                                SendRateLimiter sendRateLimiter,
                                QuoteFollowUpService quoteFollowUpService,
                                TenantDocumentRepository documentRepository,
-                               FeedbackLoopService feedbackLoopService) {
+                               FeedbackLoopService feedbackLoopService,
+                               KeycloakAdminService keycloakAdminService) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
         this.auditService = auditService;
@@ -81,6 +89,7 @@ public class TicketApiController {
         this.quoteFollowUpService = quoteFollowUpService;
         this.documentRepository = documentRepository;
         this.feedbackLoopService = feedbackLoopService;
+        this.keycloakAdminService = keycloakAdminService;
     }
 
     /** Request body for {@code POST /api/tickets/{id}/draft}: action = save | close | send. */
@@ -89,14 +98,23 @@ public class TicketApiController {
     /** Request body for {@code POST /api/tickets/{id}/attach-document}: null id detaches. */
     public record AttachRequest(Long documentId) {}
 
-    /** GET /api/tickets — paginated, sorted, optionally status-filtered list. */
+    /** Request body for {@code POST /api/tickets/{id}/assign}: null/blank userId self-claims (Phase 3.3 S2). */
+    public record AssignRequest(String userId) {}
+
+    /**
+     * GET /api/tickets — paginated, sorted, optionally status-filtered list. The {@code assignee}
+     * filter (Phase 3.3 S2) scopes the shared queue: {@code mine} = the caller's tickets,
+     * {@code unassigned} = unclaimed work, {@code all} (default) = everything.
+     */
     @GetMapping
     public PageDto<TicketSummaryDto> list(
             @RequestParam(name = "sort", defaultValue = DEFAULT_SORT) String sort,
             @RequestParam(name = "dir", defaultValue = "desc") String dir,
             @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "assignee", defaultValue = "all") String assignee,
             @RequestParam(name = "page", defaultValue = "0") int page,
-            @RequestParam(name = "size", defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+            @RequestParam(name = "size", defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+            @AuthenticationPrincipal Jwt jwt) {
 
         String safeSort = SORTABLE_COLUMNS.contains(sort) ? sort : DEFAULT_SORT;
         Sort.Direction direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
@@ -105,11 +123,25 @@ public class TicketApiController {
 
         Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(direction, safeSort));
         TicketStatus statusFilter = parseStatusOrNull(status);
-        Page<EmailTicket> ticketPage = (statusFilter != null)
-                ? emailTicketRepository.findByStatus(statusFilter, pageable)
-                : emailTicketRepository.findAll(pageable);
+        String mode = assignee == null ? "all" : assignee.trim().toLowerCase();
 
-        return PageDto.of(ticketPage, TicketSummaryDto::from);
+        Page<EmailTicket> ticketPage;
+        if ("mine".equals(mode)) {
+            String me = jwt == null ? null : jwt.getSubject();
+            ticketPage = (me == null)
+                    ? Page.empty(pageable)
+                    : emailTicketRepository.findByAssignee(me, statusFilter, pageable);
+        } else if ("unassigned".equals(mode)) {
+            ticketPage = emailTicketRepository.findUnassigned(statusFilter, pageable);
+        } else if (statusFilter != null) {
+            ticketPage = emailTicketRepository.findByStatus(statusFilter, pageable);
+        } else {
+            ticketPage = emailTicketRepository.findAll(pageable);
+        }
+
+        Map<String, String> emails = resolveAssigneeEmails(ticketPage.getContent(), jwt);
+        return PageDto.of(ticketPage, t -> TicketSummaryDto.from(t,
+                t.getAssigneeUserId() == null ? null : emails.get(t.getAssigneeUserId())));
     }
 
     /** GET /api/tickets/{id} — full ticket detail (404 if missing). */
@@ -219,6 +251,47 @@ public class TicketApiController {
         return buildDetail(ticket);
     }
 
+    /**
+     * POST /api/tickets/{id}/assign — claims the ticket (Phase 3.3 S2). A blank/absent {@code userId}
+     * self-claims (any operator); assigning to a different operator requires ADMIN (403 otherwise).
+     * The {@code @PostUpdate} live event refreshes every operator's list. Independent of status —
+     * ownership is orthogonal to the ticket lifecycle.
+     */
+    @Transactional
+    @PostMapping("/{id}/assign")
+    public TicketDetailDto assign(@PathVariable Long id,
+                                  @RequestBody(required = false) AssignRequest request,
+                                  @AuthenticationPrincipal Jwt jwt) {
+        EmailTicket ticket = requireTicket(id);
+        String me = jwt == null ? null : jwt.getSubject();
+        if (me == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No authenticated operator.");
+        }
+        String target = (request == null || request.userId() == null || request.userId().isBlank())
+                ? me : request.userId().trim();
+        if (!target.equals(me) && !isAdmin(jwt)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only an admin can assign tickets to other operators.");
+        }
+        ticket.setAssigneeUserId(target);
+        ticket.setUpdatedAt(LocalDateTime.now());
+        emailTicketRepository.save(ticket);
+        auditService.record(id, TicketAuditService.ACTION_ASSIGN, "to=" + target);
+        return buildDetail(ticket);
+    }
+
+    /** POST /api/tickets/{id}/unassign — releases the ticket back to the unclaimed queue (Phase 3.3 S2). */
+    @Transactional
+    @PostMapping("/{id}/unassign")
+    public TicketDetailDto unassign(@PathVariable Long id) {
+        EmailTicket ticket = requireTicket(id);
+        ticket.setAssigneeUserId(null);
+        ticket.setUpdatedAt(LocalDateTime.now());
+        emailTicketRepository.save(ticket);
+        auditService.record(id, TicketAuditService.ACTION_UNASSIGN, null);
+        return buildDetail(ticket);
+    }
+
     // ---- helpers ----
 
     private EmailTicket requireTicket(Long id) {
@@ -239,7 +312,64 @@ public class TicketApiController {
                 && ticket.getExtractedIdentifier() != null)
                 ? documentRepository.findByIdentifierOrderByUploadedAtDesc(ticket.getExtractedIdentifier())
                 : List.of();
-        return TicketDetailDto.from(ticket, attached, available);
+        return TicketDetailDto.from(ticket, attached, available, resolveAssigneeEmail(ticket));
+    }
+
+    /**
+     * Resolves one assigned ticket's owner to a display email (Phase 3.3 S2). Best-effort: a missing
+     * assignee or an unreachable Keycloak yields null (the UUID is still on the DTO), never an error —
+     * showing the ticket must not depend on the identity service being up.
+     */
+    private String resolveAssigneeEmail(EmailTicket ticket) {
+        String uid = ticket.getAssigneeUserId();
+        if (uid == null || ticket.getTenantId() == null) {
+            return null;
+        }
+        try {
+            return keycloakAdminService.userEmailsByTenant(ticket.getTenantId()).get(uid);
+        } catch (Exception e) {
+            log.warn("Could not resolve assignee email for ticket {}: {}", ticket.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Resolves the assignees on one list page to a {@code uuid → email} map in a single Keycloak
+     * call — and only when the page actually has an assigned ticket, so the common (all-unclaimed)
+     * path stays call-free. Best-effort: an unreachable Keycloak yields an empty map.
+     */
+    private Map<String, String> resolveAssigneeEmails(List<EmailTicket> tickets, Jwt jwt) {
+        boolean anyAssigned = tickets.stream().anyMatch(t -> t.getAssigneeUserId() != null);
+        if (!anyAssigned) {
+            return Map.of();
+        }
+        Long tenantId = TenantClaims.fromJwt(jwt);
+        if (tenantId == null) {
+            return Map.of();
+        }
+        try {
+            return keycloakAdminService.userEmailsByTenant(tenantId);
+        } catch (Exception e) {
+            log.warn("Could not resolve assignee emails: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    /** True if the bearer carries the ADMIN or SUPER_ADMIN realm role (assign-to-other gate, Phase 3.3 S2). */
+    private boolean isAdmin(Jwt jwt) {
+        if (jwt == null) {
+            return false;
+        }
+        Object raw = jwt.getClaim("roles");
+        if (raw instanceof Collection<?> roles) {
+            for (Object r : roles) {
+                String role = String.valueOf(r);
+                if ("ADMIN".equals(role) || "SUPER_ADMIN".equals(role)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private TicketStatus parseStatusOrNull(String raw) {
