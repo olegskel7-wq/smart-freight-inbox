@@ -29,8 +29,8 @@ import org.springframework.security.web.SecurityFilterChain;
  *
  * <p>The API principal is a {@code Jwt}; {@link com.smartfreight.inbox.tenancy.TenantFilter} reads
  * the tenant off the {@code tenant_id} claim. Access rules (API chain): {@code /api/admin/tenants/**}
- * SUPER_ADMIN, {@code /api/admin/**} OPERATOR (covers ticket reprocess + DLQ maintenance), the rest
- * authenticated.
+ * SUPER_ADMIN; {@code /api/admin/**} (reprocess + DLQ maintenance), {@code /api/users/**} and
+ * {@code /api/settings/**} ADMIN (Phase 3.3 tenant-admin tier); the rest authenticated (OPERATOR).
  */
 @Configuration
 @EnableWebSecurity
@@ -47,9 +47,14 @@ public class SecurityConfig {
         http
             .securityMatcher("/api/**")
             .authorizeHttpRequests(auth -> auth
-                // Mirror the UI chain's rules. Matcher order matters: tenants before the broader /admin.
+                // Matcher order matters: most specific first. Tenant onboarding is platform-level
+                // (SUPER_ADMIN); team/settings/platform-maintenance are tenant-admin surfaces
+                // (ADMIN — Phase 3.3); everything else (tickets/analytics/rates/documents/learning)
+                // is day-to-day operator work, so it only needs an authenticated OPERATOR.
                 .requestMatchers("/api/admin/tenants/**").hasRole("SUPER_ADMIN")
-                .requestMatchers("/api/admin/**").hasRole("OPERATOR")
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .requestMatchers("/api/users/**").hasRole("ADMIN")
+                .requestMatchers("/api/settings/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             // Bearer JWTs from Keycloak; the converter maps the realm roles claim to ROLE_* authorities.

@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Thin Keycloak Admin REST client (Phase 2.3 S2).
@@ -40,7 +41,15 @@ public class KeycloakAdminService {
 
     /** Realm roles auto-assigned by Keycloak that are not application roles — ignored for display. */
     private static final String OPERATOR_ROLE = "OPERATOR";
+    private static final String ADMIN_ROLE = "ADMIN";
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
+
+    /**
+     * Tenant-level app roles this service hands out and swaps (Phase 3.3). {@link #setRealmRole}
+     * strips only these before assigning a new one — SUPER_ADMIN and Keycloak's own default
+     * mappings (offline_access, uma_authorization, …) are left untouched.
+     */
+    private static final Set<String> MANAGED_APP_ROLES = Set.of(OPERATOR_ROLE, ADMIN_ROLE);
 
     private final WebClient web;
     private final KeycloakAdminProperties props;
@@ -149,6 +158,37 @@ public class KeycloakAdminService {
                 .block();
     }
 
+    /**
+     * Swaps a user's tenant-level app role (Phase 3.3): strips any currently-mapped
+     * {@link #MANAGED_APP_ROLES} (OPERATOR/ADMIN) then assigns {@code role}. SUPER_ADMIN and
+     * Keycloak's own default mappings are left in place — only the OPERATOR↔ADMIN pair moves.
+     */
+    public void setRealmRole(String userId, String role) {
+        List<Map<String, Object>> current = web.get()
+                .uri("/admin/realms/{realm}/users/{id}/role-mappings/realm", props.realm(), userId)
+                .headers(h -> h.setBearerAuth(token()))
+                .retrieve()
+                .bodyToMono(LIST_OF_MAP)
+                .block();
+
+        List<Map<String, Object>> toRemove = current == null ? List.of()
+                : current.stream()
+                        .filter(r -> MANAGED_APP_ROLES.contains(r.get("name")))
+                        .toList();
+
+        if (!toRemove.isEmpty()) {
+            web.method(org.springframework.http.HttpMethod.DELETE)
+                    .uri("/admin/realms/{realm}/users/{id}/role-mappings/realm", props.realm(), userId)
+                    .headers(h -> h.setBearerAuth(token()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(toRemove)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block();
+        }
+        assignRealmRole(userId, role);
+    }
+
     /** Replaces a user's password (non-temporary — the operator can use it immediately). */
     public void resetPassword(String userId, String password) {
         web.put()
@@ -204,6 +244,23 @@ public class KeycloakAdminService {
         return rawUsersByTenant(tenantId).size();
     }
 
+    /**
+     * Maps each operator's Keycloak id to their email for one tenant in a single Admin call (no
+     * per-user role lookups). Used to resolve ticket assignees to a display email (Phase 3.3 S2) —
+     * the ticket only stores the UUID, the UI shows who.
+     */
+    public Map<String, String> userEmailsByTenant(Long tenantId) {
+        Map<String, String> emails = new java.util.HashMap<>();
+        for (Map<String, Object> u : rawUsersByTenant(tenantId)) {
+            Object id = u.get("id");
+            Object email = u.get("email");
+            if (id != null && email != null) {
+                emails.put(id.toString(), email.toString());
+            }
+        }
+        return emails;
+    }
+
     /** A single user, if present — used to verify tenant ownership before mutation. */
     public Optional<KeycloakUser> findUser(String userId) {
         try {
@@ -237,7 +294,10 @@ public class KeycloakAdminService {
         return users == null ? List.of() : users;
     }
 
-    /** Reduces a user's realm-role mappings to one display role (SUPER_ADMIN wins, else OPERATOR). */
+    /**
+     * Reduces a user's realm-role mappings to one display role by precedence
+     * SUPER_ADMIN &gt; ADMIN &gt; OPERATOR (Phase 3.3 added the tenant-level ADMIN tier).
+     */
     private String displayRole(String userId) {
         List<Map<String, Object>> roles = web.get()
                 .uri("/admin/realms/{realm}/users/{id}/role-mappings/realm", props.realm(), userId)
@@ -245,8 +305,14 @@ public class KeycloakAdminService {
                 .retrieve()
                 .bodyToMono(LIST_OF_MAP)
                 .block();
-        if (roles != null && roles.stream().anyMatch(r -> SUPER_ADMIN_ROLE.equals(r.get("name")))) {
+        if (roles == null) {
+            return OPERATOR_ROLE;
+        }
+        if (roles.stream().anyMatch(r -> SUPER_ADMIN_ROLE.equals(r.get("name")))) {
             return SUPER_ADMIN_ROLE;
+        }
+        if (roles.stream().anyMatch(r -> ADMIN_ROLE.equals(r.get("name")))) {
+            return ADMIN_ROLE;
         }
         return OPERATOR_ROLE;
     }

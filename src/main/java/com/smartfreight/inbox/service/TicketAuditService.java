@@ -32,6 +32,8 @@ public class TicketAuditService {
     public static final String ACTION_CLOSE      = "CLOSE";
     public static final String ACTION_DELETE     = "DELETE";
     public static final String ACTION_DRAFT_EDIT = "DRAFT_EDIT";
+    public static final String ACTION_ASSIGN     = "ASSIGN";
+    public static final String ACTION_UNASSIGN   = "UNASSIGN";
 
     private final TicketAuditLogRepository repository;
 

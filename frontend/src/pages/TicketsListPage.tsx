@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useAuth } from 'react-oidc-context'
 import { useApi } from '../api/useApi.ts'
 import { useTicketStream } from '../api/useTicketStream.ts'
 import type { Page, TicketSummary } from '../types.ts'
@@ -14,17 +15,21 @@ const COLUMNS: { key: string; label: string; sortable: boolean }[] = [
   { key: 'extractedIdentifier', label: 'Identifier', sortable: true },
   { key: 'status', label: 'Status', sortable: true },
   { key: 'aiConfidence', label: 'Conf.', sortable: true },
+  { key: 'assignee', label: 'Assignee', sortable: false },
   { key: 'slaDeadlineAt', label: 'SLA', sortable: true },
   { key: 'createdAt', label: 'Received', sortable: true },
 ]
 
 export default function TicketsListPage() {
   const api = useApi()
+  const auth = useAuth()
+  const myId = auth.user?.profile.sub
   const [params, setParams] = useSearchParams()
 
   const sort = params.get('sort') ?? 'createdAt'
   const dir = params.get('dir') ?? 'desc'
   const status = params.get('status') ?? ''
+  const assignee = params.get('assignee') ?? 'all'
   const page = Math.max(0, Number(params.get('page') ?? '0'))
 
   const [data, setData] = useState<Page<TicketSummary> | null>(null)
@@ -32,6 +37,7 @@ export default function TicketsListPage() {
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [reprocessing, setReprocessing] = useState(false)
+  const [acting, setActing] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -39,6 +45,7 @@ export default function TicketsListPage() {
     try {
       const qs = new URLSearchParams({ sort, dir, page: String(page) })
       if (status) qs.set('status', status)
+      if (assignee && assignee !== 'all') qs.set('assignee', assignee)
       const result = await api.get<Page<TicketSummary>>(`/api/tickets?${qs.toString()}`)
       setData(result)
     } catch (e) {
@@ -46,7 +53,7 @@ export default function TicketsListPage() {
     } finally {
       setLoading(false)
     }
-  }, [api, sort, dir, status, page])
+  }, [api, sort, dir, status, assignee, page])
 
   useEffect(() => {
     void load()
@@ -91,6 +98,34 @@ export default function TicketsListPage() {
     }
   }, [api, load])
 
+  // Shared-queue assignment (Phase 3.3 S2): self-claim an unassigned ticket or release one of your
+  // own. Assigning to another operator is a tenant-admin action, done from the ticket detail page.
+  const claim = async (id: number) => {
+    setActing(id)
+    setError(null)
+    try {
+      await api.post(`/api/tickets/${id}/assign`, {})
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Claim failed')
+    } finally {
+      setActing(null)
+    }
+  }
+
+  const release = async (id: number) => {
+    setActing(id)
+    setError(null)
+    try {
+      await api.post(`/api/tickets/${id}/unassign`)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Release failed')
+    } finally {
+      setActing(null)
+    }
+  }
+
   return (
     <div>
       <div className="d-flex justify-content-between align-items-center mb-3">
@@ -113,6 +148,17 @@ export default function TicketsListPage() {
           >
             {reprocessing ? 'Reprocessing…' : 'Reprocess stuck'}
           </button>
+          <label className="text-muted small mb-0">Assignee</label>
+          <select
+            className="form-select form-select-sm"
+            style={{ width: 'auto' }}
+            value={assignee}
+            onChange={(e) => update({ assignee: e.target.value === 'all' ? '' : e.target.value, page: '0' })}
+          >
+            <option value="all">All</option>
+            <option value="mine">Mine</option>
+            <option value="unassigned">Unassigned</option>
+          </select>
           <label className="text-muted small mb-0">Status</label>
           <select
             className="form-select form-select-sm"
@@ -151,6 +197,7 @@ export default function TicketsListPage() {
                   {sort === c.key && <span className="ms-1">{dir === 'asc' ? '▲' : '▼'}</span>}
                 </th>
               ))}
+              <th className="text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -168,12 +215,43 @@ export default function TicketsListPage() {
                   {t.slaBreached && <span className="badge bg-danger ms-1">Breached</span>}
                 </td>
                 <td>{formatConfidence(t.aiConfidence)}</td>
+                <td>
+                  {t.assigneeUserId ? (
+                    t.assigneeUserId === myId
+                      ? <span className="badge bg-info text-dark">You</span>
+                      : <span title={t.assigneeEmail ?? undefined}>{t.assigneeEmail ?? 'Assigned'}</span>
+                  ) : (
+                    <span className="text-muted">Unassigned</span>
+                  )}
+                </td>
                 <td>{formatDateTime(t.slaDeadlineAt)}</td>
                 <td>{formatDateTime(t.createdAt)}</td>
+                <td className="text-end">
+                  {!t.assigneeUserId && (
+                    <button
+                      type="button"
+                      className="btn btn-outline-primary btn-sm"
+                      disabled={acting === t.id}
+                      onClick={() => void claim(t.id)}
+                    >
+                      Claim
+                    </button>
+                  )}
+                  {t.assigneeUserId === myId && (
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary btn-sm"
+                      disabled={acting === t.id}
+                      onClick={() => void release(t.id)}
+                    >
+                      Release
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
             {!loading && data?.content.length === 0 && (
-              <tr><td colSpan={COLUMNS.length} className="text-center text-muted py-4">No tickets</td></tr>
+              <tr><td colSpan={COLUMNS.length + 1} className="text-center text-muted py-4">No tickets</td></tr>
             )}
           </tbody>
         </table>

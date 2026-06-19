@@ -6,9 +6,11 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.repository.TenantDocumentRepository;
 import com.smartfreight.inbox.service.EmailReplyService;
 import com.smartfreight.inbox.service.FeedbackLoopService;
+import com.smartfreight.inbox.service.KeycloakAdminService;
 import com.smartfreight.inbox.service.QuoteFollowUpService;
 import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,6 +21,10 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -30,6 +36,7 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,6 +62,7 @@ class TicketApiControllerTest {
     @Mock private QuoteFollowUpService quoteFollowUpService;
     @Mock private TenantDocumentRepository documentRepository;
     @Mock private FeedbackLoopService feedbackLoopService;
+    @Mock private KeycloakAdminService keycloakAdminService;
 
     private MockMvc mockMvc;
 
@@ -62,8 +70,25 @@ class TicketApiControllerTest {
     void setUp() {
         TicketApiController controller = new TicketApiController(
                 emailTicketRepository, emailReplyService, auditService, sendRateLimiter,
-                quoteFollowUpService, documentRepository, feedbackLoopService);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+                quoteFollowUpService, documentRepository, feedbackLoopService, keycloakAdminService);
+        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
+                .build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
+
+    /** Puts a Keycloak JWT (subject = user id, optional realm roles) in the context. */
+    private void authenticateAs(String subject, String... roles) {
+        Jwt jwt = Jwt.withTokenValue("token").header("alg", "none")
+                .subject(subject)
+                .claim("roles", List.of(roles))
+                .claim("tenant_id", 1L)
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
     }
 
     private EmailTicket ticket(long id, TicketStatus status) {
@@ -199,5 +224,88 @@ class TicketApiControllerTest {
         mockMvc.perform(delete("/api/tickets/1")).andExpect(status().isConflict());
 
         verify(emailTicketRepository, never()).delete(any());
+    }
+
+    // ---- Phase 3.3 S2: shared-queue assignment ----
+
+    @Test
+    void listMineFilterQueriesByCaller() throws Exception {
+        authenticateAs("uuid-me");
+        when(emailTicketRepository.findByAssignee(eq("uuid-me"), isNull(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(50), 0));
+
+        mockMvc.perform(get("/api/tickets").param("assignee", "mine"))
+                .andExpect(status().isOk());
+
+        verify(emailTicketRepository).findByAssignee(eq("uuid-me"), isNull(), any(Pageable.class));
+    }
+
+    @Test
+    void listUnassignedFilterQueriesUnassigned() throws Exception {
+        when(emailTicketRepository.findUnassigned(isNull(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(50), 0));
+
+        mockMvc.perform(get("/api/tickets").param("assignee", "unassigned"))
+                .andExpect(status().isOk());
+
+        verify(emailTicketRepository).findUnassigned(isNull(), any(Pageable.class));
+    }
+
+    @Test
+    void selfClaimAssignsToCaller() throws Exception {
+        authenticateAs("uuid-me");
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
+
+        mockMvc.perform(post("/api/tickets/1/assign")
+                        .contentType("application/json").content("{}"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<EmailTicket> saved = ArgumentCaptor.forClass(EmailTicket.class);
+        verify(emailTicketRepository).save(saved.capture());
+        org.assertj.core.api.Assertions.assertThat(saved.getValue().getAssigneeUserId()).isEqualTo("uuid-me");
+        verify(auditService).record(eq(1L), eq(TicketAuditService.ACTION_ASSIGN), any());
+    }
+
+    @Test
+    void adminCanAssignToAnotherOperator() throws Exception {
+        authenticateAs("uuid-admin", "ADMIN");
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
+
+        mockMvc.perform(post("/api/tickets/1/assign")
+                        .contentType("application/json").content("{\"userId\":\"uuid-other\"}"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<EmailTicket> saved = ArgumentCaptor.forClass(EmailTicket.class);
+        verify(emailTicketRepository).save(saved.capture());
+        org.assertj.core.api.Assertions.assertThat(saved.getValue().getAssigneeUserId()).isEqualTo("uuid-other");
+    }
+
+    @Test
+    void operatorCannotAssignToAnotherOperator() throws Exception {
+        authenticateAs("uuid-op");
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
+
+        mockMvc.perform(post("/api/tickets/1/assign")
+                        .contentType("application/json").content("{\"userId\":\"uuid-other\"}"))
+                .andExpect(status().isForbidden());
+
+        verify(emailTicketRepository, never()).save(any());
+    }
+
+    @Test
+    void unassignClearsAssignee() throws Exception {
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        t.setAssigneeUserId("uuid-me");
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
+
+        mockMvc.perform(post("/api/tickets/1/unassign")).andExpect(status().isOk());
+
+        ArgumentCaptor<EmailTicket> saved = ArgumentCaptor.forClass(EmailTicket.class);
+        verify(emailTicketRepository).save(saved.capture());
+        org.assertj.core.api.Assertions.assertThat(saved.getValue().getAssigneeUserId()).isNull();
+        verify(auditService).record(eq(1L), eq(TicketAuditService.ACTION_UNASSIGN), any());
     }
 }

@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from 'react-oidc-context'
 import { useApi, ApiError } from '../api/useApi.ts'
-import type { TicketDetail } from '../types.ts'
+import { useRoles } from '../auth/roles.ts'
+import type { TicketDetail, User } from '../types.ts'
 import { formatConfidence, formatDateTime, statusBadgeClass } from '../util/format.ts'
 
 export default function TicketDetailPage() {
   const { id } = useParams<{ id: string }>()
   const api = useApi()
+  const auth = useAuth()
+  const myId = auth.user?.profile.sub
+  const { isAdmin } = useRoles()
   const navigate = useNavigate()
 
   const [ticket, setTicket] = useState<TicketDetail | null>(null)
@@ -14,6 +19,8 @@ export default function TicketDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [operators, setOperators] = useState<User[]>([])
+  const [assignTarget, setAssignTarget] = useState('')
 
   const load = useCallback(async () => {
     setError(null)
@@ -29,6 +36,44 @@ export default function TicketDetailPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // A tenant admin can assign to any teammate, so load the operator list for the picker (the API
+  // 403s for non-admins anyway; gating the fetch avoids a noisy console error for operators).
+  useEffect(() => {
+    if (!isAdmin) return
+    void api.get<User[]>('/api/users').then(setOperators).catch(() => setOperators([]))
+  }, [api, isAdmin])
+
+  const assign = async (userId: string | null) => {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const body = userId ? { userId } : {}
+      const updated = await api.post<TicketDetail>(`/api/tickets/${id}/assign`, body)
+      setTicket(updated)
+      setNotice('Ticket assigned.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Assign failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const unassign = async () => {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const updated = await api.post<TicketDetail>(`/api/tickets/${id}/unassign`)
+      setTicket(updated)
+      setNotice('Ticket released.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Release failed')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const terminal = ticket?.status === 'CLOSED' || ticket?.status === 'AUTO_SENT'
 
@@ -108,6 +153,61 @@ export default function TicketDetailPage() {
         </dd>
         <dt className="col-sm-2">Received</dt><dd className="col-sm-10">{formatDateTime(ticket.createdAt)}</dd>
       </dl>
+
+      <div className="card mb-3">
+        <div className="card-header d-flex justify-content-between align-items-center">
+          <span>Assignment</span>
+          <span>
+            {ticket.assigneeUserId ? (
+              ticket.assigneeUserId === myId
+                ? <span className="badge bg-info text-dark">Assigned to you</span>
+                : <span className="badge bg-secondary">{ticket.assigneeEmail ?? 'Assigned'}</span>
+            ) : (
+              <span className="badge bg-light text-dark border">Unassigned</span>
+            )}
+          </span>
+        </div>
+        <div className="card-body d-flex flex-wrap align-items-center gap-2">
+          {!ticket.assigneeUserId && (
+            <button type="button" className="btn btn-outline-primary btn-sm" disabled={busy} onClick={() => void assign(null)}>
+              Claim
+            </button>
+          )}
+          {ticket.assigneeUserId && (
+            <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy} onClick={() => void unassign()}>
+              Release
+            </button>
+          )}
+          {ticket.assigneeUserId && ticket.assigneeUserId !== myId && (
+            <button type="button" className="btn btn-outline-primary btn-sm" disabled={busy} onClick={() => void assign(null)}>
+              Claim for me
+            </button>
+          )}
+          {isAdmin && operators.length > 0 && (
+            <div className="d-flex align-items-center gap-2 ms-auto">
+              <select
+                className="form-select form-select-sm"
+                style={{ width: 'auto' }}
+                value={assignTarget}
+                onChange={(e) => setAssignTarget(e.target.value)}
+              >
+                <option value="">Assign to teammate…</option>
+                {operators.map((o) => (
+                  <option key={o.id} value={o.id}>{o.email} ({o.role ?? 'OPERATOR'})</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                disabled={busy || !assignTarget}
+                onClick={() => { if (assignTarget) void assign(assignTarget) }}
+              >
+                Assign
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="card mb-3">
         <div className="card-header">Email body</div>

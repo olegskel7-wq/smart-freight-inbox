@@ -176,6 +176,15 @@ public class EmailTicket {
     private Double aiConfidence;
 
     /**
+     * Owning operator for the shared queue (Phase 3.3 S2) — a Keycloak user UUID, or null when the
+     * ticket is unclaimed. An operator self-claims; a tenant admin can assign to a teammate. Plain
+     * column (not an FK): operators live in Keycloak (Phase 2.3), not a local users table. Mutating
+     * it fires the existing {@code @PostUpdate} live event, so the list updates without extra wiring.
+     */
+    @Column(name = "assignee_user_id", length = 36)
+    private String assigneeUserId;
+
+    /**
      * Retry attempt counter.
      * When AI is temporarily unavailable the ticket receives RETRY_LATER status
      * and this counter is incremented for each attempt.

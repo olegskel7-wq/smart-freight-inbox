@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for the bearer-token role mapping (Phase 3.2): no roles → OPERATOR, and
- * SUPER_ADMIN implies OPERATOR.
+ * Unit tests for the bearer-token role mapping (Phase 3.2 / 3.3): no roles → OPERATOR, and the
+ * SUPER_ADMIN ⇒ ADMIN ⇒ OPERATOR implication chain.
  */
 class KeycloakJwtRoleConverterTest {
 
@@ -41,9 +41,15 @@ class KeycloakJwtRoleConverterTest {
     }
 
     @Test
-    void superAdminImpliesOperator() {
+    void adminImpliesOperator() {
+        assertThat(authorities(converter.convert(jwt(List.of("ADMIN")))))
+                .containsExactlyInAnyOrder("ROLE_ADMIN", "ROLE_OPERATOR");
+    }
+
+    @Test
+    void superAdminImpliesAdminAndOperator() {
         assertThat(authorities(converter.convert(jwt(List.of("SUPER_ADMIN")))))
-                .contains("ROLE_SUPER_ADMIN", "ROLE_OPERATOR");
+                .contains("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_OPERATOR");
     }
 
     @Test

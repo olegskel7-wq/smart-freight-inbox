@@ -47,11 +47,14 @@ public class UserApiController {
         this.userManagementService = userManagementService;
     }
 
-    /** New-operator payload (role defaults to OPERATOR when blank — the only role the UI offers). */
+    /** New-operator payload (role defaults to OPERATOR when blank; OPERATOR/ADMIN accepted, Phase 3.3). */
     public record CreateUserRequest(String email, String password, String role) {}
 
     /** Password-reset payload for an existing operator. */
     public record ChangePasswordRequest(String newPassword) {}
+
+    /** Role-change payload (OPERATOR ↔ ADMIN, Phase 3.3). */
+    public record ChangeRoleRequest(String role) {}
 
     /** GET /api/users — the caller's tenant operators. */
     @GetMapping
@@ -72,6 +75,26 @@ public class UserApiController {
         try {
             userManagementService.createUser(request.email(), request.password(), role);
             log.info("User created: {}", request.email().trim().toLowerCase());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return snapshot();
+    }
+
+    /**
+     * POST /api/users/{id}/role — changes an operator's tenant role (OPERATOR ↔ ADMIN, Phase 3.3).
+     * The caller's email comes off the JWT; the service refuses a self-role-change to avoid an admin
+     * locking the tenant out of its own management surface. An invalid role / cross-tenant target /
+     * self-target answers {@code 400} with the message.
+     */
+    @PostMapping("/{id}/role")
+    public List<UserDto> changeRole(@PathVariable String id,
+                                    @RequestBody ChangeRoleRequest request,
+                                    @AuthenticationPrincipal Jwt jwt) {
+        try {
+            String currentEmail = jwt == null ? null : jwt.getClaimAsString("preferred_username");
+            userManagementService.changeRole(id, request.role(), currentEmail);
+            log.info("Role changed for user id={} to {} by {}", id, request.role(), currentEmail);
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }

@@ -11,6 +11,8 @@ export interface TicketSummary {
   slaDeadlineAt: string | null
   slaBreached: boolean
   proactive: boolean
+  assigneeUserId: string | null
+  assigneeEmail: string | null
   createdAt: string
   updatedAt: string
 }
@@ -44,6 +46,8 @@ export interface TicketDetail {
   requestedDocType: string | null
   attachedDocument: DocumentRef | null
   availableDocuments: DocumentRef[]
+  assigneeUserId: string | null
+  assigneeEmail: string | null
   retryCount: number | null
   createdAt: string
   updatedAt: string
