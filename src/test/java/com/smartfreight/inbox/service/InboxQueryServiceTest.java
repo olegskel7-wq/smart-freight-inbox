@@ -131,6 +131,35 @@ class InboxQueryServiceTest {
     }
 
     @Test
+    void ask_quoteConversion_headlineCarriesTheRate() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithConversion(10, 4));
+        // Route to the new metric; phrasing returns nothing so the deterministic headline is used.
+        stubOllamaSequence(
+                Map.of("response", "QUOTE_CONVERSION | 30 | NONE"),
+                Map.of("response", ""));
+
+        InboxAnswer answer = service.ask("what share of our quotes turned into bookings?");
+
+        assertThat(answer.metric()).isEqualTo(InboxMetric.QUOTE_CONVERSION);
+        assertThat(answer.answer()).contains("40.0%").contains("4 of 10").contains("30 days");
+        assertThat(answer.matched()).isTrue();
+    }
+
+    @Test
+    void ask_quoteConversion_noQuotes_saysNoRateYet() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithConversion(0, 0));
+        stubOllamaSequence(
+                Map.of("response", "QUOTE_CONVERSION | 30 | NONE"),
+                Map.of("response", ""));
+
+        InboxAnswer answer = service.ask("our quote conversion rate?");
+
+        // No quotes → never show "—" or 0%; say there's no rate yet.
+        assertThat(answer.answer()).contains("No quotes were sent");
+        assertThat(answer.metric()).isEqualTo(InboxMetric.QUOTE_CONVERSION);
+    }
+
+    @Test
     void ask_breakerOpen_returnsGuidanceWithoutCallingTheModel() {
         circuitBreaker.transitionToOpenState();
 
@@ -198,5 +227,19 @@ class InboxQueryServiceTest {
         byType.put(type, count);
         return new AnalyticsSummary(30, byStatus, byType, 0L, 0L, 0L, 0L, null,
                 List.<DayVolume>of(), List.<Long>of(), 0L, 0L, 0L, 0L);
+    }
+
+    /** Minimal summary carrying quote-conversion figures, enough for the QUOTE_CONVERSION assertions. */
+    private static AnalyticsSummary summaryWithConversion(long quotesSent, long quotesConverted) {
+        Map<TicketStatus, Long> byStatus = new EnumMap<>(TicketStatus.class);
+        for (TicketStatus s : TicketStatus.values()) {
+            byStatus.put(s, 0L);
+        }
+        Map<TicketType, Long> byType = new EnumMap<>(TicketType.class);
+        for (TicketType t : TicketType.values()) {
+            byType.put(t, 0L);
+        }
+        return new AnalyticsSummary(30, byStatus, byType, 0L, 0L, 0L, 0L, null,
+                List.<DayVolume>of(), List.<Long>of(), 0L, 0L, quotesSent, quotesConverted);
     }
 }

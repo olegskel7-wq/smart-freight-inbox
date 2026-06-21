@@ -66,6 +66,7 @@ public class InboxQueryService {
             • What's our average response time this week?
             • What share of replies were sent automatically?
             • How many emails breached their SLA?
+            • What share of our quotes turned into bookings?
             • Where is the inbox getting stuck?""";
 
     /** Fallback routing prompt when the DB-backed {@code ai.inbox-query-prompt} row is missing. Kept in sync with V25. */
@@ -256,6 +257,14 @@ public class InboxQueryService {
                             s.slaBreached(), win, s.slaBreachedPct()),
                     "SLA breaches: %d%nRelevant tickets: %d%nBreach rate: %.1f%%".formatted(
                             s.slaBreached(), s.relevant(), s.slaBreachedPct()));
+
+            case QUOTE_CONVERSION -> result(
+                    s.quotesSent() == 0
+                            ? "No quotes were sent in %s, so there is no conversion rate yet.".formatted(win)
+                            : "%s of quotes turned into bookings in %s (%d of %d quotes booked).".formatted(
+                                    s.quoteConversionFormatted(), win, s.quotesConverted(), s.quotesSent()),
+                    "Quote-to-booking conversion: %s%nQuotes sent: %d%nBooked: %d".formatted(
+                            s.quoteConversionFormatted(), s.quotesSent(), s.quotesConverted()));
 
             case BOTTLENECKS -> {
                 TicketStatus busiest = busiestOpenStage(s);
