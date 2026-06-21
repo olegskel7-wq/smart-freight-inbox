@@ -37,18 +37,33 @@ function ChipIcon({ d }: { d: string[] }) {
   )
 }
 
-function StatChip(props: { tone: string; icon: string[]; value: number | null; label: string }) {
+// A summary chip — a link that drills the list down to the tickets it counts (?view=…).
+function StatChip(props: {
+  view: string; active: boolean; tone: string; icon: string[]; value: number | null; label: string
+}) {
   return (
     <div className="col-6 col-md-3">
-      <div className="sf-chip">
+      <Link
+        to={`/tickets?view=${props.view}`}
+        className={`sf-chip${props.active ? ' is-active' : ''}`}
+        title={`Show ${props.label.toLowerCase()} tickets`}
+      >
         <span className={`sf-chip-ic ${props.tone}`}><ChipIcon d={props.icon} /></span>
         <span className="sf-chip-body">
           <span className="sf-chip-value">{props.value ?? '—'}</span>
           <span className="sf-chip-label">{props.label}</span>
         </span>
-      </div>
+      </Link>
     </div>
   )
+}
+
+// Human label for an active drill-down view (shown as a clearable pill in the card header).
+const VIEW_LABELS: Record<string, string> = {
+  open: 'Open',
+  awaiting: 'Awaiting review',
+  breached: 'SLA breached',
+  autosent_today: 'Auto-sent today',
 }
 
 function initials(email: string | null): string {
@@ -66,6 +81,7 @@ export default function TicketsListPage() {
   const dir = params.get('dir') ?? 'desc'
   const status = params.get('status') ?? ''
   const assignee = params.get('assignee') ?? 'all'
+  const view = params.get('view') ?? ''
   const page = Math.max(0, Number(params.get('page') ?? '0'))
 
   const [data, setData] = useState<Page<TicketSummary> | null>(null)
@@ -81,8 +97,13 @@ export default function TicketsListPage() {
     setError(null)
     try {
       const qs = new URLSearchParams({ sort, dir, page: String(page) })
-      if (status) qs.set('status', status)
-      if (assignee && assignee !== 'all') qs.set('assignee', assignee)
+      // A drill-down view (from a summary chip) takes precedence over the status/assignee filters.
+      if (view) {
+        qs.set('view', view)
+      } else {
+        if (status) qs.set('status', status)
+        if (assignee && assignee !== 'all') qs.set('assignee', assignee)
+      }
       const result = await api.get<Page<TicketSummary>>(`/api/tickets?${qs.toString()}`)
       setData(result)
     } catch (e) {
@@ -90,7 +111,7 @@ export default function TicketsListPage() {
     } finally {
       setLoading(false)
     }
-  }, [api, sort, dir, status, assignee, page])
+  }, [api, sort, dir, status, assignee, view, page])
 
   // The summary strip is best-effort: a failed count never blocks the list.
   const loadStats = useCallback(async () => {
@@ -201,10 +222,10 @@ export default function TicketsListPage() {
       </div>
 
       <div className="row g-3 mb-3">
-        <StatChip tone="sf-ic-blue" icon={CHIP_ICONS.open} value={stats?.open ?? null} label="Open" />
-        <StatChip tone="sf-ic-amber" icon={CHIP_ICONS.review} value={stats?.awaitingReview ?? null} label="Awaiting review" />
-        <StatChip tone="sf-ic-red" icon={CHIP_ICONS.breach} value={stats?.slaBreached ?? null} label="SLA breached" />
-        <StatChip tone="sf-ic-teal" icon={CHIP_ICONS.sent} value={stats?.autoSentToday ?? null} label="Auto-sent today" />
+        <StatChip view="open" active={view === 'open'} tone="sf-ic-blue" icon={CHIP_ICONS.open} value={stats?.open ?? null} label="Open" />
+        <StatChip view="awaiting" active={view === 'awaiting'} tone="sf-ic-amber" icon={CHIP_ICONS.review} value={stats?.awaitingReview ?? null} label="Awaiting review" />
+        <StatChip view="breached" active={view === 'breached'} tone="sf-ic-red" icon={CHIP_ICONS.breach} value={stats?.slaBreached ?? null} label="SLA breached" />
+        <StatChip view="autosent_today" active={view === 'autosent_today'} tone="sf-ic-teal" icon={CHIP_ICONS.sent} value={stats?.autoSentToday ?? null} label="Auto-sent today" />
       </div>
 
       {notice && (
@@ -217,8 +238,11 @@ export default function TicketsListPage() {
 
       <div className="card shadow-sm">
         <div className="card-header d-flex align-items-center gap-2 flex-wrap">
-          <span className="fw-semibold">All tickets</span>
+          <span className="fw-semibold">{view ? VIEW_LABELS[view] ?? 'Tickets' : 'All tickets'}</span>
           {data && <span className="sf-count">{data.totalElements}</span>}
+          {view && (
+            <Link to="/tickets" className="sf-clear" title="Clear filter">Clear ✕</Link>
+          )}
           <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
             <button
               type="button"
@@ -233,8 +257,8 @@ export default function TicketsListPage() {
             <select
               className="form-select form-select-sm"
               style={{ width: 'auto' }}
-              value={assignee}
-              onChange={(e) => update({ assignee: e.target.value === 'all' ? '' : e.target.value, page: '0' })}
+              value={view ? 'all' : assignee}
+              onChange={(e) => update({ assignee: e.target.value === 'all' ? '' : e.target.value, view: '', page: '0' })}
             >
               <option value="all">All</option>
               <option value="mine">Mine</option>
@@ -244,8 +268,8 @@ export default function TicketsListPage() {
             <select
               className="form-select form-select-sm"
               style={{ width: 'auto' }}
-              value={status}
-              onChange={(e) => update({ status: e.target.value, page: '0' })}
+              value={view ? '' : status}
+              onChange={(e) => update({ status: e.target.value, view: '', page: '0' })}
             >
               <option value="">All</option>
               {TICKET_STATUSES.map((s) => (

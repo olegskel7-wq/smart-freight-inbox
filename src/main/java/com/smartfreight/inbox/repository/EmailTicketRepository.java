@@ -115,6 +115,28 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     long countByStatusAndUpdatedAtGreaterThanEqual(TicketStatus status, java.time.LocalDateTime since);
 
     /**
+     * Paginated list of tickets in any of the given statuses (Phase 3 UI: the "Open" summary chip
+     * drills down here). Shares {@code OPEN_STATUSES} with {@link #countByStatusIn} so the chip's
+     * count and this list are defined identically. Tenant-scoped via {@code @TenantId}.
+     */
+    Page<EmailTicket> findByStatusIn(Collection<TicketStatus> statuses, Pageable pageable);
+
+    /**
+     * Paginated list of open, SLA-breached tickets (Phase 3 UI: the "SLA breached" chip drill-down).
+     * Mirrors {@link #countByStatusInAndSlaBreachedTrue}.
+     */
+    Page<EmailTicket> findByStatusInAndSlaBreachedTrue(Collection<TicketStatus> statuses, Pageable pageable);
+
+    /**
+     * Paginated list of tickets in a status updated at/after the cutoff (Phase 3 UI: the
+     * "Auto-sent today" chip drill-down, AUTO_SENT + start-of-day). Mirrors
+     * {@link #countByStatusAndUpdatedAtGreaterThanEqual}.
+     */
+    Page<EmailTicket> findByStatusAndUpdatedAtGreaterThanEqual(TicketStatus status,
+                                                              java.time.LocalDateTime since,
+                                                              Pageable pageable);
+
+    /**
      * Finds RETRY_LATER tickets that have not exceeded the retry limit.
      * RetryScheduler uses this to find tickets eligible for reprocessing.
      * The maxRetries parameter protects against infinite retry loops.
