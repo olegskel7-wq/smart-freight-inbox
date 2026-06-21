@@ -277,3 +277,95 @@ body {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* ---- Page header + summary strip (Phase 3 UI: elevated main panel) ------ */
+.sf-pagehead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sf-pagesub {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: #7a8a9c;
+}
+.sf-chip {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 100%;
+  background: #fff;
+  border: 0.5px solid #e7ecf3;
+  border-radius: 11px;
+  padding: 12px 13px;
+}
+.sf-chip-ic {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sf-chip-body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+.sf-chip-value {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #16202b;
+}
+.sf-chip-label {
+  font-size: 0.7rem;
+  color: #8593a4;
+}
+.sf-ic-blue  { background: #eaeefb; color: #3142a8; }
+.sf-ic-amber { background: #fcf1da; color: #9a6b06; }
+.sf-ic-red   { background: #fbe7e7; color: #b3261e; }
+.sf-ic-teal  { background: #e2f4ee; color: #0f7a5a; }
+
+/* ---- Table-in-card refinements ----------------------------------------- */
+.sf-count {
+  font-size: 0.72rem;
+  color: #8593a4;
+  background: #f1f4f8;
+  padding: 1px 9px;
+  border-radius: 20px;
+}
+.sf-type {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #eef2f6;
+  color: #5c6b7a;
+  white-space: nowrap;
+}
+.sf-assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+}
+.sf-avatar-sm {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 50%;
+  background: #eef1f5;
+  color: #8593a4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+.sf-avatar-sm.is-me {
+  background: #e8edfc;
+  color: #3142a8;
+}

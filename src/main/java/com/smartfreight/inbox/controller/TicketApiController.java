@@ -2,6 +2,7 @@ package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.controller.dto.PageDto;
 import com.smartfreight.inbox.controller.dto.TicketDetailDto;
+import com.smartfreight.inbox.controller.dto.TicketStatsDto;
 import com.smartfreight.inbox.controller.dto.TicketSummaryDto;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.TenantDocument;
@@ -37,8 +38,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,6 +67,11 @@ public class TicketApiController {
     private static final String DEFAULT_SORT = "createdAt";
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 200;
+
+    /** Actionable backlog for the summary strip — every status outside the terminal three. */
+    private static final Set<TicketStatus> OPEN_STATUSES = EnumSet.of(
+            TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.PROCESSING,
+            TicketStatus.DRAFT_READY, TicketStatus.RETRY_LATER, TicketStatus.FAILED);
 
     private final EmailTicketRepository emailTicketRepository;
     private final EmailReplyService emailReplyService;
@@ -142,6 +150,21 @@ public class TicketApiController {
         Map<String, String> emails = resolveAssigneeEmails(ticketPage.getContent(), jwt);
         return PageDto.of(ticketPage, t -> TicketSummaryDto.from(t,
                 t.getAssigneeUserId() == null ? null : emails.get(t.getAssigneeUserId())));
+    }
+
+    /**
+     * GET /api/tickets/summary — at-a-glance counts for the dashboard strip (Phase 3 UI). Computed
+     * on request and tenant-scoped (every count is a {@code @TenantId} derived query). The literal
+     * {@code /summary} path is matched ahead of {@code /{id}}, so it never collides with detail.
+     */
+    @GetMapping("/summary")
+    public TicketStatsDto summary() {
+        return new TicketStatsDto(
+                emailTicketRepository.countByStatusIn(OPEN_STATUSES),
+                emailTicketRepository.countByStatus(TicketStatus.DRAFT_READY),
+                emailTicketRepository.countByStatusInAndSlaBreachedTrue(OPEN_STATUSES),
+                emailTicketRepository.countByStatusAndUpdatedAtGreaterThanEqual(
+                        TicketStatus.AUTO_SENT, LocalDate.now().atStartOfDay()));
     }
 
     /** GET /api/tickets/{id} — full ticket detail (404 if missing). */

@@ -127,6 +127,22 @@ class TicketApiControllerTest {
     }
 
     @Test
+    void summaryReturnsCounts() throws Exception {
+        when(emailTicketRepository.countByStatusIn(any())).thenReturn(42L);
+        when(emailTicketRepository.countByStatus(TicketStatus.DRAFT_READY)).thenReturn(7L);
+        when(emailTicketRepository.countByStatusInAndSlaBreachedTrue(any())).thenReturn(3L);
+        when(emailTicketRepository.countByStatusAndUpdatedAtGreaterThanEqual(eq(TicketStatus.AUTO_SENT), any()))
+                .thenReturn(18L);
+
+        mockMvc.perform(get("/api/tickets/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.open").value(42))
+                .andExpect(jsonPath("$.awaitingReview").value(7))
+                .andExpect(jsonPath("$.slaBreached").value(3))
+                .andExpect(jsonPath("$.autoSentToday").value(18));
+    }
+
+    @Test
     void detailReturnsTicket() throws Exception {
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket(1, TicketStatus.DRAFT_READY)));
 

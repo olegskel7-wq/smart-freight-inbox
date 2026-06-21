@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi } from '../api/useApi.ts'
 import { useTicketStream } from '../api/useTicketStream.ts'
-import type { Page, TicketSummary } from '../types.ts'
+import type { Page, TicketStats, TicketSummary } from '../types.ts'
 import { TICKET_STATUSES } from '../types.ts'
 import { formatConfidence, formatDateTime, statusBadgeClass } from '../util/format.ts'
 
@@ -20,6 +20,42 @@ const COLUMNS: { key: string; label: string; sortable: boolean }[] = [
   { key: 'createdAt', label: 'Received', sortable: true },
 ]
 
+// Inline SVG glyphs for the summary chips (no icon-font dependency, no CDN).
+const CHIP_ICONS = {
+  open: ['M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z', 'M22 12h-6l-2 3h-4l-2-3H2'],
+  review: ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'],
+  breach: ['M12 8v4l2 2', 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z'],
+  sent: ['M22 2 11 13', 'M22 2 15 22l-4-9-9-4z'],
+}
+
+function ChipIcon({ d }: { d: string[] }) {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+      strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {d.map((p) => <path key={p} d={p} />)}
+    </svg>
+  )
+}
+
+function StatChip(props: { tone: string; icon: string[]; value: number | null; label: string }) {
+  return (
+    <div className="col-6 col-md-3">
+      <div className="sf-chip">
+        <span className={`sf-chip-ic ${props.tone}`}><ChipIcon d={props.icon} /></span>
+        <span className="sf-chip-body">
+          <span className="sf-chip-value">{props.value ?? '—'}</span>
+          <span className="sf-chip-label">{props.label}</span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function initials(email: string | null): string {
+  if (!email) return '?'
+  return email.replace(/@.*/, '').slice(0, 2).toUpperCase()
+}
+
 export default function TicketsListPage() {
   const api = useApi()
   const auth = useAuth()
@@ -33,6 +69,7 @@ export default function TicketsListPage() {
   const page = Math.max(0, Number(params.get('page') ?? '0'))
 
   const [data, setData] = useState<Page<TicketSummary> | null>(null)
+  const [stats, setStats] = useState<TicketStats | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -55,18 +92,38 @@ export default function TicketsListPage() {
     }
   }, [api, sort, dir, status, assignee, page])
 
+  // The summary strip is best-effort: a failed count never blocks the list.
+  const loadStats = useCallback(async () => {
+    try {
+      setStats(await api.get<TicketStats>('/api/tickets/summary'))
+    } catch {
+      /* keep last known counts */
+    }
+  }, [api])
+
   useEffect(() => {
     void load()
   }, [load])
+  useEffect(() => {
+    void loadStats()
+  }, [loadStats])
 
   // Live updates (Phase 3.2): the backend pushes a ticket-changed event per tenant; we re-fetch the
-  // current query so the list always reflects the active filter/sort/page. A ref keeps the stream
-  // subscription stable across filter changes (no reconnect just because `load` was recreated).
+  // current query (and the summary counts) so both always reflect the active filter/sort/page. Refs
+  // keep the stream subscription stable across filter changes (no reconnect just because a callback
+  // was recreated).
   const loadRef = useRef(load)
+  const statsRef = useRef(loadStats)
   useEffect(() => {
     loadRef.current = load
   }, [load])
-  const onLiveEvent = useCallback(() => void loadRef.current(), [])
+  useEffect(() => {
+    statsRef.current = loadStats
+  }, [loadStats])
+  const onLiveEvent = useCallback(() => {
+    void loadRef.current()
+    void statsRef.current()
+  }, [])
   const live = useTicketStream(onLiveEvent)
 
   const update = (next: Record<string, string>) => {
@@ -128,50 +185,26 @@ export default function TicketsListPage() {
 
   return (
     <div>
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <div className="d-flex align-items-center gap-2">
-          <h1 className="h4 mb-0">Tickets</h1>
-          <span
-            className={`badge rounded-pill ${live ? 'bg-success' : 'bg-secondary'}`}
-            title={live ? 'Live updates connected' : 'Live updates disconnected'}
-          >
-            {live ? '● Live' : '○ Offline'}
-          </span>
+      <div className="sf-pagehead">
+        <div>
+          <div className="d-flex align-items-center gap-2">
+            <h1 className="h4 mb-0">Tickets</h1>
+            <span
+              className={`badge rounded-pill ${live ? 'bg-success' : 'bg-secondary'}`}
+              title={live ? 'Live updates connected' : 'Live updates disconnected'}
+            >
+              {live ? '● Live' : '○ Offline'}
+            </span>
+          </div>
+          <p className="sf-pagesub">Incoming customer enquiries — triaged, looked up and drafted by AI</p>
         </div>
-        <div className="d-flex align-items-center gap-2">
-          <button
-            type="button"
-            className="btn btn-outline-primary btn-sm"
-            onClick={() => void reprocess()}
-            disabled={reprocessing}
-            title="Re-queue stuck/failed tickets through the AI pipeline"
-          >
-            {reprocessing ? 'Reprocessing…' : 'Reprocess stuck'}
-          </button>
-          <label className="text-muted small mb-0">Assignee</label>
-          <select
-            className="form-select form-select-sm"
-            style={{ width: 'auto' }}
-            value={assignee}
-            onChange={(e) => update({ assignee: e.target.value === 'all' ? '' : e.target.value, page: '0' })}
-          >
-            <option value="all">All</option>
-            <option value="mine">Mine</option>
-            <option value="unassigned">Unassigned</option>
-          </select>
-          <label className="text-muted small mb-0">Status</label>
-          <select
-            className="form-select form-select-sm"
-            style={{ width: 'auto' }}
-            value={status}
-            onChange={(e) => update({ status: e.target.value, page: '0' })}
-          >
-            <option value="">All</option>
-            {TICKET_STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
+      </div>
+
+      <div className="row g-3 mb-3">
+        <StatChip tone="sf-ic-blue" icon={CHIP_ICONS.open} value={stats?.open ?? null} label="Open" />
+        <StatChip tone="sf-ic-amber" icon={CHIP_ICONS.review} value={stats?.awaitingReview ?? null} label="Awaiting review" />
+        <StatChip tone="sf-ic-red" icon={CHIP_ICONS.breach} value={stats?.slaBreached ?? null} label="SLA breached" />
+        <StatChip tone="sf-ic-teal" icon={CHIP_ICONS.sent} value={stats?.autoSentToday ?? null} label="Auto-sent today" />
       </div>
 
       {notice && (
@@ -182,85 +215,129 @@ export default function TicketsListPage() {
       )}
       {error && <div className="alert alert-danger">{error}</div>}
 
-      <div className="table-responsive">
-        <table className="table table-hover table-sm align-middle">
-          <thead>
-            <tr>
-              {COLUMNS.map((c) => (
-                <th
-                  key={c.key}
-                  role={c.sortable ? 'button' : undefined}
-                  onClick={c.sortable ? () => toggleSort(c.key) : undefined}
-                  className="user-select-none"
-                >
-                  {c.label}
-                  {sort === c.key && <span className="ms-1">{dir === 'asc' ? '▲' : '▼'}</span>}
-                </th>
+      <div className="card shadow-sm">
+        <div className="card-header d-flex align-items-center gap-2 flex-wrap">
+          <span className="fw-semibold">All tickets</span>
+          {data && <span className="sf-count">{data.totalElements}</span>}
+          <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => void reprocess()}
+              disabled={reprocessing}
+              title="Re-queue stuck/failed tickets through the AI pipeline"
+            >
+              {reprocessing ? 'Reprocessing…' : 'Reprocess stuck'}
+            </button>
+            <label className="text-muted small mb-0">Assignee</label>
+            <select
+              className="form-select form-select-sm"
+              style={{ width: 'auto' }}
+              value={assignee}
+              onChange={(e) => update({ assignee: e.target.value === 'all' ? '' : e.target.value, page: '0' })}
+            >
+              <option value="all">All</option>
+              <option value="mine">Mine</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
+            <label className="text-muted small mb-0">Status</label>
+            <select
+              className="form-select form-select-sm"
+              style={{ width: 'auto' }}
+              value={status}
+              onChange={(e) => update({ status: e.target.value, page: '0' })}
+            >
+              <option value="">All</option>
+              {TICKET_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
               ))}
-              <th className="text-end">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data?.content.map((t) => (
-              <tr key={t.id}>
-                <td><Link to={`/tickets/${t.id}`}>{t.id}</Link></td>
-                <td>{t.senderEmail ?? '—'}</td>
-                <td className="text-truncate" style={{ maxWidth: 320 }}>
-                  <Link to={`/tickets/${t.id}`}>{t.subject || '(no subject)'}</Link>
-                </td>
-                <td>{t.ticketType ?? '—'}</td>
-                <td>{t.extractedIdentifier ?? '—'}</td>
-                <td>
-                  <span className={`badge ${statusBadgeClass(t.status)}`}>{t.status ?? '—'}</span>
-                  {t.slaBreached && <span className="badge bg-danger ms-1">Breached</span>}
-                </td>
-                <td>{formatConfidence(t.aiConfidence)}</td>
-                <td>
-                  {t.assigneeUserId ? (
-                    t.assigneeUserId === myId
-                      ? <span className="badge bg-info text-dark">You</span>
-                      : <span title={t.assigneeEmail ?? undefined}>{t.assigneeEmail ?? 'Assigned'}</span>
-                  ) : (
-                    <span className="text-muted">Unassigned</span>
-                  )}
-                </td>
-                <td>{formatDateTime(t.slaDeadlineAt)}</td>
-                <td>{formatDateTime(t.createdAt)}</td>
-                <td className="text-end">
-                  {!t.assigneeUserId && (
-                    <button
-                      type="button"
-                      className="btn btn-outline-primary btn-sm"
-                      disabled={acting === t.id}
-                      onClick={() => void claim(t.id)}
-                    >
-                      Claim
-                    </button>
-                  )}
-                  {t.assigneeUserId === myId && (
-                    <button
-                      type="button"
-                      className="btn btn-outline-secondary btn-sm"
-                      disabled={acting === t.id}
-                      onClick={() => void release(t.id)}
-                    >
-                      Release
-                    </button>
-                  )}
-                </td>
+            </select>
+          </div>
+        </div>
+
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead>
+              <tr>
+                {COLUMNS.map((c) => (
+                  <th
+                    key={c.key}
+                    role={c.sortable ? 'button' : undefined}
+                    onClick={c.sortable ? () => toggleSort(c.key) : undefined}
+                    className="user-select-none"
+                  >
+                    {c.label}
+                    {sort === c.key && <span className="ms-1">{dir === 'asc' ? '▲' : '▼'}</span>}
+                  </th>
+                ))}
+                <th className="text-end">Actions</th>
               </tr>
-            ))}
-            {!loading && data?.content.length === 0 && (
-              <tr><td colSpan={COLUMNS.length + 1} className="text-center text-muted py-4">No tickets</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data?.content.map((t) => (
+                <tr key={t.id}>
+                  <td><Link to={`/tickets/${t.id}`}>{t.id}</Link></td>
+                  <td>{t.senderEmail ?? '—'}</td>
+                  <td className="text-truncate" style={{ maxWidth: 320 }}>
+                    <Link to={`/tickets/${t.id}`}>{t.subject || '(no subject)'}</Link>
+                  </td>
+                  <td>{t.ticketType ? <span className="sf-type">{t.ticketType}</span> : <span className="text-muted">—</span>}</td>
+                  <td>{t.extractedIdentifier ?? '—'}</td>
+                  <td>
+                    <span className={`badge ${statusBadgeClass(t.status)}`}>{t.status ?? '—'}</span>
+                    {t.slaBreached && <span className="badge bg-danger ms-1">Breached</span>}
+                  </td>
+                  <td>{formatConfidence(t.aiConfidence)}</td>
+                  <td>
+                    {t.assigneeUserId ? (
+                      <span className="sf-assignee" title={t.assigneeEmail ?? undefined}>
+                        <span className={`sf-avatar-sm ${t.assigneeUserId === myId ? 'is-me' : ''}`}>
+                          {t.assigneeUserId === myId ? 'You'.slice(0, 2).toUpperCase() : initials(t.assigneeEmail)}
+                        </span>
+                        <span className="text-truncate">{t.assigneeUserId === myId ? 'You' : (t.assigneeEmail ?? 'Assigned')}</span>
+                      </span>
+                    ) : (
+                      <span className="text-muted">Unassigned</span>
+                    )}
+                  </td>
+                  <td>{formatDateTime(t.slaDeadlineAt)}</td>
+                  <td>{formatDateTime(t.createdAt)}</td>
+                  <td className="text-end">
+                    {!t.assigneeUserId && (
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary btn-sm"
+                        disabled={acting === t.id}
+                        onClick={() => void claim(t.id)}
+                      >
+                        Claim
+                      </button>
+                    )}
+                    {t.assigneeUserId === myId && (
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary btn-sm"
+                        disabled={acting === t.id}
+                        onClick={() => void release(t.id)}
+                      >
+                        Release
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!loading && data?.content.length === 0 && (
+                <tr><td colSpan={COLUMNS.length + 1} className="text-center text-muted py-5">No tickets</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {loading && <div className="text-muted">Loading…</div>}
+      {loading && <div className="text-muted mt-2">Loading…</div>}
 
       {data && data.totalPages > 1 && (
-        <nav className="d-flex justify-content-between align-items-center">
+        <nav className="d-flex justify-content-between align-items-center mt-3">
           <span className="text-muted small">
             Page {data.page + 1} of {data.totalPages} · {data.totalElements} tickets
           </span>
