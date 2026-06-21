@@ -94,6 +94,15 @@ body {
 .badge.bg-light     { background-color: #eef2f6 !important; color: #5c6b7a !important; }
 .badge.bg-info      { background-color: #e8edfc !important; }            /* keeps .text-dark (e.g. "You") */
 .badge.bg-dark      { background-color: #1b2430 !important; }            /* SUPER_ADMIN role */
+
+/* Same soft treatment for the contextual `.text-bg-*` badges used across the other pages. */
+.badge.text-bg-primary   { background-color: #eaeefb !important; color: #3142a8 !important; }
+.badge.text-bg-success   { background-color: #e2f4ee !important; color: #0f7a5a !important; }
+.badge.text-bg-danger    { background-color: #fbe7e7 !important; color: #b3261e !important; }
+.badge.text-bg-warning   { background-color: #fcf1da !important; color: #9a6b06 !important; }
+.badge.text-bg-secondary { background-color: #eef1f5 !important; color: #5c6b7a !important; }
+.badge.text-bg-info      { background-color: #e8edfc !important; color: #3142a8 !important; }
+.badge.text-bg-dark      { background-color: #1b2430 !important; color: #fff !important; }
 .badge { font-weight: 500; }
 
 /* ---- Cards: hairline border, lighter shadow ----------------------------- */

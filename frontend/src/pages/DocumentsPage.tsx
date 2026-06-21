@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { DocumentsResponse } from '../types.ts'
 
@@ -107,14 +108,16 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h5 className="mb-0">Document Store</h5>
+      <PageHeader
+        title="Document store"
+        subtitle="Files stored per shipment identifier — the AI attaches them to document requests"
+      >
         {!data.featureEnabled && (
           <span className="badge text-bg-warning">
             feature.document-request is disabled — document enquiries use the generic reply
           </span>
         )}
-      </div>
+      </PageHeader>
 
       {/* Upload */}
       <div className="card shadow-sm mb-4">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { TrainingExamplesResponse } from '../types.ts'
 
@@ -52,14 +53,16 @@ export default function TrainingExamplesPage() {
         </div>
       )}
 
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h5 className="mb-0">AI Training Examples</h5>
+      <PageHeader
+        title="AI training examples"
+        subtitle="Operator corrections captured to improve future AI drafts"
+      >
         {!data.featureEnabled && (
           <span className="badge text-bg-warning">
             feature.ai-feedback-loop is disabled — corrections are not being captured
           </span>
         )}
-      </div>
+      </PageHeader>
 
       {/* Examples table */}
       <div className="card shadow-sm mb-4">

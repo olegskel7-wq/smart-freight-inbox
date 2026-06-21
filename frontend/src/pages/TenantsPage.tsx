@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { Tenant } from '../types.ts'
 
@@ -64,7 +65,10 @@ export default function TenantsPage() {
         </div>
       )}
 
-      <h5 className="mb-3">Tenants</h5>
+      <PageHeader
+        title="Tenants"
+        subtitle="Client organisations on the platform and their operator counts"
+      />
 
       {/* Add tenant */}
       <div className="card shadow-sm mb-4">

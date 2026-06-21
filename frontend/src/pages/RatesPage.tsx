@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import PageHeader from '../components/PageHeader.tsx'
 import type { RatesResponse, RateUploadResponse } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
@@ -98,14 +99,16 @@ export default function RatesPage() {
         </div>
       )}
 
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h5 className="mb-0">Carrier Rate Sheets</h5>
+      <PageHeader
+        title="Carrier rate sheets"
+        subtitle="Buy rates and margin per carrier and route — the AI quotes the sell price in drafts"
+      >
         {!data.featureEnabled && (
           <span className="badge text-bg-warning">
             feature.rate-sheets is disabled — rates are not used in drafts
           </span>
         )}
-      </div>
+      </PageHeader>
 
       {/* CSV upload */}
       <div className="card shadow-sm mb-4">

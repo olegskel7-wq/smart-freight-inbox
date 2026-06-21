@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import PageHeader from '../components/PageHeader.tsx'
 import type { Settings } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger' | 'warning'; text: string } | null
@@ -129,7 +130,10 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <h5 className="mb-4">Settings</h5>
+      <PageHeader
+        title="Settings"
+        subtitle="Mailboxes, AI endpoint, auto-send and prompts for this tenant"
+      />
 
       {/* Mailboxes */}
       <div className="card shadow-sm mb-4">
