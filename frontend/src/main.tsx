@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from 'react-oidc-context'
 import 'bootstrap/dist/css/bootstrap.min.css'
+import './theme.css'
 import App from './App.tsx'
 import { oidcConfig } from './auth/oidc.ts'
 

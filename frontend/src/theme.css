@@ -1,0 +1,145 @@
+/*
+ * SmartFreight theme layer — a thin override on top of Bootstrap 5.3.
+ *
+ * Goal: a more refined, business-grade look (UK legal/NHS/finance verticals) WITHOUT
+ * touching any component. It only re-tints Bootstrap's CSS variables + softens a few
+ * component looks (navbar, status badges, cards, table headers). Imported AFTER
+ * bootstrap.min.css in main.tsx so these rules win. Delete the import to revert.
+ *
+ * No web fonts from a CDN (same data-residency line as the rest of the stack — Chart.js
+ * is a webjar, not a CDN). The font stack falls back to the OS UI font; if Inter is added
+ * later via the self-hosted @fontsource/inter package it is picked up automatically.
+ */
+
+/* ---- Brand + base tokens ------------------------------------------------ */
+:root {
+  /* Refined indigo accent instead of Bootstrap's bright #0d6efd */
+  --bs-primary: #4f6ef0;
+  --bs-primary-rgb: 79, 110, 240;
+
+  /* Calmer text + hairline borders */
+  --bs-body-color: #1d2733;
+  --bs-body-color-rgb: 29, 39, 51;
+  --bs-emphasis-color: #16202b;
+  --bs-secondary-color: rgba(29, 39, 51, 0.60);
+  --bs-tertiary-color: rgba(29, 39, 51, 0.42);
+  --bs-border-color: #e7ecf3;
+
+  /* Links pick up the accent */
+  --bs-link-color: #2f4bd6;
+  --bs-link-color-rgb: 47, 75, 214;
+  --bs-link-hover-color: #243aa8;
+  --bs-link-hover-color-rgb: 36, 58, 168;
+
+  /* Slightly larger, consistent corner radii */
+  --bs-border-radius-sm: 0.375rem;
+  --bs-border-radius: 0.5rem;
+  --bs-border-radius-lg: 0.75rem;
+
+  --bs-focus-ring-color: rgba(79, 110, 240, 0.25);
+}
+
+body {
+  background-color: #f6f8fb;
+  font-family: "Inter", "Segoe UI Variable Text", system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Navbar: deep slate, not flat black --------------------------------- */
+.navbar.bg-dark {
+  background-color: #1b2430 !important;
+}
+.navbar-dark .navbar-brand {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.navbar-dark .nav-link {
+  border-radius: 0.4rem;
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+}
+.navbar-dark .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.10);
+}
+
+/* ---- Buttons: accent primary -------------------------------------------- */
+.btn-primary {
+  --bs-btn-bg: #4f6ef0;
+  --bs-btn-border-color: #4f6ef0;
+  --bs-btn-hover-bg: #3f5cd8;
+  --bs-btn-hover-border-color: #3f5cd8;
+  --bs-btn-active-bg: #3850c4;
+  --bs-btn-active-border-color: #3850c4;
+  --bs-btn-disabled-bg: #4f6ef0;
+  --bs-btn-disabled-border-color: #4f6ef0;
+}
+.btn-outline-primary {
+  --bs-btn-color: #3f5cd8;
+  --bs-btn-border-color: #c3cdf7;
+  --bs-btn-hover-bg: #4f6ef0;
+  --bs-btn-hover-border-color: #4f6ef0;
+  --bs-btn-active-bg: #3f5cd8;
+  --bs-btn-active-border-color: #3f5cd8;
+}
+
+/* ---- Status badges: soft tint + coloured text, not saturated fills ------- *
+ * Scoped to .badge so background utilities elsewhere (progress bars, etc.) are
+ * untouched. The colour family is preserved so status meaning still reads. */
+.badge.bg-primary   { background-color: #eaeefb !important; color: #3142a8 !important; }
+.badge.bg-success   { background-color: #e2f4ee !important; color: #0f7a5a !important; }
+.badge.bg-danger    { background-color: #fbe7e7 !important; color: #b3261e !important; }
+.badge.bg-secondary { background-color: #eef1f5 !important; color: #5c6b7a !important; }
+.badge.bg-warning   { background-color: #fcf1da !important; }            /* keeps .text-dark */
+.badge.bg-light     { background-color: #eef2f6 !important; color: #5c6b7a !important; }
+.badge.bg-info      { background-color: #e8edfc !important; }            /* keeps .text-dark (e.g. "You") */
+.badge.bg-dark      { background-color: #1b2430 !important; }            /* SUPER_ADMIN role */
+.badge { font-weight: 500; }
+
+/* ---- Cards: hairline border, lighter shadow ----------------------------- */
+.card {
+  --bs-card-border-color: #e7ecf3;
+  --bs-card-border-radius: 0.75rem;
+  --bs-card-cap-bg: transparent;
+}
+.shadow-sm {
+  box-shadow: 0 1px 2px rgba(16, 32, 52, 0.06) !important;
+}
+.card.shadow-sm {
+  border: 0.5px solid #e7ecf3;
+}
+.card-header {
+  font-weight: 600;
+  border-bottom-color: #eef2f6;
+}
+
+/* ---- Tables: quiet uppercase headers, tabular figures ------------------- */
+.table {
+  --bs-table-border-color: #eef2f6;
+  font-variant-numeric: tabular-nums;
+}
+.table > thead th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: #8593a4;
+  border-bottom-width: 0.5px;
+}
+
+/* ---- Form controls: softer borders, accent focus ----------------------- */
+.form-control,
+.form-select {
+  border-color: #dde4ec;
+}
+.form-control:focus,
+.form-select:focus {
+  border-color: #a9b8f5;
+  box-shadow: 0 0 0 0.2rem rgba(79, 110, 240, 0.18);
+}
+
+/* ---- Alerts: rounder, borderless --------------------------------------- */
+.alert {
+  --bs-alert-border-radius: 0.6rem;
+  border: 0;
+}
