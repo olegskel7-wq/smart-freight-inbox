@@ -17,6 +17,14 @@ export interface TicketSummary {
   updatedAt: string
 }
 
+// Summary strip on /tickets — mirrors com.smartfreight.inbox.controller.dto.TicketStatsDto.
+export interface TicketStats {
+  open: number
+  awaitingReview: number
+  slaBreached: number
+  autoSentToday: number
+}
+
 export interface DocumentRef {
   id: number
   identifier: string

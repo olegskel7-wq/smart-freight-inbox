@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import PageHeader from '../components/PageHeader.tsx'
 import type { User } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
@@ -99,7 +100,10 @@ export default function UsersPage() {
         </div>
       )}
 
-      <h5 className="mb-3">Operators</h5>
+      <PageHeader
+        title="Operators"
+        subtitle="Team members who can review and send replies for this tenant"
+      />
 
       {/* Add operator */}
       <div className="card shadow-sm mb-4">

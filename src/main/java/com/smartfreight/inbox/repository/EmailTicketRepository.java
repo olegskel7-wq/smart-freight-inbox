@@ -83,6 +83,60 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     long countByStatus(TicketStatus status);
 
     /**
+     * Counts tickets in any of the given statuses (Phase 3 UI: the /tickets summary strip).
+     * Backs the "Open" chip — the actionable backlog (everything outside the terminal
+     * CLOSED/AUTO_SENT/IRRELEVANT states). Tenant-scoped via {@code @TenantId} like every
+     * derived query on this entity; {@code @SQLRestriction} adds {@code deleted = false}.
+     *
+     * @param statuses statuses to include
+     * @return ticket count across those statuses
+     */
+    long countByStatusIn(Collection<TicketStatus> statuses);
+
+    /**
+     * Counts open, SLA-breached tickets (Phase 3 UI: the /tickets summary strip). The breach flag
+     * is never reset, so the status filter keeps the "SLA breached" chip to work still on the
+     * board rather than a growing historical total.
+     *
+     * @param statuses open statuses to include
+     * @return count of breached tickets among them
+     */
+    long countByStatusInAndSlaBreachedTrue(Collection<TicketStatus> statuses);
+
+    /**
+     * Counts tickets in a status whose updatedAt is at or after the cutoff (Phase 3 UI: the
+     * "Auto-sent today" chip uses status AUTO_SENT + start-of-day). AUTO_SENT is terminal and
+     * stamped at send time, so updatedAt approximates when the reply went out.
+     *
+     * @param status the terminal status (AUTO_SENT)
+     * @param since  cutoff (inclusive) — typically start of the current day
+     * @return count of matching tickets
+     */
+    long countByStatusAndUpdatedAtGreaterThanEqual(TicketStatus status, java.time.LocalDateTime since);
+
+    /**
+     * Paginated list of tickets in any of the given statuses (Phase 3 UI: the "Open" summary chip
+     * drills down here). Shares {@code OPEN_STATUSES} with {@link #countByStatusIn} so the chip's
+     * count and this list are defined identically. Tenant-scoped via {@code @TenantId}.
+     */
+    Page<EmailTicket> findByStatusIn(Collection<TicketStatus> statuses, Pageable pageable);
+
+    /**
+     * Paginated list of open, SLA-breached tickets (Phase 3 UI: the "SLA breached" chip drill-down).
+     * Mirrors {@link #countByStatusInAndSlaBreachedTrue}.
+     */
+    Page<EmailTicket> findByStatusInAndSlaBreachedTrue(Collection<TicketStatus> statuses, Pageable pageable);
+
+    /**
+     * Paginated list of tickets in a status updated at/after the cutoff (Phase 3 UI: the
+     * "Auto-sent today" chip drill-down, AUTO_SENT + start-of-day). Mirrors
+     * {@link #countByStatusAndUpdatedAtGreaterThanEqual}.
+     */
+    Page<EmailTicket> findByStatusAndUpdatedAtGreaterThanEqual(TicketStatus status,
+                                                              java.time.LocalDateTime since,
+                                                              Pageable pageable);
+
+    /**
      * Finds RETRY_LATER tickets that have not exceeded the retry limit.
      * RetryScheduler uses this to find tickets eligible for reprocessing.
      * The maxRetries parameter protects against infinite retry loops.

@@ -10,6 +10,7 @@ import {
 } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
 import { useApi } from '../api/useApi.ts'
+import PageHeader from '../components/PageHeader.tsx'
 import type { AnalyticsResponse, InboxAnswer } from '../types.ts'
 import { statusBadgeClass } from '../util/format.ts'
 
@@ -71,8 +72,10 @@ export default function AnalyticsPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h1 className="h5 mb-0">Inbox Analytics</h1>
+      <PageHeader
+        title="Inbox analytics"
+        subtitle="Volumes, automation and learning signals over the selected period"
+      >
         <div className="btn-group" role="group" aria-label="Reporting period">
           {data.allowedPeriods.map((p) => (
             <button
@@ -85,7 +88,7 @@ export default function AnalyticsPage() {
             </button>
           ))}
         </div>
-      </div>
+      </PageHeader>
 
       {!data.featureEnabled && (
         <div className="alert alert-warning">

@@ -127,6 +127,57 @@ class TicketApiControllerTest {
     }
 
     @Test
+    void summaryReturnsCounts() throws Exception {
+        when(emailTicketRepository.countByStatusIn(any())).thenReturn(42L);
+        when(emailTicketRepository.countByStatus(TicketStatus.DRAFT_READY)).thenReturn(7L);
+        when(emailTicketRepository.countByStatusInAndSlaBreachedTrue(any())).thenReturn(3L);
+        when(emailTicketRepository.countByStatusAndUpdatedAtGreaterThanEqual(eq(TicketStatus.AUTO_SENT), any()))
+                .thenReturn(18L);
+
+        mockMvc.perform(get("/api/tickets/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.open").value(42))
+                .andExpect(jsonPath("$.awaitingReview").value(7))
+                .andExpect(jsonPath("$.slaBreached").value(3))
+                .andExpect(jsonPath("$.autoSentToday").value(18));
+    }
+
+    @Test
+    void viewOpenDrillsDownByStatusIn() throws Exception {
+        when(emailTicketRepository.findByStatusIn(any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(ticket(1, TicketStatus.DRAFT_READY)), Pageable.ofSize(50), 1));
+
+        mockMvc.perform(get("/api/tickets").param("view", "open"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1));
+
+        verify(emailTicketRepository).findByStatusIn(any(), any(Pageable.class));
+        verify(emailTicketRepository, never()).findAll(any(Pageable.class));
+    }
+
+    @Test
+    void viewBreachedDrillsDownToBreachedTickets() throws Exception {
+        when(emailTicketRepository.findByStatusInAndSlaBreachedTrue(any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(50), 0));
+
+        mockMvc.perform(get("/api/tickets").param("view", "breached"))
+                .andExpect(status().isOk());
+
+        verify(emailTicketRepository).findByStatusInAndSlaBreachedTrue(any(), any(Pageable.class));
+    }
+
+    @Test
+    void unknownViewFallsBackToDefaultList() throws Exception {
+        when(emailTicketRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(50), 0));
+
+        mockMvc.perform(get("/api/tickets").param("view", "bogus"))
+                .andExpect(status().isOk());
+
+        verify(emailTicketRepository).findAll(any(Pageable.class));
+    }
+
+    @Test
     void detailReturnsTicket() throws Exception {
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket(1, TicketStatus.DRAFT_READY)));
 

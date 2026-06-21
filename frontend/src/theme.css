@@ -1,0 +1,403 @@
+/*
+ * SmartFreight theme layer — a thin override on top of Bootstrap 5.3.
+ *
+ * Goal: a more refined, business-grade look (UK legal/NHS/finance verticals) WITHOUT
+ * touching any component. It only re-tints Bootstrap's CSS variables + softens a few
+ * component looks (navbar, status badges, cards, table headers). Imported AFTER
+ * bootstrap.min.css in main.tsx so these rules win. Delete the import to revert.
+ *
+ * No web fonts from a CDN (same data-residency line as the rest of the stack — Chart.js
+ * is a webjar, not a CDN). The font stack falls back to the OS UI font; if Inter is added
+ * later via the self-hosted @fontsource/inter package it is picked up automatically.
+ */
+
+/* ---- Brand + base tokens ------------------------------------------------ */
+:root {
+  /* Refined indigo accent instead of Bootstrap's bright #0d6efd */
+  --bs-primary: #4f6ef0;
+  --bs-primary-rgb: 79, 110, 240;
+
+  /* Calmer text + hairline borders */
+  --bs-body-color: #1d2733;
+  --bs-body-color-rgb: 29, 39, 51;
+  --bs-emphasis-color: #16202b;
+  --bs-secondary-color: rgba(29, 39, 51, 0.60);
+  --bs-tertiary-color: rgba(29, 39, 51, 0.42);
+  --bs-border-color: #e7ecf3;
+
+  /* Links pick up the accent */
+  --bs-link-color: #2f4bd6;
+  --bs-link-color-rgb: 47, 75, 214;
+  --bs-link-hover-color: #243aa8;
+  --bs-link-hover-color-rgb: 36, 58, 168;
+
+  /* Slightly larger, consistent corner radii */
+  --bs-border-radius-sm: 0.375rem;
+  --bs-border-radius: 0.5rem;
+  --bs-border-radius-lg: 0.75rem;
+
+  --bs-focus-ring-color: rgba(79, 110, 240, 0.25);
+}
+
+body {
+  background-color: #f6f8fb;
+  font-family: "Inter", "Segoe UI Variable Text", system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Navbar: deep slate, not flat black --------------------------------- */
+.navbar.bg-dark {
+  background-color: #1b2430 !important;
+}
+.navbar-dark .navbar-brand {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.navbar-dark .nav-link {
+  border-radius: 0.4rem;
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+}
+.navbar-dark .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.10);
+}
+
+/* ---- Buttons: accent primary -------------------------------------------- */
+.btn-primary {
+  --bs-btn-bg: #4f6ef0;
+  --bs-btn-border-color: #4f6ef0;
+  --bs-btn-hover-bg: #3f5cd8;
+  --bs-btn-hover-border-color: #3f5cd8;
+  --bs-btn-active-bg: #3850c4;
+  --bs-btn-active-border-color: #3850c4;
+  --bs-btn-disabled-bg: #4f6ef0;
+  --bs-btn-disabled-border-color: #4f6ef0;
+}
+.btn-outline-primary {
+  --bs-btn-color: #3f5cd8;
+  --bs-btn-border-color: #c3cdf7;
+  --bs-btn-hover-bg: #4f6ef0;
+  --bs-btn-hover-border-color: #4f6ef0;
+  --bs-btn-active-bg: #3f5cd8;
+  --bs-btn-active-border-color: #3f5cd8;
+}
+
+/* ---- Status badges: soft tint + coloured text, not saturated fills ------- *
+ * Scoped to .badge so background utilities elsewhere (progress bars, etc.) are
+ * untouched. The colour family is preserved so status meaning still reads. */
+.badge.bg-primary   { background-color: #eaeefb !important; color: #3142a8 !important; }
+.badge.bg-success   { background-color: #e2f4ee !important; color: #0f7a5a !important; }
+.badge.bg-danger    { background-color: #fbe7e7 !important; color: #b3261e !important; }
+.badge.bg-secondary { background-color: #eef1f5 !important; color: #5c6b7a !important; }
+.badge.bg-warning   { background-color: #fcf1da !important; }            /* keeps .text-dark */
+.badge.bg-light     { background-color: #eef2f6 !important; color: #5c6b7a !important; }
+.badge.bg-info      { background-color: #e8edfc !important; }            /* keeps .text-dark (e.g. "You") */
+.badge.bg-dark      { background-color: #1b2430 !important; }            /* SUPER_ADMIN role */
+
+/* Same soft treatment for the contextual `.text-bg-*` badges used across the other pages. */
+.badge.text-bg-primary   { background-color: #eaeefb !important; color: #3142a8 !important; }
+.badge.text-bg-success   { background-color: #e2f4ee !important; color: #0f7a5a !important; }
+.badge.text-bg-danger    { background-color: #fbe7e7 !important; color: #b3261e !important; }
+.badge.text-bg-warning   { background-color: #fcf1da !important; color: #9a6b06 !important; }
+.badge.text-bg-secondary { background-color: #eef1f5 !important; color: #5c6b7a !important; }
+.badge.text-bg-info      { background-color: #e8edfc !important; color: #3142a8 !important; }
+.badge.text-bg-dark      { background-color: #1b2430 !important; color: #fff !important; }
+.badge { font-weight: 500; }
+
+/* ---- Cards: hairline border, lighter shadow ----------------------------- */
+.card {
+  --bs-card-border-color: #e7ecf3;
+  --bs-card-border-radius: 0.75rem;
+  --bs-card-cap-bg: transparent;
+}
+.shadow-sm {
+  box-shadow: 0 1px 2px rgba(16, 32, 52, 0.06) !important;
+}
+.card.shadow-sm {
+  border: 0.5px solid #e7ecf3;
+}
+.card-header {
+  font-weight: 600;
+  border-bottom-color: #eef2f6;
+}
+
+/* ---- Tables: quiet uppercase headers, tabular figures ------------------- */
+.table {
+  --bs-table-border-color: #eef2f6;
+  font-variant-numeric: tabular-nums;
+}
+.table > thead th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: #8593a4;
+  border-bottom-width: 0.5px;
+}
+
+/* ---- Form controls: softer borders, accent focus ----------------------- */
+.form-control,
+.form-select {
+  border-color: #dde4ec;
+}
+.form-control:focus,
+.form-select:focus {
+  border-color: #a9b8f5;
+  box-shadow: 0 0 0 0.2rem rgba(79, 110, 240, 0.18);
+}
+
+/* ---- Alerts: rounder, borderless --------------------------------------- */
+.alert {
+  --bs-alert-border-radius: 0.6rem;
+  border: 0;
+}
+
+/* ---- Sidebar layout (Phase 3 UI refresh) -------------------------------- *
+ * Replaces the old top navbar. Aside is a sticky full-height slate rail; the
+ * main column flows and the page scrolls normally. Desktop-first (operators are
+ * on laptops); a mobile collapse/hamburger is a deliberate follow-up. */
+.sf-shell {
+  display: flex;
+  align-items: flex-start;
+}
+.sf-aside {
+  width: 224px;
+  flex: 0 0 224px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: #1b2430;
+  color: #aeb9c7;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+}
+.sf-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  padding: 2px 8px 16px;
+}
+.sf-brand-mark {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 7px;
+  background: #4f6ef0;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.sf-nav {
+  display: flex;
+  flex-direction: column;
+}
+.sf-navlink {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #aeb9c7;
+  text-decoration: none;
+  font-size: 0.875rem;
+  padding: 8px 11px;
+  border-radius: 8px;
+  margin-bottom: 2px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.sf-navlink:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e7edf5;
+}
+.sf-navlink.active {
+  background: rgba(79, 110, 240, 0.18);
+  color: #fff;
+}
+.sf-navlink svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.sf-group {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7889;
+  padding: 14px 11px 6px;
+}
+.sf-user {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+}
+.sf-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 50%;
+  background: #2c3a4c;
+  color: #cdd8e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+.sf-user-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.sf-user-name {
+  color: #e7edf5;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sf-user-role {
+  color: #7d8a99;
+  font-size: 0.68rem;
+}
+.sf-logout {
+  margin-left: auto;
+  --bs-btn-border-color: rgba(255, 255, 255, 0.18);
+  --bs-btn-color: #aeb9c7;
+  --bs-btn-hover-bg: rgba(255, 255, 255, 0.10);
+  --bs-btn-hover-border-color: rgba(255, 255, 255, 0.28);
+  --bs-btn-hover-color: #fff;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 8px;
+}
+.sf-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---- Page header + summary strip (Phase 3 UI: elevated main panel) ------ */
+.sf-pagehead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sf-pagesub {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: #7a8a9c;
+}
+.sf-chip {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 100%;
+  background: #fff;
+  border: 0.5px solid #e7ecf3;
+  border-radius: 11px;
+  padding: 12px 13px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+.sf-chip:hover {
+  border-color: #c9d3e2;
+  box-shadow: 0 2px 6px rgba(16, 32, 52, 0.07);
+  transform: translateY(-1px);
+}
+.sf-chip.is-active {
+  border: 1.5px solid #4f6ef0;
+}
+.sf-clear {
+  font-size: 0.72rem;
+  color: #5c6b7a;
+  background: #eef1f5;
+  padding: 1px 9px;
+  border-radius: 20px;
+  text-decoration: none;
+}
+.sf-clear:hover {
+  background: #e2e7ee;
+  color: #3142a8;
+}
+.sf-chip-ic {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sf-chip-body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+.sf-chip-value {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #16202b;
+}
+.sf-chip-label {
+  font-size: 0.7rem;
+  color: #8593a4;
+}
+.sf-ic-blue  { background: #eaeefb; color: #3142a8; }
+.sf-ic-amber { background: #fcf1da; color: #9a6b06; }
+.sf-ic-red   { background: #fbe7e7; color: #b3261e; }
+.sf-ic-teal  { background: #e2f4ee; color: #0f7a5a; }
+
+/* ---- Table-in-card refinements ----------------------------------------- */
+.sf-count {
+  font-size: 0.72rem;
+  color: #8593a4;
+  background: #f1f4f8;
+  padding: 1px 9px;
+  border-radius: 20px;
+}
+.sf-type {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #eef2f6;
+  color: #5c6b7a;
+  white-space: nowrap;
+}
+.sf-assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+}
+.sf-avatar-sm {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 50%;
+  background: #eef1f5;
+  color: #8593a4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+.sf-avatar-sm.is-me {
+  background: #e8edfc;
+  color: #3142a8;
+}
