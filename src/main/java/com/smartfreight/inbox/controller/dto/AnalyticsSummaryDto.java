@@ -32,6 +32,10 @@ public record AnalyticsSummaryDto(
         long aiDraftsEdited,
         double aiAcceptancePct,
         String aiAcceptanceFormatted,
+        long quotesSent,
+        long quotesConverted,
+        double quoteConversionPct,
+        String quoteConversionFormatted,
         List<TypeCount> byType,
         long untyped,
         double untypedPct,
@@ -65,6 +69,7 @@ public record AnalyticsSummaryDto(
                 s.manualSends(), s.autoSends(), s.totalSends(), s.autoSendPct(), s.avgResponseFormatted(),
                 s.slaBreached(), s.slaBreachedPct(), s.aiDraftsSent(), s.aiDraftsAccepted(),
                 s.aiDraftsEdited(), s.aiAcceptancePct(), s.aiAcceptanceFormatted(),
+                s.quotesSent(), s.quotesConverted(), s.quoteConversionPct(), s.quoteConversionFormatted(),
                 types, s.untyped(), s.typePct(s.untyped()), statuses,
                 s.volumeLabels(), s.volumeRelevantSeries(), s.volumeJunkSeries(),
                 s.confidenceBins(), s.confidenceCount());

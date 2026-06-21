@@ -110,6 +110,10 @@ export interface AnalyticsSummary {
   aiDraftsEdited: number
   aiAcceptancePct: number
   aiAcceptanceFormatted: string
+  quotesSent: number
+  quotesConverted: number
+  quoteConversionPct: number
+  quoteConversionFormatted: string
   byType: TypeCount[]
   untyped: number
   untypedPct: number

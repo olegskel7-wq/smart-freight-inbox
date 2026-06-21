@@ -67,7 +67,9 @@ class AnalyticsApiControllerTest {
                 List.of(new DayVolume("9 Jun", 2L, 1L)),
                 List.of(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 2L, 1L),
                 3L,                 // aiDraftsSent
-                3L);               // aiDraftsAccepted
+                3L,                 // aiDraftsAccepted
+                5L,                 // quotesSent
+                2L);               // quotesConverted
     }
 
     @Test
@@ -85,6 +87,9 @@ class AnalyticsApiControllerTest {
                 .andExpect(jsonPath("$.summary.relevant").value(3))
                 .andExpect(jsonPath("$.summary.avgResponseFormatted").value("—"))
                 .andExpect(jsonPath("$.summary.aiAcceptanceFormatted").value("100.0%"))
+                .andExpect(jsonPath("$.summary.quotesSent").value(5))
+                .andExpect(jsonPath("$.summary.quotesConverted").value(2))
+                .andExpect(jsonPath("$.summary.quoteConversionFormatted").value("40.0%"))
                 .andExpect(jsonPath("$.summary.volumeLabels[0]").value("9 Jun"))
                 .andExpect(jsonPath("$.summary.confidenceBins.length()").value(10));
     }

@@ -6,6 +6,8 @@ import com.smartfreight.inbox.repository.AiDraftAcceptance;
 import com.smartfreight.inbox.repository.ConfidenceBucket;
 import com.smartfreight.inbox.repository.DailyVolume;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.repository.QuoteConversion;
+import com.smartfreight.inbox.repository.QuoteFollowUpRepository;
 import com.smartfreight.inbox.repository.StatusCount;
 import com.smartfreight.inbox.repository.TicketAuditLogRepository;
 import com.smartfreight.inbox.repository.TypeCount;
@@ -41,6 +43,9 @@ class AnalyticsServiceTest {
     private TicketAuditLogRepository auditLogRepository;
 
     @Mock
+    private QuoteFollowUpRepository quoteFollowUpRepository;
+
+    @Mock
     private SettingsService settingsService;
 
     @InjectMocks
@@ -64,13 +69,20 @@ class AnalyticsServiceTest {
     /** Summary with everything empty except the avg-response seconds — for format tests. */
     private static AnalyticsService.AnalyticsSummary summaryWithAvg(Double seconds) {
         return new AnalyticsService.AnalyticsSummary(
-                30, Map.of(), Map.of(), 0, 0, 0, 0, seconds, List.of(), List.of(), 0, 0);
+                30, Map.of(), Map.of(), 0, 0, 0, 0, seconds, List.of(), List.of(), 0, 0, 0, 0);
     }
 
     private static AiDraftAcceptance acceptanceRow(long total, long accepted) {
         return new AiDraftAcceptance() {
             @Override public long getTotal() { return total; }
             @Override public long getAccepted() { return accepted; }
+        };
+    }
+
+    private static QuoteConversion conversionRow(long quotes, long converted) {
+        return new QuoteConversion() {
+            @Override public long getQuotes() { return quotes; }
+            @Override public long getConverted() { return converted; }
         };
     }
 
@@ -182,6 +194,30 @@ class AnalyticsServiceTest {
         assertThat(s.aiDraftsSent()).isZero();
         assertThat(s.aiAcceptancePct()).isZero();
         assertThat(s.aiAcceptanceFormatted()).isEqualTo("—");
+    }
+
+    @Test
+    void summarise_quoteConversion_computesShare() {
+        when(quoteFollowUpRepository.quoteConversionSince(any())).thenReturn(conversionRow(10L, 4L));
+
+        AnalyticsService.AnalyticsSummary s = analyticsService.summarise(30);
+
+        assertThat(s.quotesSent()).isEqualTo(10L);
+        assertThat(s.quotesConverted()).isEqualTo(4L);
+        assertThat(s.quoteConversionPct()).isEqualTo(40.0);
+        assertThat(s.quoteConversionFormatted()).isEqualTo("40.0%");
+    }
+
+    @Test
+    void summarise_quoteConversion_noQuotes_readsAsDash() {
+        // Real repository returns null when no quote went out in the period; service must not NPE.
+        when(quoteFollowUpRepository.quoteConversionSince(any())).thenReturn(null);
+
+        AnalyticsService.AnalyticsSummary s = analyticsService.summarise(30);
+
+        assertThat(s.quotesSent()).isZero();
+        assertThat(s.quoteConversionPct()).isZero();
+        assertThat(s.quoteConversionFormatted()).isEqualTo("—");
     }
 
     @Test

@@ -4,6 +4,8 @@ import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.AiDraftAcceptance;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.repository.QuoteConversion;
+import com.smartfreight.inbox.repository.QuoteFollowUpRepository;
 import com.smartfreight.inbox.repository.TicketAuditLogRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,13 +51,16 @@ public class AnalyticsService {
 
     private final EmailTicketRepository emailTicketRepository;
     private final TicketAuditLogRepository auditLogRepository;
+    private final QuoteFollowUpRepository quoteFollowUpRepository;
     private final SettingsService settingsService;
 
     public AnalyticsService(EmailTicketRepository emailTicketRepository,
                             TicketAuditLogRepository auditLogRepository,
+                            QuoteFollowUpRepository quoteFollowUpRepository,
                             SettingsService settingsService) {
         this.emailTicketRepository = emailTicketRepository;
         this.auditLogRepository = auditLogRepository;
+        this.quoteFollowUpRepository = quoteFollowUpRepository;
         this.settingsService = settingsService;
     }
 
@@ -114,9 +119,13 @@ public class AnalyticsService {
         long aiDraftsSent = acceptance == null ? 0L : acceptance.getTotal();
         long aiDraftsAccepted = acceptance == null ? 0L : acceptance.getAccepted();
 
+        QuoteConversion conversion = quoteFollowUpRepository.quoteConversionSince(since);
+        long quotesSent = conversion == null ? 0L : conversion.getQuotes();
+        long quotesConverted = conversion == null ? 0L : conversion.getConverted();
+
         return new AnalyticsSummary(days, byStatus, byType, untyped[0], manualSends, autoSends,
                 slaBreached, avgResponseSeconds, volumeByDay(since), confidenceBins(since),
-                aiDraftsSent, aiDraftsAccepted);
+                aiDraftsSent, aiDraftsAccepted, quotesSent, quotesConverted);
     }
 
     /**
@@ -164,7 +173,9 @@ public class AnalyticsService {
                                    List<DayVolume> volumeByDay,
                                    List<Long> confidenceBins,
                                    long aiDraftsSent,
-                                   long aiDraftsAccepted) {
+                                   long aiDraftsAccepted,
+                                   long quotesSent,
+                                   long quotesConverted) {
 
         /** Every email persisted in the period, junk included. */
         public long totalReceived() {
@@ -237,6 +248,19 @@ public class AnalyticsService {
                 return "—";
             }
             return String.format(Locale.ENGLISH, "%.1f%%", aiAcceptancePct());
+        }
+
+        /** Share of sent quotes that turned into a booking — the quote-to-book conversion (Phase 3.6). */
+        public double quoteConversionPct() {
+            return pct(quotesConverted, quotesSent);
+        }
+
+        /** Conversion as a percentage string, or "—" when no quote went out in the period. */
+        public String quoteConversionFormatted() {
+            if (quotesSent == 0) {
+                return "—";
+            }
+            return String.format(Locale.ENGLISH, "%.1f%%", quoteConversionPct());
         }
 
         /** Share of relevant tickets, for the per-type progress bars. */
