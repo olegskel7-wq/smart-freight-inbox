@@ -143,3 +143,137 @@ body {
   --bs-alert-border-radius: 0.6rem;
   border: 0;
 }
+
+/* ---- Sidebar layout (Phase 3 UI refresh) -------------------------------- *
+ * Replaces the old top navbar. Aside is a sticky full-height slate rail; the
+ * main column flows and the page scrolls normally. Desktop-first (operators are
+ * on laptops); a mobile collapse/hamburger is a deliberate follow-up. */
+.sf-shell {
+  display: flex;
+  align-items: flex-start;
+}
+.sf-aside {
+  width: 224px;
+  flex: 0 0 224px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: #1b2430;
+  color: #aeb9c7;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+}
+.sf-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  padding: 2px 8px 16px;
+}
+.sf-brand-mark {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 7px;
+  background: #4f6ef0;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.sf-nav {
+  display: flex;
+  flex-direction: column;
+}
+.sf-navlink {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #aeb9c7;
+  text-decoration: none;
+  font-size: 0.875rem;
+  padding: 8px 11px;
+  border-radius: 8px;
+  margin-bottom: 2px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.sf-navlink:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e7edf5;
+}
+.sf-navlink.active {
+  background: rgba(79, 110, 240, 0.18);
+  color: #fff;
+}
+.sf-navlink svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.sf-group {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7889;
+  padding: 14px 11px 6px;
+}
+.sf-user {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+}
+.sf-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 50%;
+  background: #2c3a4c;
+  color: #cdd8e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+.sf-user-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.sf-user-name {
+  color: #e7edf5;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sf-user-role {
+  color: #7d8a99;
+  font-size: 0.68rem;
+}
+.sf-logout {
+  margin-left: auto;
+  --bs-btn-border-color: rgba(255, 255, 255, 0.18);
+  --bs-btn-color: #aeb9c7;
+  --bs-btn-hover-bg: rgba(255, 255, 255, 0.10);
+  --bs-btn-hover-border-color: rgba(255, 255, 255, 0.28);
+  --bs-btn-hover-color: #fff;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 8px;
+}
+.sf-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
