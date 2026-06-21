@@ -30,6 +30,7 @@ public enum InboxMetric {
     AUTOMATION_RATE("the automation rate — share of replies sent automatically without an operator"),
     AVG_RESPONSE_TIME("the average first-response time, from receiving an email to the first reply"),
     SLA_BREACHES("number of tickets that breached their SLA deadline"),
+    QUOTE_CONVERSION("quote-to-booking conversion — share of sent RFQ quotes that turned into a booking"),
     BOTTLENECKS("where the inbox is getting stuck — backlog by stage, SLA breaches, response time"),
     /** Routing fallback: the question matched nothing in the catalogue. */
     UNKNOWN("the question could not be matched to a supported metric");
