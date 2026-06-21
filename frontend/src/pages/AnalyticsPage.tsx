@@ -171,6 +171,13 @@ export default function AnalyticsPage() {
             >
               {s.aiDraftsAccepted} sent as drafted · {s.aiDraftsEdited} edited
             </Kpi>
+            <Kpi
+              label="Quote → booking"
+              value={s.quoteConversionFormatted}
+              valueClass={s.quotesSent > 0 && s.quoteConversionPct >= 50 ? 'text-success' : undefined}
+            >
+              {s.quotesConverted} of {s.quotesSent} quotes booked
+            </Kpi>
           </div>
 
           {/* Volume by day */}
@@ -317,7 +324,9 @@ export default function AnalyticsPage() {
               (including average response time) count send events <em>recorded</em> in the period (a
               reply sent today on an older ticket counts as today's work). Response time runs from
               email receipt to the first reply on the ticket. SLA breaches are permanent — a late
-              reply stays a breach in the history.
+              reply stays a breach in the history. Quote → booking is the share of RFQ quotes sent
+              in the period that were later followed by a booking from the same customer (a quote
+              sent recently may not have converted yet).
             </div>
           </div>
         </>
