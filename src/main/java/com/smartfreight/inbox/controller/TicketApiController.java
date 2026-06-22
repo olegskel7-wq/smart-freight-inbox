@@ -47,11 +47,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * JSON API backing the React {@code /tickets} pages (Phase 3.2). It mirrors the behaviour of
- * {@link TicketViewController} (the Thymeleaf UI) but speaks DTOs over {@code /api/tickets} and is
- * secured by the stateless resource-server chain (bearer JWT). The two controllers run side by
- * side during the migration; the draft/send orchestration is duplicated here on purpose so the
- * live Thymeleaf path stays untouched — it collapses to this one when Thymeleaf is removed.
+ * JSON API backing the React {@code /tickets} pages (Phase 3.2). It speaks DTOs over
+ * {@code /api/tickets} and is secured by the stateless resource-server chain (bearer JWT).
+ * Since the Phase 3.2 cutover this is the sole ticket controller — the Thymeleaf
+ * {@code TicketViewController} it was migrated from has been removed, and its draft/send
+ * orchestration now lives here.
  */
 @RestController
 @RequestMapping("/api/tickets")
@@ -185,9 +185,9 @@ public class TicketApiController {
     }
 
     /**
-     * POST /api/tickets/{id}/draft — save / close / send the draft (mirrors
-     * {@link TicketViewController#updateDraft}). Returns the updated detail; 429 when send is
-     * rate-limited, 502 when SMTP fails. CLOSED/AUTO_SENT are terminal → unchanged detail.
+     * POST /api/tickets/{id}/draft — save / close / send the draft. Returns the updated detail;
+     * 429 when send is rate-limited, 502 when SMTP fails. CLOSED/AUTO_SENT are terminal →
+     * unchanged detail.
      */
     @Transactional
     @PostMapping("/{id}/draft")

@@ -1,5 +1,6 @@
 package com.smartfreight.inbox.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -7,6 +8,12 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -86,6 +93,28 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable());
 
         return http.build();
+    }
+
+    /**
+     * The single {@link JwtDecoder} backing both the {@code /api} resource server and
+     * {@code StompAuthChannelInterceptor}. Built to match Boot's auto-config (keys from
+     * {@code jwk-set-uri}, issuer pinned to {@code issuer-uri}, no discovery call at startup so the
+     * context boots without a live Keycloak), then hardened with {@link ExpectedClientJwtValidator}:
+     * on top of issuer + signature we require the token's {@code azp} to be our own SPA client, so a
+     * token minted for any other client in the realm is rejected (ROADMAP 4.7). The JWKS is fetched
+     * lazily on first decode, so defining this bean keeps the existing startup behaviour.
+     */
+    @Bean
+    public JwtDecoder jwtDecoder(
+            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
+            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri,
+            @Value("${security.jwt.expected-client:smartfreight-spa}") String expectedClient) {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        OAuth2TokenValidator<Jwt> validators = new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(issuerUri),
+                new ExpectedClientJwtValidator(expectedClient));
+        decoder.setJwtValidator(validators);
+        return decoder;
     }
 
     /**
