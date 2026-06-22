@@ -55,4 +55,26 @@ public class WebClientConfig {
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }
+
+    /**
+     * WebClient for outbound webhook delivery (Phase 3.5).
+     *
+     * <p>No {@code baseUrl} — each delivery targets a different tenant-supplied URL, passed per request
+     * by {@link com.smartfreight.inbox.webhook.WebhookDispatcher}. Timeouts are short and bounded: the
+     * dispatcher blocks on the call while holding a row lock, so a slow receiver must fail fast rather
+     * than stall the batch (the dispatcher's own {@code block(timeout)} is the hard ceiling on top of these).
+     */
+    @Bean
+    public WebClient webhookWebClient() {
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5_000)
+                .doOnConnected(conn -> conn
+                        .addHandlerLast(new ReadTimeoutHandler(10, TimeUnit.SECONDS))
+                        .addHandlerLast(new WriteTimeoutHandler(5, TimeUnit.SECONDS))
+                );
+
+        return WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .build();
+    }
 }

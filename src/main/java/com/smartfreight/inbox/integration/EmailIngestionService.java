@@ -8,6 +8,8 @@ import com.smartfreight.inbox.service.AttachmentParserService;
 import com.smartfreight.inbox.service.DraftNotificationService;
 import com.smartfreight.inbox.service.SettingsService;
 import com.smartfreight.inbox.service.SlaService;
+import com.smartfreight.inbox.webhook.WebhookEventPublisher;
+import com.smartfreight.inbox.webhook.WebhookEventType;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.BodyPart;
@@ -68,6 +70,7 @@ public class EmailIngestionService {
     private final AttachmentParserService attachmentParserService;
     private final SettingsService settingsService;
     private final SlaService slaService;
+    private final WebhookEventPublisher webhookEventPublisher;
     private final Counter receivedCounter;
 
     public EmailIngestionService(EmailTicketRepository emailTicketRepository,
@@ -75,15 +78,28 @@ public class EmailIngestionService {
                                  AttachmentParserService attachmentParserService,
                                  SettingsService settingsService,
                                  SlaService slaService,
+                                 WebhookEventPublisher webhookEventPublisher,
                                  MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketEventPublisher = ticketEventPublisher;
         this.attachmentParserService = attachmentParserService;
         this.settingsService = settingsService;
         this.slaService = slaService;
+        this.webhookEventPublisher = webhookEventPublisher;
         this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
                 .description("Total emails received and successfully ingested as tickets")
                 .register(meterRegistry);
+    }
+
+    /** The {@code data} block of a {@code ticket.created} webhook — the fields known at ingest time. */
+    private java.util.Map<String, Object> ticketCreatedData(EmailTicket ticket) {
+        java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("ticket_id", ticket.getId());
+        data.put("subject", ticket.getSubject());
+        data.put("sender_email", ticket.getSenderEmail());
+        data.put("status", ticket.getStatus() != null ? ticket.getStatus().name() : null);
+        data.put("received_at", ticket.getCreatedAt() != null ? ticket.getCreatedAt().toString() : null);
+        return data;
     }
 
     /**
@@ -180,6 +196,12 @@ public class EmailIngestionService {
                 // Tenant: the adapter bound the mailbox's tenant before this transaction
                 // opened (S3), so Hibernate stamped it on the ticket and the event carries it.
                 ticketEventPublisher.publishTicketCreated(saved.getId(), saved.getTenantId());
+
+                // Phase 3.5: queue outbound webhook deliveries in the same transaction (best-effort —
+                // a webhook failure must never affect ingestion). Fires for every inbound, pre-classification;
+                // richer semantic events (reply.sent etc.) arrive in S2. No-op when no subscription matches.
+                webhookEventPublisher.publish(WebhookEventType.TICKET_CREATED, saved.getTenantId(),
+                        ticketCreatedData(saved));
 
             } catch (DataIntegrityViolationException e) {
                 log.info("Duplicate email on concurrent save, skipping: {}", messageId);

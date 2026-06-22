@@ -242,3 +242,38 @@ export interface Settings {
   quoteFollowUpDelayHours: string
   mailboxes: MailboxRow[]
 }
+
+// Webhook DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.5). The signing secret is
+// never returned except once in CreateWebhookResponse at creation time.
+export interface WebhookSubscription {
+  id: number
+  url: string
+  eventTypes: string[]
+  description: string | null
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WebhooksResponse {
+  subscriptions: WebhookSubscription[]
+  availableEventTypes: string[]
+  secretConfigured: boolean
+}
+
+export interface CreateWebhookResponse {
+  secret: string
+  snapshot: WebhooksResponse
+}
+
+export interface WebhookDelivery {
+  id: number
+  eventType: string
+  status: string
+  attempts: number
+  responseStatus: number | null
+  lastError: string | null
+  createdAt: string
+  nextAttemptAt: string
+  deliveredAt: string | null
+}

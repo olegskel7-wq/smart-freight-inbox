@@ -26,6 +26,7 @@ const I = {
   learning: ['M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z', 'M22 3h-6a4 4 0 0 1-4 4v14a3 3 0 0 0 3-3h7z'],
   users: ['M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2', 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M23 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75'],
   settings: ['M4 21v-7', 'M4 10V3', 'M12 21v-9', 'M12 8V3', 'M20 21v-5', 'M20 12V3', 'M1 14h6', 'M9 8h6', 'M17 16h6'],
+  webhooks: ['M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M8.59 13.51l6.83 3.98', 'M15.41 6.51l-6.82 3.98'],
   tenants: ['M3 21h18', 'M5 21V7l8-4v18', 'M19 21V11l-6-3', 'M9 9v.01', 'M9 12v.01', 'M9 15v.01', 'M9 18v.01'],
 }
 
@@ -65,6 +66,7 @@ export default function Layout() {
           {isAdmin && <div className="sf-group">Admin</div>}
           {isAdmin && link('/users', 'Users', <Icon d={I.users} />)}
           {isAdmin && link('/settings', 'Settings', <Icon d={I.settings} />)}
+          {isAdmin && link('/webhooks', 'Webhooks', <Icon d={I.webhooks} />)}
           {isSuperAdmin && link('/tenants', 'Tenants', <Icon d={I.tenants} />)}
         </nav>
 

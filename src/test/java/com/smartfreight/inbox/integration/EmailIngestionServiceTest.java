@@ -64,6 +64,9 @@ class EmailIngestionServiceTest {
     @Mock
     private com.smartfreight.inbox.service.SlaService slaService;
 
+    @Mock
+    private com.smartfreight.inbox.webhook.WebhookEventPublisher webhookEventPublisher;
+
     private EmailIngestionService emailIngestionService;
 
     /** Jakarta Mail sesija be jokių savybių – naudojama MimeMessage kūrimui testams. */
@@ -74,7 +77,7 @@ class EmailIngestionServiceTest {
         emailIngestionService = new EmailIngestionService(
                 emailTicketRepository, ticketEventPublisher,
                 new AttachmentParserService(new SimpleMeterRegistry()), settingsService,
-                slaService, new SimpleMeterRegistry());
+                slaService, webhookEventPublisher, new SimpleMeterRegistry());
         mailSession = Session.getInstance(new Properties());
         // Default: attachment-parsing feature on, so existing tests keep their behaviour.
         when(settingsService.isFeatureEnabled(any(), anyBoolean())).thenReturn(true);
