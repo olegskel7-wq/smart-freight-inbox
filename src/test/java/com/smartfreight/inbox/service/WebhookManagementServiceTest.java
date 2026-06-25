@@ -131,6 +131,25 @@ class WebhookManagementServiceTest {
     }
 
     @Test
+    void reEnablingClearsAutoDisableState() {
+        // An auto-disabled endpoint carries a failure run + a reason; re-enabling must wipe both so the
+        // next DEAD delivery doesn't immediately re-trip the threshold.
+        WebhookSubscription disabled = new WebhookSubscription();
+        disabled.setId(5L);
+        disabled.setSecretEnc(cipher.encrypt("s"));
+        disabled.setEnabled(false);
+        disabled.setConsecutiveFailures(3);
+        disabled.setDisabledReason("Auto-disabled after 3 consecutive failed deliveries");
+        when(subscriptionRepository.findById(5L)).thenReturn(Optional.of(disabled));
+
+        service.update(5L, "https://8.8.8.8/hook", List.of("*"), null, true, null);
+
+        assertThat(disabled.isEnabled()).isTrue();
+        assertThat(disabled.getConsecutiveFailures()).isZero();
+        assertThat(disabled.getDisabledReason()).isNull();
+    }
+
+    @Test
     void sendTestQueuesToTheSubscription() {
         WebhookSubscription sub = new WebhookSubscription();
         sub.setId(3L);

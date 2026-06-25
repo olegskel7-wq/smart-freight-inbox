@@ -18,6 +18,7 @@ public record WebhookSubscriptionDto(
         List<String> eventTypes,
         String description,
         boolean enabled,
+        String disabledReason,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
 
@@ -27,6 +28,6 @@ public record WebhookSubscriptionDto(
                 : Arrays.stream(s.getEventTypes().split(",")).map(String::trim).filter(t -> !t.isEmpty()).toList();
         return new WebhookSubscriptionDto(
                 s.getId(), s.getUrl(), types, s.getDescription(), s.isEnabled(),
-                s.getCreatedAt(), s.getUpdatedAt());
+                s.getDisabledReason(), s.getCreatedAt(), s.getUpdatedAt());
     }
 }

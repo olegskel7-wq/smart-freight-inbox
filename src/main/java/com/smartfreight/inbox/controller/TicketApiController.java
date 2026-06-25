@@ -17,6 +17,9 @@ import com.smartfreight.inbox.service.QuoteFollowUpService;
 import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
 import com.smartfreight.inbox.tenancy.TenantClaims;
+import com.smartfreight.inbox.webhook.WebhookEventPublisher;
+import com.smartfreight.inbox.webhook.WebhookEventType;
+import com.smartfreight.inbox.webhook.WebhookPayloads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -81,6 +84,7 @@ public class TicketApiController {
     private final TenantDocumentRepository documentRepository;
     private final FeedbackLoopService feedbackLoopService;
     private final KeycloakAdminService keycloakAdminService;
+    private final WebhookEventPublisher webhookEventPublisher;
 
     public TicketApiController(EmailTicketRepository emailTicketRepository,
                                EmailReplyService emailReplyService,
@@ -89,7 +93,8 @@ public class TicketApiController {
                                QuoteFollowUpService quoteFollowUpService,
                                TenantDocumentRepository documentRepository,
                                FeedbackLoopService feedbackLoopService,
-                               KeycloakAdminService keycloakAdminService) {
+                               KeycloakAdminService keycloakAdminService,
+                               WebhookEventPublisher webhookEventPublisher) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
         this.auditService = auditService;
@@ -98,6 +103,7 @@ public class TicketApiController {
         this.documentRepository = documentRepository;
         this.feedbackLoopService = feedbackLoopService;
         this.keycloakAdminService = keycloakAdminService;
+        this.webhookEventPublisher = webhookEventPublisher;
     }
 
     /** Request body for {@code POST /api/tickets/{id}/draft}: action = save | close | send. */
@@ -214,6 +220,7 @@ public class TicketApiController {
                 auditService.record(id, TicketAuditService.ACTION_SEND, "to=" + ticket.getSenderEmail());
                 quoteFollowUpService.armFromTicket(ticket);
                 feedbackLoopService.captureIfEdited(ticket);
+                emitReplyWebhooks(ticket);
             } catch (Exception e) {
                 log.error("Failed to send reply for ticket {} (API): {}", id, e.getMessage(), e);
                 auditService.record(id, TicketAuditService.ACTION_SEND, "FAILED: " + e.getMessage());
@@ -231,6 +238,20 @@ public class TicketApiController {
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
         return ResponseEntity.ok(buildDetail(ticket));
+    }
+
+    /**
+     * Phase 3.5 S2: queues outbound webhook deliveries after a reply is sent — {@code reply.sent} for
+     * every reply, plus {@code quote.sent} when the ticket is an RFQ (a price quote went out). Runs inside
+     * the send transaction so the deliveries are atomic with the close; best-effort inside the publisher.
+     * Mirrors the {@code armFromTicket} RFQ guard — a sent RFQ reply is both a reply and a quote.
+     */
+    private void emitReplyWebhooks(EmailTicket ticket) {
+        Map<String, Object> data = WebhookPayloads.ticketData(ticket);
+        webhookEventPublisher.publish(WebhookEventType.REPLY_SENT, ticket.getTenantId(), data);
+        if (ticket.getTicketType() == TicketType.RFQ) {
+            webhookEventPublisher.publish(WebhookEventType.QUOTE_SENT, ticket.getTenantId(), data);
+        }
     }
 
     /** POST /api/tickets/{id}/close — close the ticket (AUTO_SENT is terminal → no-op). */

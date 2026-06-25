@@ -6,6 +6,9 @@ import com.smartfreight.inbox.entity.TenantDocument;
 import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.webhook.WebhookEventPublisher;
+import com.smartfreight.inbox.webhook.WebhookEventType;
+import com.smartfreight.inbox.webhook.WebhookPayloads;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
@@ -64,6 +67,7 @@ public class TicketProcessingService {
     private final DocumentRequestService documentRequestService;
     private final FeedbackLoopService feedbackLoopService;
     private final SettingsService settingsService;
+    private final WebhookEventPublisher webhookEventPublisher;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
@@ -93,6 +97,7 @@ public class TicketProcessingService {
                                    DocumentRequestService documentRequestService,
                                    FeedbackLoopService feedbackLoopService,
                                    SettingsService settingsService,
+                                   WebhookEventPublisher webhookEventPublisher,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailClassificationService = emailClassificationService;
@@ -107,6 +112,7 @@ public class TicketProcessingService {
         this.documentRequestService = documentRequestService;
         this.feedbackLoopService = feedbackLoopService;
         this.settingsService = settingsService;
+        this.webhookEventPublisher = webhookEventPublisher;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -241,6 +247,13 @@ public class TicketProcessingService {
             // Still anchored to createdAt — the customer's clock started at receipt.
             if (slaService.isEnabled()) {
                 ticket.setSlaDeadlineAt(slaService.deadlineFor(classification.type(), ticket.getCreatedAt()));
+            }
+            // Phase 3.5 S2: the customer is booking — notify the CRM. Fires once: a typed ticket is not
+            // re-classified (the retry path only re-enters this block when ticketType is still null), and
+            // this runs inside the pipeline transaction so the delivery is queued atomically with the verdict.
+            if (classification.type() == TicketType.BOOKING_CONFIRM) {
+                webhookEventPublisher.publish(WebhookEventType.BOOKING_CONFIRMED, ticket.getTenantId(),
+                        WebhookPayloads.ticketData(ticket));
             }
         }
 

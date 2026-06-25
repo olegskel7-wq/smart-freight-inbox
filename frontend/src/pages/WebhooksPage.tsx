@@ -278,9 +278,16 @@ export default function WebhooksPage() {
                         ))}
                       </td>
                       <td>
-                        <span className={`badge ${sub.enabled ? 'text-bg-success' : 'text-bg-secondary'}`}>
-                          {sub.enabled ? 'Enabled' : 'Disabled'}
-                        </span>
+                        {sub.enabled ? (
+                          <span className="badge text-bg-success">Enabled</span>
+                        ) : sub.disabledReason ? (
+                          <>
+                            <span className="badge text-bg-warning">Auto-disabled</span>
+                            <div className="text-muted small mt-1">{sub.disabledReason}</div>
+                          </>
+                        ) : (
+                          <span className="badge text-bg-secondary">Disabled</span>
+                        )}
                       </td>
                       <td className="text-end pe-3 text-nowrap">
                         <button

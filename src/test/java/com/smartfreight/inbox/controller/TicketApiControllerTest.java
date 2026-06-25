@@ -2,7 +2,10 @@ package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.webhook.WebhookEventPublisher;
+import com.smartfreight.inbox.webhook.WebhookEventType;
 import com.smartfreight.inbox.repository.TenantDocumentRepository;
 import com.smartfreight.inbox.service.EmailReplyService;
 import com.smartfreight.inbox.service.FeedbackLoopService;
@@ -63,6 +66,7 @@ class TicketApiControllerTest {
     @Mock private TenantDocumentRepository documentRepository;
     @Mock private FeedbackLoopService feedbackLoopService;
     @Mock private KeycloakAdminService keycloakAdminService;
+    @Mock private WebhookEventPublisher webhookEventPublisher;
 
     private MockMvc mockMvc;
 
@@ -70,7 +74,8 @@ class TicketApiControllerTest {
     void setUp() {
         TicketApiController controller = new TicketApiController(
                 emailTicketRepository, emailReplyService, auditService, sendRateLimiter,
-                quoteFollowUpService, documentRepository, feedbackLoopService, keycloakAdminService);
+                quoteFollowUpService, documentRepository, feedbackLoopService, keycloakAdminService,
+                webhookEventPublisher);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
@@ -225,6 +230,28 @@ class TicketApiControllerTest {
         verify(emailReplyService).sendReply(t);
         verify(quoteFollowUpService).armFromTicket(t);
         verify(feedbackLoopService).captureIfEdited(t);
+        // Phase 3.5 S2: reply.sent fires for any sent reply; quote.sent only for RFQ (this ticket is untyped).
+        verify(webhookEventPublisher).publish(eq(WebhookEventType.REPLY_SENT), any(), any());
+        verify(webhookEventPublisher, never()).publish(eq(WebhookEventType.QUOTE_SENT), any(), any());
+    }
+
+    @Test
+    void draftSendOfRfqEmitsQuoteWebhook() throws Exception {
+        EmailTicket t = EmailTicket.builder()
+                .id(1L).messageId("<m1@x>").senderEmail("customer@x.com").subject("Quote please")
+                .status(TicketStatus.DRAFT_READY).ticketType(TicketType.RFQ)
+                .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
+        when(sendRateLimiter.tryAcquire(anyLong())).thenReturn(true);
+
+        mockMvc.perform(post("/api/tickets/1/draft")
+                        .contentType("application/json")
+                        .content("{\"action\":\"send\",\"draftReply\":\"Our price is £900\"}"))
+                .andExpect(status().isOk());
+
+        // A sent RFQ reply is both a reply and a quote — two independent events.
+        verify(webhookEventPublisher).publish(eq(WebhookEventType.REPLY_SENT), any(), any());
+        verify(webhookEventPublisher).publish(eq(WebhookEventType.QUOTE_SENT), any(), any());
     }
 
     @Test

@@ -59,6 +59,21 @@ public class WebhookSubscription {
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
 
+    /**
+     * Count of fully-failed (DEAD) deliveries in a row (Phase 3.5 S2). The dispatcher increments it on
+     * each DEAD delivery and resets it to 0 on any DELIVERED; when it crosses {@code webhook.auto-disable-after}
+     * the endpoint is auto-disabled. Reset to 0 whenever the operator re-enables the subscription.
+     */
+    @Column(name = "consecutive_failures", nullable = false)
+    private int consecutiveFailures = 0;
+
+    /**
+     * Why the subscription was auto-disabled, or {@code null} if it is enabled / was disabled by the
+     * operator. Lets the UI distinguish "we turned this off because it's dead" from a manual toggle.
+     */
+    @Column(name = "disabled_reason")
+    private String disabledReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

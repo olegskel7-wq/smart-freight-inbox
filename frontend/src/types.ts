@@ -251,6 +251,7 @@ export interface WebhookSubscription {
   eventTypes: string[]
   description: string | null
   enabled: boolean
+  disabledReason: string | null
   createdAt: string
   updatedAt: string
 }

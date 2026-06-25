@@ -102,6 +102,12 @@ public class WebhookManagementService {
         subscription.setEventTypes(normaliseEventTypes(eventTypes));
         subscription.setDescription(blankToNull(description));
         subscription.setEnabled(enabled);
+        // Phase 3.5 S2: an operator action clears the auto-disable state. Re-enabling gives the endpoint a
+        // clean slate (reset the failure run); a manual disable is not an auto-disable, so drop the reason.
+        subscription.setDisabledReason(null);
+        if (enabled) {
+            subscription.setConsecutiveFailures(0);
+        }
         if (newSecret != null && !newSecret.isBlank()) {
             requireCipher();
             subscription.setSecretEnc(secretCipher.encrypt(newSecret.trim()));

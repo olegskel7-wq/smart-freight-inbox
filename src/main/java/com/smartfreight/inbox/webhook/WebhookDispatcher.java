@@ -49,17 +49,23 @@ public class WebhookDispatcher {
     private final WebhookSubscriptionRepository subscriptionRepository;
     private final SecretCipher secretCipher;
     private final WebhookSigner signer;
+    private final UrlSafetyValidator urlSafetyValidator;
     private final WebClient webhookWebClient;
     private final TransactionTemplate transactionTemplate;
     private final Counter deliveredCounter;
     private final Counter failedCounter;
     private final Counter deadCounter;
+    private final Counter autoDisabledCounter;
 
     @Value("${webhook.batch-size:20}")
     private int batchSize;
 
     @Value("${webhook.max-attempts:8}")
     private int maxAttempts;
+
+    /** Auto-disable a subscription after this many fully-failed (DEAD) deliveries in a row (Phase 3.5 S2). */
+    @Value("${webhook.auto-disable-after:3}")
+    private int autoDisableAfter;
 
     /** First retry waits this long; each further retry doubles it, capped by {@link #backoffCapSeconds}. */
     @Value("${webhook.backoff-base-seconds:60}")
@@ -75,6 +81,7 @@ public class WebhookDispatcher {
                              WebhookSubscriptionRepository subscriptionRepository,
                              SecretCipher secretCipher,
                              WebhookSigner signer,
+                             UrlSafetyValidator urlSafetyValidator,
                              WebClient webhookWebClient,
                              TransactionTemplate transactionTemplate,
                              MeterRegistry meterRegistry) {
@@ -82,6 +89,7 @@ public class WebhookDispatcher {
         this.subscriptionRepository = subscriptionRepository;
         this.secretCipher = secretCipher;
         this.signer = signer;
+        this.urlSafetyValidator = urlSafetyValidator;
         this.webhookWebClient = webhookWebClient;
         this.transactionTemplate = transactionTemplate;
         this.deliveredCounter = Counter.builder("smartfreight_webhook_deliveries_total")
@@ -90,6 +98,9 @@ public class WebhookDispatcher {
                 .tag("result", "failed").register(meterRegistry);
         this.deadCounter = Counter.builder("smartfreight_webhook_deliveries_total")
                 .tag("result", "dead").register(meterRegistry);
+        this.autoDisabledCounter = Counter.builder("smartfreight_webhook_subscriptions_disabled_total")
+                .description("Webhook subscriptions auto-disabled after consecutive failed deliveries")
+                .register(meterRegistry);
     }
 
     /**
@@ -125,6 +136,17 @@ public class WebhookDispatcher {
             return;
         }
 
+        // Phase 3.5 S2: re-validate the URL at delivery time. A name safe when the operator saved it can
+        // resolve to an internal address later (DNS rebinding); re-resolving here closes that hole. An
+        // unsafe URL is terminal — retrying would just re-resolve to the same blocked address.
+        try {
+            urlSafetyValidator.validate(subscription.getUrl());
+        } catch (UrlSafetyValidator.UnsafeUrlException e) {
+            markDead(delivery, "Blocked at delivery (URL resolves to a non-public address): " + e.getMessage());
+            applySubscriptionHealth(subscription, delivery);
+            return;
+        }
+
         delivery.setAttempts(delivery.getAttempts() + 1);
         try {
             String secret = secretCipher.decrypt(subscription.getSecretEnc());
@@ -157,6 +179,34 @@ public class WebhookDispatcher {
             fail(delivery, truncate(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
         }
         deliveryRepository.save(delivery);
+        applySubscriptionHealth(subscription, delivery);
+    }
+
+    /**
+     * Phase 3.5 S2: tracks a subscription's delivery health after a row settles. A {@code DELIVERED}
+     * resets the consecutive-failure run; a {@code DEAD} delivery extends it, and once the run reaches
+     * {@code webhook.auto-disable-after} the endpoint is auto-disabled with a recorded reason so a
+     * permanently-dead receiver stops generating doomed deliveries (and the UI can show why). A delivery
+     * still in backoff ({@code PENDING}) is not yet a settled outcome → no change.
+     */
+    private void applySubscriptionHealth(WebhookSubscription subscription, WebhookDelivery delivery) {
+        if (delivery.getStatus() == WebhookDeliveryStatus.DELIVERED) {
+            if (subscription.getConsecutiveFailures() != 0) {
+                subscription.setConsecutiveFailures(0);
+                subscriptionRepository.save(subscription);
+            }
+        } else if (delivery.getStatus() == WebhookDeliveryStatus.DEAD) {
+            subscription.setConsecutiveFailures(subscription.getConsecutiveFailures() + 1);
+            if (subscription.isEnabled() && subscription.getConsecutiveFailures() >= autoDisableAfter) {
+                subscription.setEnabled(false);
+                subscription.setDisabledReason("Auto-disabled after " + subscription.getConsecutiveFailures()
+                        + " consecutive failed deliveries");
+                autoDisabledCounter.increment();
+                log.warn("Webhook subscription id={} (tenant {}) auto-disabled after {} consecutive failures",
+                        subscription.getId(), subscription.getTenantId(), subscription.getConsecutiveFailures());
+            }
+            subscriptionRepository.save(subscription);
+        }
     }
 
     private void markDelivered(WebhookDelivery delivery) {

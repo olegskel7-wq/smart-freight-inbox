@@ -46,6 +46,9 @@ class WebhookDispatcherTest {
 
     @Mock private WebhookDeliveryRepository deliveryRepository;
     @Mock private WebhookSubscriptionRepository subscriptionRepository;
+    // A mock validator permits every URL by default (void validate is a no-op) so the HTTP-path tests can
+    // target the loopback MockWebServer; the SSRF re-check test stubs it to throw.
+    @Mock private UrlSafetyValidator urlSafetyValidator;
 
     private MockWebServer server;
     private SecretCipher cipher;
@@ -61,13 +64,14 @@ class WebhookDispatcherTest {
                 new TransactionTemplate(mock(PlatformTransactionManager.class));
 
         dispatcher = new WebhookDispatcher(
-                deliveryRepository, subscriptionRepository, cipher, new WebhookSigner(),
+                deliveryRepository, subscriptionRepository, cipher, new WebhookSigner(), urlSafetyValidator,
                 WebClient.builder().build(), transactionTemplate, new SimpleMeterRegistry());
         ReflectionTestUtils.setField(dispatcher, "batchSize", 20);
         ReflectionTestUtils.setField(dispatcher, "maxAttempts", 8);
         ReflectionTestUtils.setField(dispatcher, "backoffBaseSeconds", 60L);
         ReflectionTestUtils.setField(dispatcher, "backoffCapSeconds", 21600L);
         ReflectionTestUtils.setField(dispatcher, "timeoutSeconds", 5L);
+        ReflectionTestUtils.setField(dispatcher, "autoDisableAfter", 3);
     }
 
     @AfterEach
@@ -156,5 +160,59 @@ class WebhookDispatcherTest {
 
         assertThat(delivery.getStatus()).isEqualTo(WebhookDeliveryStatus.DEAD);
         assertThat(server.getRequestCount()).isZero();
+    }
+
+    // ---- Phase 3.5 S2: runtime SSRF re-check + auto-disable -------------------------------
+
+    @Test
+    void unsafeUrlAtDeliveryTimeIsTerminalDead() {
+        WebhookDelivery delivery = pendingDelivery();
+        WebhookSubscription sub = subscription();
+        when(deliveryRepository.lockDueBatch(any(), anyInt())).thenReturn(List.of(delivery));
+        when(subscriptionRepository.findById(1L)).thenReturn(Optional.of(sub));
+        // The URL was safe at save time but now resolves to a private address (DNS rebinding).
+        org.mockito.Mockito.doThrow(new UrlSafetyValidator.UnsafeUrlException("resolves to a non-public address"))
+                .when(urlSafetyValidator).validate(sub.getUrl());
+
+        dispatcher.dispatchDue();
+
+        assertThat(delivery.getStatus()).isEqualTo(WebhookDeliveryStatus.DEAD);
+        assertThat(delivery.getLastError()).contains("Blocked at delivery");
+        assertThat(server.getRequestCount()).isZero(); // never connected
+        assertThat(sub.getConsecutiveFailures()).isEqualTo(1);
+    }
+
+    @Test
+    void deadDeliveryAutoDisablesSubscriptionAtThreshold() {
+        WebhookDelivery delivery = pendingDelivery();
+        delivery.setAttempts(7); // next 503 exhausts the budget → DEAD
+        WebhookSubscription sub = subscription();
+        sub.setConsecutiveFailures(2); // one short of the auto-disable threshold (3)
+        when(deliveryRepository.lockDueBatch(any(), anyInt())).thenReturn(List.of(delivery));
+        when(subscriptionRepository.findById(1L)).thenReturn(Optional.of(sub));
+        server.enqueue(new MockResponse().setResponseCode(503));
+
+        dispatcher.dispatchDue();
+
+        assertThat(delivery.getStatus()).isEqualTo(WebhookDeliveryStatus.DEAD);
+        assertThat(sub.getConsecutiveFailures()).isEqualTo(3);
+        assertThat(sub.isEnabled()).isFalse();
+        assertThat(sub.getDisabledReason()).contains("Auto-disabled");
+    }
+
+    @Test
+    void successfulDeliveryResetsConsecutiveFailures() {
+        WebhookDelivery delivery = pendingDelivery();
+        WebhookSubscription sub = subscription();
+        sub.setConsecutiveFailures(2);
+        when(deliveryRepository.lockDueBatch(any(), anyInt())).thenReturn(List.of(delivery));
+        when(subscriptionRepository.findById(1L)).thenReturn(Optional.of(sub));
+        server.enqueue(new MockResponse().setResponseCode(200));
+
+        dispatcher.dispatchDue();
+
+        assertThat(delivery.getStatus()).isEqualTo(WebhookDeliveryStatus.DELIVERED);
+        assertThat(sub.getConsecutiveFailures()).isZero();
+        assertThat(sub.isEnabled()).isTrue();
     }
 }
