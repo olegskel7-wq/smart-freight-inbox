@@ -4,6 +4,8 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.webhook.WebhookEventPublisher;
+import com.smartfreight.inbox.webhook.WebhookEventType;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,13 +48,16 @@ class AutoSendServiceTest {
     @Mock
     private QuoteFollowUpService quoteFollowUpService;
 
+    @Mock
+    private WebhookEventPublisher webhookEventPublisher;
+
     private AutoSendService service;
 
     @BeforeEach
     void setUp() {
         service = new AutoSendService(emailTicketRepository, emailReplyService,
                 settingsService, sendRateLimiter, auditService, quoteFollowUpService,
-                new SimpleMeterRegistry());
+                webhookEventPublisher, new SimpleMeterRegistry());
     }
 
     private EmailTicket ticket(TicketStatus status, TicketType type, Double confidence) {
@@ -191,6 +196,26 @@ class AutoSendServiceTest {
         // Phase 2.5: a successful auto-send offers the ticket to the follow-up arming (the
         // RFQ/proactive guard lives inside QuoteFollowUpService, tested separately).
         verify(quoteFollowUpService).armFromTicket(ticket);
+        // Phase 3.5 S2: reply.sent fires for a sent reply; quote.sent does NOT (not an RFQ).
+        verify(webhookEventPublisher).publish(eq(WebhookEventType.REPLY_SENT), any(), any());
+        verify(webhookEventPublisher, never()).publish(eq(WebhookEventType.QUOTE_SENT), any(), any());
+    }
+
+    @Test
+    void autoSend_rfq_emitsBothReplyAndQuoteWebhooks() {
+        // With RFQ in the allowlist a sent quote fires both reply.sent and quote.sent (independent events).
+        EmailTicket ticket = ticket(TicketStatus.DRAFT_READY, TicketType.RFQ, 0.9);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        lenient().when(settingsService.isFeatureEnabled(AutoSendService.FEATURE_KEY, false)).thenReturn(true);
+        lenient().when(settingsService.getString(eq(AutoSendService.KEY_THRESHOLD), anyString())).thenReturn("0.8");
+        lenient().when(settingsService.getString(eq(AutoSendService.KEY_TYPES), anyString())).thenReturn("RFQ");
+        when(sendRateLimiter.tryAcquire(1L)).thenReturn(true);
+
+        service.autoSend(1L);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.AUTO_SENT);
+        verify(webhookEventPublisher).publish(eq(WebhookEventType.REPLY_SENT), any(), any());
+        verify(webhookEventPublisher).publish(eq(WebhookEventType.QUOTE_SENT), any(), any());
     }
 
     @Test
@@ -232,8 +257,8 @@ class AutoSendServiceTest {
         verify(emailTicketRepository, never()).save(any());
         verify(auditService).record(eq(1L), eq(TicketAuditService.ACTION_AUTO_SEND),
                 contains("FAILED"));
-        // A failed send must not arm a follow-up — the quote never went out.
-        verifyNoInteractions(quoteFollowUpService);
+        // A failed send must not arm a follow-up nor emit webhooks — the quote never went out.
+        verifyNoInteractions(quoteFollowUpService, webhookEventPublisher);
     }
 
     @Test

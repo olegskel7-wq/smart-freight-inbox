@@ -36,8 +36,9 @@ import org.springframework.security.web.SecurityFilterChain;
  *
  * <p>The API principal is a {@code Jwt}; {@link com.smartfreight.inbox.tenancy.TenantFilter} reads
  * the tenant off the {@code tenant_id} claim. Access rules (API chain): {@code /api/admin/tenants/**}
- * SUPER_ADMIN; {@code /api/admin/**} (reprocess + DLQ maintenance), {@code /api/users/**} and
- * {@code /api/settings/**} ADMIN (Phase 3.3 tenant-admin tier); the rest authenticated (OPERATOR).
+ * SUPER_ADMIN; {@code /api/admin/**} (reprocess + DLQ maintenance), {@code /api/users/**},
+ * {@code /api/settings/**} and {@code /api/webhooks/**} ADMIN (tenant-admin tier); the rest
+ * authenticated (OPERATOR).
  */
 @Configuration
 @EnableWebSecurity
@@ -62,6 +63,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/users/**").hasRole("ADMIN")
                 .requestMatchers("/api/settings/**").hasRole("ADMIN")
+                .requestMatchers("/api/webhooks/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             // Bearer JWTs from Keycloak; the converter maps the realm roles claim to ROLE_* authorities.

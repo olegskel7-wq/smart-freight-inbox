@@ -12,6 +12,7 @@ import TrainingExamplesPage from './pages/TrainingExamplesPage.tsx'
 import UsersPage from './pages/UsersPage.tsx'
 import TenantsPage from './pages/TenantsPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
+import WebhooksPage from './pages/WebhooksPage.tsx'
 
 // Client-side guard for tenant-admin pages (Phase 3.3): an operator who deep-links to /users or
 // /settings is bounced to /tickets. The API enforces the ADMIN role regardless — this just avoids
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         <Route path="tenants" element={<TenantsPage />} />
         <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
+        <Route path="webhooks" element={<RequireAdmin><WebhooksPage /></RequireAdmin>} />
         <Route path="*" element={<Navigate to="/tickets" replace />} />
       </Route>
     </Routes>

@@ -4,6 +4,9 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.webhook.WebhookEventPublisher;
+import com.smartfreight.inbox.webhook.WebhookEventType;
+import com.smartfreight.inbox.webhook.WebhookPayloads;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -13,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -75,6 +79,7 @@ public class AutoSendService {
     private final SendRateLimiter sendRateLimiter;
     private final TicketAuditService auditService;
     private final QuoteFollowUpService quoteFollowUpService;
+    private final WebhookEventPublisher webhookEventPublisher;
     private final Counter autoSentCounter;
     private final Counter autoFailedCounter;
 
@@ -84,6 +89,7 @@ public class AutoSendService {
                            SendRateLimiter sendRateLimiter,
                            TicketAuditService auditService,
                            QuoteFollowUpService quoteFollowUpService,
+                           WebhookEventPublisher webhookEventPublisher,
                            MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
@@ -91,6 +97,7 @@ public class AutoSendService {
         this.sendRateLimiter = sendRateLimiter;
         this.auditService = auditService;
         this.quoteFollowUpService = quoteFollowUpService;
+        this.webhookEventPublisher = webhookEventPublisher;
         this.autoSentCounter = Counter.builder("smartfreight_autosend_total")
                 .description("Automatic reply send results")
                 .tag("result", "sent")
@@ -207,6 +214,13 @@ public class AutoSendService {
         // Phase 2.5: a sent RFQ quote arms a one-shot follow-up. No-op for proactive tickets
         // (status updates, quote nudges) and non-RFQ types — guarded inside the service.
         quoteFollowUpService.armFromTicket(ticket);
+        // Phase 3.5 S2: same CRM events as the operator send path — reply.sent always, plus quote.sent
+        // for an RFQ. In this transaction (post-pipeline-commit), so atomic with the AUTO_SENT save above.
+        Map<String, Object> webhookData = WebhookPayloads.ticketData(ticket);
+        webhookEventPublisher.publish(WebhookEventType.REPLY_SENT, ticket.getTenantId(), webhookData);
+        if (ticket.getTicketType() == TicketType.RFQ) {
+            webhookEventPublisher.publish(WebhookEventType.QUOTE_SENT, ticket.getTenantId(), webhookData);
+        }
         log.info("Ticket {} auto-sent to {} (confidence {})",
                 ticketId, ticket.getSenderEmail(), ticket.getAiConfidence());
     }

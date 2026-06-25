@@ -84,6 +84,9 @@ class TicketProcessingClassificationTest {
     @Mock
     private SettingsService settingsService;
 
+    @Mock
+    private com.smartfreight.inbox.webhook.WebhookEventPublisher webhookEventPublisher;
+
     private TicketProcessingService service;
 
     @BeforeEach
@@ -92,7 +95,7 @@ class TicketProcessingClassificationTest {
                 emailTicketRepository, emailClassificationService, aiExtractionService,
                 itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
                 slaService, autoSendService, shipmentWatchService, documentRequestService,
-                feedbackLoopService, settingsService, new SimpleMeterRegistry());
+                feedbackLoopService, settingsService, webhookEventPublisher, new SimpleMeterRegistry());
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);
@@ -151,6 +154,35 @@ class TicketProcessingClassificationTest {
         assertThat(ticket.getSlaDeadlineAt()).isEqualTo(ticket.getCreatedAt().plusHours(4));
         assertThat(ticket.getDraftReply()).isNotBlank();
         verify(emailClassificationService).classify(eq("Container inquiry"), anyString());
+    }
+
+    @Test
+    void receivedTicket_classifiedBookingConfirm_emitsBookingWebhook() {
+        EmailTicket ticket = ticket(TicketStatus.RECEIVED);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(emailClassificationService.classify(any(), any()))
+                .thenReturn(new ClassificationResult(true, TicketType.BOOKING_CONFIRM));
+        stubHappyPipeline();
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getTicketType()).isEqualTo(TicketType.BOOKING_CONFIRM);
+        verify(webhookEventPublisher).publish(
+                eq(com.smartfreight.inbox.webhook.WebhookEventType.BOOKING_CONFIRMED), any(), any());
+    }
+
+    @Test
+    void receivedTicket_classifiedNonBooking_doesNotEmitBookingWebhook() {
+        EmailTicket ticket = ticket(TicketStatus.RECEIVED);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(emailClassificationService.classify(any(), any()))
+                .thenReturn(new ClassificationResult(true, TicketType.STATUS_UPDATE));
+        stubHappyPipeline();
+
+        service.processAttempt(1L, System.nanoTime());
+
+        verify(webhookEventPublisher, never()).publish(
+                eq(com.smartfreight.inbox.webhook.WebhookEventType.BOOKING_CONFIRMED), any(), any());
     }
 
     @Test
