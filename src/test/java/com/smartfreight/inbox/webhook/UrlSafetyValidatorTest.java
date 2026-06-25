@@ -54,6 +54,22 @@ class UrlSafetyValidatorTest {
     }
 
     @Test
+    void rejectsIpv6UniqueLocal() {
+        // fc00::/7 (RFC 4193) — internal IPv6, NOT covered by isSiteLocalAddress (deprecated fec0::/10).
+        assertThatThrownBy(() -> validator.validate("https://[fd00::1]/hook"))
+                .isInstanceOf(UrlSafetyValidator.UnsafeUrlException.class)
+                .hasMessageContaining("non-public address");
+    }
+
+    @Test
+    void rejectsCarrierGradeNat() {
+        // 100.64.0.0/10 (RFC 6598) — CGNAT shared space, not flagged by any InetAddress predicate.
+        assertThatThrownBy(() -> validator.validate("https://100.64.0.1/hook"))
+                .isInstanceOf(UrlSafetyValidator.UnsafeUrlException.class)
+                .hasMessageContaining("non-public address");
+    }
+
+    @Test
     void rejectsGarbage() {
         assertThatThrownBy(() -> validator.validate("not a url"))
                 .isInstanceOf(UrlSafetyValidator.UnsafeUrlException.class);

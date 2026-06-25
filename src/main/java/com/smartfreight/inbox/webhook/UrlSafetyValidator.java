@@ -68,6 +68,27 @@ public class UrlSafetyValidator {
                 || address.isAnyLocalAddress()   // 0.0.0.0, ::
                 || address.isLinkLocalAddress()  // 169.254.0.0/16 (incl. cloud metadata), fe80::/10
                 || address.isSiteLocalAddress()  // 10/8, 172.16/12, 192.168/16
-                || address.isMulticastAddress();
+                || address.isMulticastAddress()
+                || isUniqueLocalIpv6(address)    // fc00::/7
+                || isCarrierGradeNat(address);   // 100.64.0.0/10
+    }
+
+    /**
+     * IPv6 unique-local addresses {@code fc00::/7} (RFC 4193) — the IPv6 equivalent of the RFC 1918
+     * private ranges. {@link InetAddress#isSiteLocalAddress()} only covers the deprecated {@code fec0::/10}
+     * site-local block, so on a dual-stack host a ULA target would otherwise slip past the SSRF gate.
+     */
+    private boolean isUniqueLocalIpv6(InetAddress address) {
+        byte[] a = address.getAddress();
+        return a.length == 16 && (a[0] & 0xfe) == 0xfc;
+    }
+
+    /**
+     * IPv4 carrier-grade NAT shared space {@code 100.64.0.0/10} (RFC 6598) — used inside ISP / cloud
+     * networks, not a public host, and not flagged by any {@code InetAddress} predicate.
+     */
+    private boolean isCarrierGradeNat(InetAddress address) {
+        byte[] a = address.getAddress();
+        return a.length == 4 && (a[0] & 0xff) == 100 && (a[1] & 0xc0) == 0x40;
     }
 }
