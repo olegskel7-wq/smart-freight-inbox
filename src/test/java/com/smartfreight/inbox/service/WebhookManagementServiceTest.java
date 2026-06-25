@@ -131,6 +131,45 @@ class WebhookManagementServiceTest {
     }
 
     @Test
+    void updateSkipsUrlRevalidationWhenUrlUnchanged() {
+        // A webhook whose host now resolves to a private address must still be disable-able: re-validating
+        // an unchanged URL would reject the very action the operator needs (turn off the dead endpoint).
+        WebhookSubscription stale = new WebhookSubscription();
+        stale.setId(8L);
+        stale.setUrl("https://10.0.0.5/hook"); // would now FAIL validation (private range)
+        stale.setSecretEnc(cipher.encrypt("s"));
+        stale.setEnabled(true);
+        when(subscriptionRepository.findById(8L)).thenReturn(Optional.of(stale));
+
+        service.update(8L, "https://10.0.0.5/hook", List.of("*"), null, false, null);
+
+        assertThat(stale.isEnabled()).isFalse();
+    }
+
+    @Test
+    void updateStillValidatesAChangedUrl() {
+        WebhookSubscription sub = new WebhookSubscription();
+        sub.setId(8L);
+        sub.setUrl("https://8.8.8.8/hook");
+        sub.setSecretEnc(cipher.encrypt("s"));
+        when(subscriptionRepository.findById(8L)).thenReturn(Optional.of(sub));
+
+        // Changing the URL to a private one is still rejected by the SSRF gate.
+        assertThatThrownBy(() ->
+                service.update(8L, "https://10.0.0.5/hook", List.of("*"), null, true, null))
+                .isInstanceOf(UrlSafetyValidator.UnsafeUrlException.class);
+    }
+
+    @Test
+    void deleteUnknownIdThrowsNotFound() {
+        when(subscriptionRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.delete(404L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not found");
+    }
+
+    @Test
     void reEnablingClearsAutoDisableState() {
         // An auto-disabled endpoint carries a failure run + a reason; re-enabling must wipe both so the
         // next DEAD delivery doesn't immediately re-trip the threshold.

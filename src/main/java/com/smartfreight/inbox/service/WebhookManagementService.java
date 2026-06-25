@@ -97,7 +97,13 @@ public class WebhookManagementService {
         WebhookSubscription subscription = subscriptionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Webhook not found."));
         String cleanUrl = requireText(url, "URL is required.");
-        urlSafetyValidator.validate(cleanUrl);
+        // Re-validate only when the URL actually changed. Otherwise an operator could not disable or edit
+        // a subscription whose host has since stopped resolving / now resolves to a private address —
+        // which is exactly when they need to turn it off. A changed URL is still SSRF-checked here, and the
+        // dispatcher re-checks every URL at delivery time regardless (DNS-rebinding defence).
+        if (!cleanUrl.equals(subscription.getUrl())) {
+            urlSafetyValidator.validate(cleanUrl);
+        }
         subscription.setUrl(cleanUrl);
         subscription.setEventTypes(normaliseEventTypes(eventTypes));
         subscription.setDescription(blankToNull(description));
@@ -118,7 +124,11 @@ public class WebhookManagementService {
 
     @Transactional
     public void delete(Long id) {
-        subscriptionRepository.deleteById(id);
+        // Look up first (like update/sendTest) so an unknown or other-tenant id (invisible via @TenantId/RLS)
+        // yields a clean "not found" → 400, not the EmptyResultDataAccessException → 500 that deleteById throws.
+        WebhookSubscription subscription = subscriptionRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Webhook not found."));
+        subscriptionRepository.delete(subscription);
     }
 
     /**

@@ -133,6 +133,14 @@ class WebhookApiControllerTest {
     }
 
     @Test
+    void deleteUnknownIdIsBadRequest() throws Exception {
+        doThrow(new IllegalArgumentException("Webhook not found.")).when(webhookService).delete(404L);
+
+        mockMvc.perform(delete("/api/webhooks/404"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void testEndpointQueuesAndReturnsSnapshot() throws Exception {
         mockMvc.perform(post("/api/webhooks/1/test"))
                 .andExpect(status().isOk())

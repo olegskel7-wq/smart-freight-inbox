@@ -52,8 +52,15 @@ public class WebhookEventPublisher {
     /**
      * Queues a delivery of {@code eventType} to every enabled subscription of {@code tenantId} that
      * wants it. No-op when the tenant has no matching subscription (the common case — a cheap indexed
-     * query). Best-effort: a serialization or DB hiccup here must not fail the business transaction, so
-     * it is logged and swallowed (a webhook is auxiliary, unlike the internal outbox which is fail-loud).
+     * query). Errors are logged and swallowed so a fault in the fan-out itself (payload serialization, the
+     * subscription lookup) cannot propagate into the caller.
+     *
+     * <p><b>Limit of that guard:</b> the delivery rows are INSERTed in the caller's transaction (the
+     * transactional-outbox discipline — atomic with the business change), and {@code IDENTITY} ids force an
+     * immediate flush. A DB-level failure on that INSERT therefore aborts the transaction, so the business
+     * change rolls back with it — the queue is <i>atomic</i> with the business write, not <i>isolated</i>
+     * from it (the same contract as the {@code outbox_event} it mirrors). True isolation would require a
+     * SAVEPOINT around the insert; for an auxiliary webhook the atomic-outbox behaviour is acceptable.
      *
      * @param eventType one of {@link WebhookEventType}
      * @param tenantId  the event's tenant (the current transaction's tenant)

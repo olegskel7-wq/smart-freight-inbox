@@ -80,8 +80,12 @@ public class WebhookApiController {
     /** DELETE /api/webhooks/{id} — removes a subscription (and its deliveries via cascade). */
     @DeleteMapping("/{id}")
     public WebhooksResponse delete(@PathVariable Long id) {
-        webhookService.delete(id);
-        return buildResponse();
+        try {
+            webhookService.delete(id);
+            return buildResponse();
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 
     /** POST /api/webhooks/{id}/test — queues a test delivery to verify the endpoint end to end. */
