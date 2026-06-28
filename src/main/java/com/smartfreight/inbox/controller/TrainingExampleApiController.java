@@ -45,11 +45,15 @@ public class TrainingExampleApiController {
 
     /**
      * DELETE /api/training-examples/{id} — removes one example from the training set (dataset
-     * curation). RLS scopes the delete to the current tenant. Returns the refreshed snapshot.
+     * curation). RLS scopes the lookup/delete to the current tenant. Idempotent: an unknown or
+     * cross-tenant id (invisible under RLS) is a no-op, so the API answers a clean snapshot instead
+     * of the 500 a bare {@code deleteById} would raise on a missing row. Returns the refreshed snapshot.
      */
     @DeleteMapping("/{id}")
     public TrainingExamplesResponse delete(@PathVariable Long id) {
-        repository.deleteById(id);
+        if (repository.existsById(id)) {
+            repository.deleteById(id);
+        }
         return buildResponse();
     }
 

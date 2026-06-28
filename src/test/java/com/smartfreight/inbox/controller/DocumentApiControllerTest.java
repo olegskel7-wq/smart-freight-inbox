@@ -147,10 +147,23 @@ class DocumentApiControllerTest {
 
     @Test
     void deleteRemovesDocumentAndReturnsSnapshot() throws Exception {
+        when(documentRepository.existsById(5L)).thenReturn(true);
+
         mockMvc.perform(delete("/api/documents/5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.documents[0].id").value(5));
 
         verify(documentRepository).deleteById(5L);
+    }
+
+    @Test
+    void deleteUnknownIdIsNoOpAndReturnsSnapshot() throws Exception {
+        when(documentRepository.existsById(999L)).thenReturn(false);
+
+        mockMvc.perform(delete("/api/documents/999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documents[0].id").value(5));
+
+        verify(documentRepository, never()).deleteById(any());
     }
 }
