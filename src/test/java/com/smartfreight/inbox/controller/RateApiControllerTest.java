@@ -133,11 +133,24 @@ class RateApiControllerTest {
 
     @Test
     void deleteRemovesRowAndReturnsSnapshot() throws Exception {
+        when(carrierRateRepository.existsById(5L)).thenReturn(true);
+
         mockMvc.perform(delete("/api/rates/5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rates[0].id").value(5));
 
         verify(carrierRateRepository).deleteById(5L);
+    }
+
+    @Test
+    void deleteUnknownIdIsNoOpAndReturnsSnapshot() throws Exception {
+        when(carrierRateRepository.existsById(999L)).thenReturn(false);
+
+        mockMvc.perform(delete("/api/rates/999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rates[0].id").value(5));
+
+        verify(carrierRateRepository, never()).deleteById(any());
     }
 
     @Test

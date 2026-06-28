@@ -74,10 +74,16 @@ public class RateApiController {
         }
     }
 
-    /** DELETE /api/rates/{id} — removes one rate row. RLS scopes the delete to the current tenant. */
+    /**
+     * DELETE /api/rates/{id} — removes one rate row. RLS scopes the lookup/delete to the current tenant.
+     * Idempotent: an unknown or cross-tenant id (invisible under RLS) is a no-op, so the API answers a
+     * clean snapshot instead of the 500 a bare {@code deleteById} would raise on a missing row.
+     */
     @DeleteMapping("/{id}")
     public RatesResponse delete(@PathVariable Long id) {
-        carrierRateRepository.deleteById(id);
+        if (carrierRateRepository.existsById(id)) {
+            carrierRateRepository.deleteById(id);
+        }
         return buildResponse();
     }
 

@@ -18,8 +18,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -105,6 +107,7 @@ class TrainingExampleApiControllerTest {
 
     @Test
     void deleteRemovesExampleAndReturnsSnapshot() throws Exception {
+        when(repository.existsById(9L)).thenReturn(true);
         when(repository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(
                 example(9L, TicketType.GENERAL, "enquiry", "ai", "final")));
 
@@ -113,5 +116,18 @@ class TrainingExampleApiControllerTest {
                 .andExpect(jsonPath("$.examples[0].id").value(9));
 
         verify(repository).deleteById(9L);
+    }
+
+    @Test
+    void deleteUnknownIdIsNoOpAndReturnsSnapshot() throws Exception {
+        when(repository.existsById(999L)).thenReturn(false);
+        when(repository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(
+                example(9L, TicketType.GENERAL, "enquiry", "ai", "final")));
+
+        mockMvc.perform(delete("/api/training-examples/999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.examples[0].id").value(9));
+
+        verify(repository, never()).deleteById(any());
     }
 }

@@ -97,10 +97,16 @@ public class DocumentApiController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    /** DELETE /api/documents/{id} — removes one document. RLS scopes the delete to the current tenant. */
+    /**
+     * DELETE /api/documents/{id} — removes one document. RLS scopes the lookup/delete to the current
+     * tenant. Idempotent: an unknown or cross-tenant id (invisible under RLS) is a no-op, so the API
+     * answers a clean snapshot instead of the 500 a bare {@code deleteById} would raise on a missing row.
+     */
     @DeleteMapping("/{id}")
     public DocumentsResponse delete(@PathVariable Long id) {
-        documentRepository.deleteById(id);
+        if (documentRepository.existsById(id)) {
+            documentRepository.deleteById(id);
+        }
         return buildResponse();
     }
 
