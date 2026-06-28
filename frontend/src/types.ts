@@ -222,6 +222,22 @@ export interface TrainingExamplesResponse {
   examples: TrainingExample[]
 }
 
+// Knowledge-base DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.9). Full content is
+// shipped (not a preview) because the page edits documents inline.
+export interface KnowledgeDoc {
+  id: number
+  title: string
+  content: string
+  source: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeResponse {
+  featureEnabled: boolean
+  documents: KnowledgeDoc[]
+}
+
 export interface Settings {
   cipherConfigured: boolean
   platformOllamaUrl: string

@@ -64,6 +64,9 @@ public class AiDraftingService {
             Examples of how our team has previously replied to similar enquiries (match their tone and approach; ignore any details that do not apply here):
             {exampleContext}
 
+            Reference information from our knowledge base (use only if relevant to the customer's question; do not invent):
+            {knowledgeContext}
+
             Customer's email:
             {email}
 
@@ -79,6 +82,14 @@ public class AiDraftingService {
     private static final String EXAMPLE_HEADER =
             "Examples of how our team has previously replied to similar enquiries "
             + "(match their tone and approach; ignore any details that do not apply here):";
+
+    /** Substituted for {@code {knowledgeContext}} when no knowledge documents matched the enquiry. */
+    private static final String NO_KNOWLEDGE_NOTE = "No reference information available.";
+
+    /** Header for the knowledge block when appended to a stored prompt that predates {@code {knowledgeContext}}. */
+    private static final String KNOWLEDGE_HEADER =
+            "Reference information from our knowledge base "
+            + "(use only if relevant to the customer's question; do not invent):";
 
     /**
      * Fallback prompt for proactive status updates (Phase 2.4) when the DB-backed
@@ -232,16 +243,44 @@ public class AiDraftingService {
      * @return generated or fallback draft
      */
     public String generateDraft(String emailBody, TrackedItem item, String rateContext, String exampleContext) {
+        return generateDraft(emailBody, item, rateContext, exampleContext, "");
+    }
+
+    /**
+     * Generates a reply draft with carrier rate context (Phase 1.2), few-shot examples of past operator
+     * corrections (Phase 3.1 S2) and grounding from the tenant's knowledge base (Phase 3.9 — KB
+     * deflection).
+     *
+     * <p>All three contexts are defensive about prompt history: when the stored {@code ai.drafting-prompt}
+     * template lacks the {@code {rateContext}} / {@code {exampleContext}} / {@code {knowledgeContext}}
+     * placeholder (it was seeded before that one existed) but the caller supplied content, the block is
+     * appended to the prompt instead of being silently dropped — so no migration of the stored prompt is
+     * required.
+     *
+     * @param emailBody        customer email text (body + parsed attachments)
+     * @param item             tracked-item data (may be null if not found)
+     * @param rateContext      matched rate lines from {@link RateSheetService}, or empty
+     * @param exampleContext   few-shot example block from {@link FeedbackLoopService}, or empty
+     * @param knowledgeContext knowledge block from {@link KnowledgeBaseService}, or empty
+     * @return generated or fallback draft
+     */
+    public String generateDraft(String emailBody, TrackedItem item, String rateContext,
+                                String exampleContext, String knowledgeContext) {
         String itemContext = buildItemContext(item);
         String truncatedBody = emailBody.substring(0, Math.min(emailBody.length(), MAX_PROMPT_BODY_CHARS));
         String rates = rateContext == null ? "" : rateContext.trim();
         String examples = exampleContext == null ? "" : exampleContext.trim();
+        String knowledge = knowledgeContext == null ? "" : knowledgeContext.trim();
 
         String template = settingsService.getString(
                 SettingsService.KEY_DRAFTING_PROMPT, DEFAULT_DRAFTING_PROMPT);
-        String prompt = template
-                .replace("{itemContext}", itemContext)
-                .replace("{email}", truncatedBody);
+
+        // Substitute the TRUSTED context placeholders first, while the prompt still holds only template
+        // text. The untrusted customer email ({email}) and backend item data ({itemContext}) are inlined
+        // LAST (below) — so an email that happens to contain a literal {rateContext}/{exampleContext}/
+        // {knowledgeContext} token cannot get tenant rate/example/knowledge content injected at a
+        // customer-chosen position (String.replace is global; substituting email first would expose it).
+        String prompt = template;
 
         if (template.contains("{rateContext}")) {
             prompt = prompt.replace("{rateContext}", rates.isEmpty() ? NO_RATES_NOTE : rates);
@@ -255,6 +294,17 @@ public class AiDraftingService {
         } else if (!examples.isEmpty()) {
             prompt = prompt + "\n\n" + EXAMPLE_HEADER + "\n" + examples;
         }
+
+        if (template.contains("{knowledgeContext}")) {
+            prompt = prompt.replace("{knowledgeContext}", knowledge.isEmpty() ? NO_KNOWLEDGE_NOTE : knowledge);
+        } else if (!knowledge.isEmpty()) {
+            prompt = prompt + "\n\n" + KNOWLEDGE_HEADER + "\n" + knowledge;
+        }
+
+        // Untrusted input goes in last: any trusted-placeholder tokens it contains are now inert text.
+        prompt = prompt
+                .replace("{itemContext}", itemContext)
+                .replace("{email}", truncatedBody);
 
         return callOllama(prompt, buildFallbackDraft(item));
     }

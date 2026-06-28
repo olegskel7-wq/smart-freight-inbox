@@ -9,6 +9,7 @@ import AnalyticsPage from './pages/AnalyticsPage.tsx'
 import RatesPage from './pages/RatesPage.tsx'
 import DocumentsPage from './pages/DocumentsPage.tsx'
 import TrainingExamplesPage from './pages/TrainingExamplesPage.tsx'
+import KnowledgePage from './pages/KnowledgePage.tsx'
 import UsersPage from './pages/UsersPage.tsx'
 import TenantsPage from './pages/TenantsPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="rates" element={<RatesPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="training-examples" element={<TrainingExamplesPage />} />
+        <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         <Route path="tenants" element={<TenantsPage />} />
         <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />

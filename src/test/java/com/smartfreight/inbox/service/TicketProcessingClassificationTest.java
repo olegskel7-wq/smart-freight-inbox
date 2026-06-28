@@ -19,6 +19,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
+import org.mockito.ArgumentCaptor;
+
+import java.util.function.Supplier;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -82,6 +86,12 @@ class TicketProcessingClassificationTest {
     private FeedbackLoopService feedbackLoopService;
 
     @Mock
+    private KnowledgeBaseService knowledgeBaseService;
+
+    @Mock
+    private EmbeddingService embeddingService;
+
+    @Mock
     private SettingsService settingsService;
 
     @Mock
@@ -95,7 +105,8 @@ class TicketProcessingClassificationTest {
                 emailTicketRepository, emailClassificationService, aiExtractionService,
                 itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
                 slaService, autoSendService, shipmentWatchService, documentRequestService,
-                feedbackLoopService, settingsService, webhookEventPublisher, new SimpleMeterRegistry());
+                feedbackLoopService, knowledgeBaseService, embeddingService, settingsService,
+                webhookEventPublisher, new SimpleMeterRegistry());
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);
@@ -115,8 +126,10 @@ class TicketProcessingClassificationTest {
         when(aiExtractionService.extractIdentifier(anyString())).thenReturn("MSCU1234567");
         when(itemLookupService.findByIdentifier("MSCU1234567")).thenReturn(Optional.empty());
         when(rateSheetService.buildRateContext(anyString())).thenReturn("");
-        when(feedbackLoopService.retrieveExamples(any(), anyString())).thenReturn("");
-        when(aiDraftingService.generateDraft(anyString(), any(), anyString(), anyString())).thenReturn("Dear customer, ...");
+        when(feedbackLoopService.retrieveExamples(any(), anyString(), any())).thenReturn("");
+        when(knowledgeBaseService.retrieveContext(anyString(), any())).thenReturn("");
+        when(aiDraftingService.generateDraft(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn("Dear customer, ...");
     }
 
     @Test
@@ -154,6 +167,36 @@ class TicketProcessingClassificationTest {
         assertThat(ticket.getSlaDeadlineAt()).isEqualTo(ticket.getCreatedAt().plusHours(4));
         assertThat(ticket.getDraftReply()).isNotBlank();
         verify(emailClassificationService).classify(eq("Container inquiry"), anyString());
+    }
+
+    // Phase 3.9: the feedback loop and the knowledge base receive the SAME memoised embedding supplier,
+    // so the enquiry is embedded at most once per draft no matter how many retrievers ask for it.
+    @Test
+    @SuppressWarnings("unchecked")
+    void draftPipeline_sharesOneMemoisedEmbeddingSupplier() {
+        EmailTicket ticket = ticket(TicketStatus.RECEIVED);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(emailClassificationService.classify(any(), any()))
+                .thenReturn(new ClassificationResult(true, TicketType.STATUS_UPDATE));
+        stubHappyPipeline();
+        when(embeddingService.embed(anyString())).thenReturn(Optional.of(new float[]{0.1f, 0.2f}));
+
+        ArgumentCaptor<Supplier<Optional<float[]>>> fromFeedback = ArgumentCaptor.forClass(Supplier.class);
+        ArgumentCaptor<Supplier<Optional<float[]>>> fromKnowledge = ArgumentCaptor.forClass(Supplier.class);
+
+        service.processAttempt(1L, System.nanoTime());
+
+        verify(feedbackLoopService).retrieveExamples(any(), anyString(), fromFeedback.capture());
+        verify(knowledgeBaseService).retrieveContext(anyString(), fromKnowledge.capture());
+
+        // Both retrievers get the very same supplier instance (shared, not one each).
+        Supplier<Optional<float[]>> shared = fromFeedback.getValue();
+        assertThat(fromKnowledge.getValue()).isSameAs(shared);
+
+        // Memoised: invoking it repeatedly triggers exactly one embedding call.
+        shared.get();
+        shared.get();
+        verify(embeddingService, times(1)).embed(anyString());
     }
 
     @Test
@@ -361,7 +404,7 @@ class TicketProcessingClassificationTest {
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
         assertThat(ticket.getAttachedDocumentId()).isNull();
-        verify(aiDraftingService).generateDraft(anyString(), any(), anyString(), anyString());
+        verify(aiDraftingService).generateDraft(anyString(), any(), anyString(), anyString(), anyString());
         verify(documentRequestService, never()).detectRequestedType(anyString());
     }
 

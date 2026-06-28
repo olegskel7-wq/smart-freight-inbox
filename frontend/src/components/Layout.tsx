@@ -24,6 +24,7 @@ const I = {
   rates: ['M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z', 'M7 7h.01'],
   documents: ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M16 13H8', 'M16 17H8', 'M10 9H8'],
   learning: ['M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z', 'M22 3h-6a4 4 0 0 1-4 4v14a3 3 0 0 0 3-3h7z'],
+  knowledge: ['M12 2a3 3 0 0 0-3 3v14a3 3 0 0 1 3-3 3 3 0 0 1 3 3V5a3 3 0 0 0-3-3z', 'M5 6a2 2 0 0 0-2 2v11a2 2 0 0 1 2-2h2', 'M19 6a2 2 0 0 1 2 2v11a2 2 0 0 0-2-2h-2'],
   users: ['M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2', 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M23 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75'],
   settings: ['M4 21v-7', 'M4 10V3', 'M12 21v-9', 'M12 8V3', 'M20 21v-5', 'M20 12V3', 'M1 14h6', 'M9 8h6', 'M17 16h6'],
   webhooks: ['M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M8.59 13.51l6.83 3.98', 'M15.41 6.51l-6.82 3.98'],
@@ -62,6 +63,7 @@ export default function Layout() {
           {link('/rates', 'Rates', <Icon d={I.rates} />)}
           {link('/documents', 'Documents', <Icon d={I.documents} />)}
           {link('/training-examples', 'Learning', <Icon d={I.learning} />)}
+          {link('/knowledge', 'Knowledge', <Icon d={I.knowledge} />)}
 
           {isAdmin && <div className="sf-group">Admin</div>}
           {isAdmin && link('/users', 'Users', <Icon d={I.users} />)}
