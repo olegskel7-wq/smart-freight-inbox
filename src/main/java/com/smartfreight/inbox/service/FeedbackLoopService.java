@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Captures operator corrections as training examples (Phase 3.1 — AI Feedback Loop).
@@ -140,6 +141,31 @@ public class FeedbackLoopService {
      * @return a formatted example block (enquiry/approved-reply pairs), or "" if none
      */
     public String retrieveExamples(TicketType ticketType, String enquiry) {
+        // Guard before embedding so a disabled feature / blank enquiry costs no Ollama call.
+        if (!settingsService.isFeatureEnabled(FEATURE_KEY, true)
+                || enquiry == null || enquiry.isBlank() || retrieveCount <= 0) {
+            return "";
+        }
+        return retrieveExamples(ticketType, enquiry, () -> embeddingService.embed(enquiry));
+    }
+
+    /**
+     * Same as {@link #retrieveExamples(TicketType, String)} but pulls the enquiry embedding from a
+     * supplier instead of producing its own.
+     *
+     * <p>The pipeline shares ONE memoised supplier between this and
+     * {@link KnowledgeBaseService#retrieveContext(String, Supplier)}, so a single draft makes at most
+     * one embedding call across both retrievers — and only if a retriever passes its own feature/blank
+     * checks and actually asks for it. When the supplier yields empty (Ollama down / breaker open) this
+     * still degrades to the recency fallback, exactly as the self-embedding overload does.
+     *
+     * @param ticketType        the incoming ticket's type (the pre-filter dimension; may be null)
+     * @param enquiry           the exact input the AI is drafting from (body + attachment text)
+     * @param embeddingSupplier supplies the enquiry's embedding (empty if it could not be produced)
+     * @return a formatted example block (enquiry/approved-reply pairs), or "" if none
+     */
+    public String retrieveExamples(TicketType ticketType, String enquiry,
+                                   Supplier<Optional<float[]>> embeddingSupplier) {
         try {
             if (!settingsService.isFeatureEnabled(FEATURE_KEY, true)) {
                 return "";
@@ -148,7 +174,7 @@ public class FeedbackLoopService {
                 return "";
             }
             String typeName = ticketType == null ? null : ticketType.name();
-            Optional<float[]> embedding = embeddingService.embed(enquiry);
+            Optional<float[]> embedding = embeddingSupplier.get();
             List<TrainingExample> matches = embedding
                     .map(vec -> repository.findSimilar(typeName, EmbeddingService.toVectorLiteral(vec), retrieveCount))
                     .orElseGet(() -> repository.findRecent(typeName, retrieveCount));

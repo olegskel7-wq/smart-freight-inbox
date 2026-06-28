@@ -53,6 +53,11 @@ export function useApi() {
           method: 'POST',
           body: body != null ? JSON.stringify(body) : undefined,
         }),
+      put: <T>(path: string, body?: unknown) =>
+        request<T>(path, {
+          method: 'PUT',
+          body: body != null ? JSON.stringify(body) : undefined,
+        }),
       upload: <T>(path: string, form: FormData) =>
         request<T>(path, { method: 'POST', body: form }),
       del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
