@@ -59,6 +59,24 @@ class SlaServiceTest {
                 .isEqualTo(slaService.deadlineFor(TicketType.GENERAL, RECEIVED));
     }
 
+    // --- Phase 3.10: escalation tightens the window ---
+
+    @Test
+    void deadlineFor_escalated_halvesTheWindow() {
+        // RFQ window 120 min × escalation-factor 0.5 = 60 min.
+        assertThat(slaService.deadlineFor(TicketType.RFQ, true, RECEIVED))
+                .isEqualTo(RECEIVED.plusMinutes(60));
+    }
+
+    @Test
+    void deadlineFor_notEscalated_keepsTheFullWindow() {
+        assertThat(slaService.deadlineFor(TicketType.RFQ, false, RECEIVED))
+                .isEqualTo(RECEIVED.plusMinutes(120));
+        // The legacy 2-arg overload must equal the not-escalated case.
+        assertThat(slaService.deadlineFor(TicketType.RFQ, false, RECEIVED))
+                .isEqualTo(slaService.deadlineFor(TicketType.RFQ, RECEIVED));
+    }
+
     @Test
     void isEnabled_delegatesToFeatureFlag() {
         when(settingsService.isFeatureEnabled(SlaService.FEATURE_KEY, true)).thenReturn(false);

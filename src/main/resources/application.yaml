@@ -149,6 +149,7 @@ sweep:
 sla:
   breach-check-interval-ms: 60000
   default-minutes: 480           # 8h — GENERAL and anything unlisted
+  escalation-factor: 0.5         # Phase 3.10: HIGH urgency / negative sentiment → half the SLA window
   minutes:
     rfq: 120                     # quotes go cold fast
     booking-confirm: 30          # operational, time-critical

@@ -71,6 +71,16 @@ public class TicketApiController {
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 200;
 
+    /**
+     * Phase 3.10: escalated tickets (negative tone or HIGH urgency) float to the top of the default
+     * view. Composed AHEAD of the createdAt sort so the most pressing work is seen first; applied only
+     * when the operator hasn't picked an explicit sort column (then their choice wins). urgency is an
+     * ORDINAL column (HIGH=2) so {@code DESC} ranks it correctly as a plain column.
+     */
+    private static final Sort ESCALATION_SORT = Sort.by(
+            Sort.Order.desc("sentimentNegative"),
+            Sort.Order.desc("urgency"));
+
     /** Actionable backlog for the summary strip — every status outside the terminal three. */
     private static final Set<TicketStatus> OPEN_STATUSES = EnumSet.of(
             TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.PROCESSING,
@@ -122,7 +132,7 @@ public class TicketApiController {
      */
     @GetMapping
     public PageDto<TicketSummaryDto> list(
-            @RequestParam(name = "sort", defaultValue = DEFAULT_SORT) String sort,
+            @RequestParam(name = "sort", required = false) String sort,
             @RequestParam(name = "dir", defaultValue = "desc") String dir,
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "assignee", defaultValue = "all") String assignee,
@@ -131,12 +141,20 @@ public class TicketApiController {
             @RequestParam(name = "size", defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             @AuthenticationPrincipal Jwt jwt) {
 
-        String safeSort = SORTABLE_COLUMNS.contains(sort) ? sort : DEFAULT_SORT;
+        // An explicit, valid sort column means the operator picked it (the SPA omits `sort` otherwise);
+        // an absent/invalid value is the default view. Only the default view floats escalated tickets up,
+        // so an explicit Date sort really wins — even when it is createdAt itself (Phase 3.10).
+        boolean explicitSort = sort != null && SORTABLE_COLUMNS.contains(sort);
+        String safeSort = explicitSort ? sort : DEFAULT_SORT;
         Sort.Direction direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
 
-        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(direction, safeSort));
+        Sort sortSpec = Sort.by(direction, safeSort);
+        if (!explicitSort) {
+            sortSpec = ESCALATION_SORT.and(sortSpec);
+        }
+        Pageable pageable = PageRequest.of(safePage, safeSize, sortSpec);
         TicketStatus statusFilter = parseStatusOrNull(status);
         String mode = assignee == null ? "all" : assignee.trim().toLowerCase();
 

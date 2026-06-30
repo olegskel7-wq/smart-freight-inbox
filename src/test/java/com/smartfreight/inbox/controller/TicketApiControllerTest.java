@@ -22,8 +22,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import com.smartfreight.inbox.entity.enums.Urgency;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -36,6 +38,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -118,6 +121,71 @@ class TicketApiControllerTest {
                 .andExpect(jsonPath("$.content[0].id").value(1))
                 .andExpect(jsonPath("$.content[0].status").value("DRAFT_READY"))
                 .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void listDefaultSortFloatsEscalatedTicketsFirst() throws Exception {
+        when(emailTicketRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(50), 0));
+
+        mockMvc.perform(get("/api/tickets")).andExpect(status().isOk());
+
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(emailTicketRepository).findAll(pageable.capture());
+        List<Sort.Order> orders = pageable.getValue().getSort().toList();
+        // Escalation keys lead, createdAt follows.
+        assertThat(orders.get(0).getProperty()).isEqualTo("sentimentNegative");
+        assertThat(orders.get(0).isDescending()).isTrue();
+        assertThat(orders.get(1).getProperty()).isEqualTo("urgency");
+        assertThat(orders.get(1).isDescending()).isTrue();
+        assertThat(orders.get(2).getProperty()).isEqualTo("createdAt");
+    }
+
+    @Test
+    void listExplicitSortColumnSkipsEscalationPrepend() throws Exception {
+        when(emailTicketRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(50), 0));
+
+        mockMvc.perform(get("/api/tickets").param("sort", "subject")).andExpect(status().isOk());
+
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(emailTicketRepository).findAll(pageable.capture());
+        List<Sort.Order> orders = pageable.getValue().getSort().toList();
+        // The operator chose a column → just that, no escalation override.
+        assertThat(orders).hasSize(1);
+        assertThat(orders.get(0).getProperty()).isEqualTo("subject");
+    }
+
+    @Test
+    void listExplicitCreatedAtSortWinsOverEscalation() throws Exception {
+        // Regression: clicking the Received column (sort=createdAt asc) must give strict chronological
+        // order, NOT escalated-first — the default view and an explicit createdAt sort are distinct.
+        when(emailTicketRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(50), 0));
+
+        mockMvc.perform(get("/api/tickets").param("sort", "createdAt").param("dir", "asc"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(emailTicketRepository).findAll(pageable.capture());
+        List<Sort.Order> orders = pageable.getValue().getSort().toList();
+        assertThat(orders).hasSize(1);
+        assertThat(orders.get(0).getProperty()).isEqualTo("createdAt");
+        assertThat(orders.get(0).isAscending()).isTrue();
+    }
+
+    @Test
+    void summaryDtoCarriesUrgencyAndSentiment() throws Exception {
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        t.setUrgency(Urgency.HIGH);
+        t.setSentimentNegative(true);
+        when(emailTicketRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(t), Pageable.ofSize(50), 1));
+
+        mockMvc.perform(get("/api/tickets"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].urgency").value("HIGH"))
+                .andExpect(jsonPath("$.content[0].sentimentNegative").value(true));
     }
 
     @Test

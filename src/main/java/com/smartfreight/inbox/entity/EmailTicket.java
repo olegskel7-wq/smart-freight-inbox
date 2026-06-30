@@ -3,12 +3,15 @@ package com.smartfreight.inbox.entity;
 import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.entity.enums.Urgency;
 import com.smartfreight.inbox.messaging.TicketLiveEventListener;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.annotations.TenantId;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -107,6 +110,28 @@ public class EmailTicket {
     @Enumerated(EnumType.STRING)
     @Column(name = "ticket_type")
     private TicketType ticketType;
+
+    /**
+     * How time-critical the email is (Phase 3.10), assigned by the AI classifier in the same Qwen call
+     * as relevance + type. Stored ORDINAL (LOW=0/NORMAL=1/HIGH=2) so the operator queue can order by
+     * {@code urgency DESC} as a plain column — see {@link Urgency}. Drives a tighter SLA window for HIGH
+     * and escalated-first list ordering; it never changes the AI draft. Defaults to NORMAL (also the
+     * fail-open verdict), so legacy rows and classifier outages read as normal priority.
+     */
+    @Enumerated(EnumType.ORDINAL)
+    @JdbcTypeCode(SqlTypes.SMALLINT)   // pin to SMALLINT (int2) — matches V34; avoids Hibernate's TINYINT-default vs Postgres int2 validate clash
+    @Column(name = "urgency", nullable = false)
+    @Builder.Default
+    private Urgency urgency = Urgency.NORMAL;
+
+    /**
+     * True when the classifier judged the customer's tone negative/angry (Phase 3.10). Like a HIGH
+     * urgency it escalates the ticket (tighter SLA + top of the queue) and shows a badge, so an unhappy
+     * customer is seen first. Defaults false (calm) — the fail-open and legacy value.
+     */
+    @Column(name = "sentiment_negative", nullable = false)
+    @Builder.Default
+    private boolean sentimentNegative = false;
 
     /**
      * Reply-by deadline (Phase 1.5) = createdAt + per-type SLA window. Set at ingest with

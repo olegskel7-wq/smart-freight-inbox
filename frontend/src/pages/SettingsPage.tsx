@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { useOperators } from '../api/useOperators.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { Settings } from '../types.ts'
 
@@ -25,6 +26,11 @@ export default function SettingsPage() {
   const [statusUpdateMilestones, setStatusUpdateMilestones] = useState('')
   const [quoteFollowUpEnabled, setQuoteFollowUpEnabled] = useState(false)
   const [quoteFollowUpDelayHours, setQuoteFollowUpDelayHours] = useState('48')
+  const [smartRoutingEnabled, setSmartRoutingEnabled] = useState(true)
+  const [escalationAssignee, setEscalationAssignee] = useState('')
+  // Operator list for the escalation-assignee dropdown (Phase 3.10). Best-effort: a non-admin can't
+  // read /api/users (403) → the selector just falls back to "no operators".
+  const operators = useOperators()
   const [extractionPrompt, setExtractionPrompt] = useState('')
   const [draftingPrompt, setDraftingPrompt] = useState('')
 
@@ -48,6 +54,8 @@ export default function SettingsPage() {
     setStatusUpdateMilestones(s.statusUpdateMilestones)
     setQuoteFollowUpEnabled(s.quoteFollowUpEnabled)
     setQuoteFollowUpDelayHours(s.quoteFollowUpDelayHours)
+    setSmartRoutingEnabled(s.smartRoutingEnabled)
+    setEscalationAssignee(s.escalationAssignee)
     setExtractionPrompt(s.extractionPrompt)
     setDraftingPrompt(s.draftingPrompt)
   }, [])
@@ -513,6 +521,61 @@ export default function SettingsPage() {
               </div>
             </div>
             <button type="submit" className="btn btn-primary btn-sm">Save quote follow-up settings</button>
+          </form>
+        </div>
+      </div>
+
+      {/* Smart Routing (Phase 3.10) */}
+      <div className="card shadow-sm mb-4">
+        <div className="card-header fw-semibold d-flex align-items-center gap-2">
+          Smart Routing
+          <span className={`badge small ${data.smartRoutingEnabled ? 'bg-success' : 'bg-secondary'}`}>
+            {data.smartRoutingEnabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+        <div className="card-body">
+          <p className="text-muted small mb-3">
+            The AI classifier also rates each incoming email's <strong>urgency</strong> and{' '}
+            <strong>tone</strong> in the same step (no extra AI call). Urgent or negative emails get a
+            tighter SLA window and float to the top of the queue. Optionally, auto-assign such escalated
+            emails to a chosen operator — leave it blank to keep assignment manual.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              void save(
+                () =>
+                  api.post<Settings>('/api/settings/routing', {
+                    smartRoutingEnabled,
+                    escalationAssignee,
+                  }),
+                'Smart-routing settings saved.',
+                (s) => ({ kind: 'success', text: `Smart-routing settings saved${s.smartRoutingEnabled ? '' : ' (feature is off)'}.` }),
+              )
+            }}
+          >
+            <div className="form-check form-switch mb-3">
+              <input className="form-check-input" type="checkbox" role="switch" id="smartRoutingEnabled"
+                     checked={smartRoutingEnabled} onChange={(e) => setSmartRoutingEnabled(e.target.checked)} />
+              <label className="form-check-label" htmlFor="smartRoutingEnabled">
+                Detect urgency &amp; sentiment
+              </label>
+            </div>
+            <div className="mb-3">
+              <label className="form-label fw-semibold" htmlFor="escalationAssignee">Escalation assignee</label>
+              <select className="form-select" style={{ maxWidth: 360 }} id="escalationAssignee"
+                      value={escalationAssignee} onChange={(e) => setEscalationAssignee(e.target.value)}>
+                <option value="">— None (leave unassigned) —</option>
+                {operators.map((op) => (
+                  <option key={op.id} value={op.id}>{op.email}</option>
+                ))}
+              </select>
+              <div className="form-text">
+                Urgent or negative-tone emails are auto-assigned to this operator while still unclaimed.
+                A manually assigned ticket is never reassigned.
+              </div>
+            </div>
+            <button type="submit" className="btn btn-primary btn-sm">Save smart-routing settings</button>
           </form>
         </div>
       </div>

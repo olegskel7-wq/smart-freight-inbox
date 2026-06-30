@@ -5,6 +5,8 @@ export interface TicketSummary {
   senderEmail: string | null
   subject: string | null
   ticketType: string | null
+  urgency: string | null
+  sentimentNegative: boolean
   extractedIdentifier: string | null
   status: string | null
   aiConfidence: number | null
@@ -43,6 +45,8 @@ export interface TicketDetail {
   body: string | null
   attachmentText: string | null
   ticketType: string | null
+  urgency: string | null
+  sentimentNegative: boolean
   extractedIdentifier: string | null
   status: string | null
   aiConfidence: number | null
@@ -256,6 +260,8 @@ export interface Settings {
   statusUpdateMilestones: string
   quoteFollowUpEnabled: boolean
   quoteFollowUpDelayHours: string
+  smartRoutingEnabled: boolean
+  escalationAssignee: string
   mailboxes: MailboxRow[]
 }
 

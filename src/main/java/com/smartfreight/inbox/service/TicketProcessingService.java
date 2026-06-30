@@ -55,6 +55,14 @@ public class TicketProcessingService {
     /** Maximum number of retry attempts on an optimistic lock conflict. */
     private static final int MAX_RETRY_ATTEMPTS = 3;
 
+    /**
+     * Per-tenant setting (Phase 3.10): the Keycloak user UUID that escalated (HIGH urgency / negative
+     * sentiment) tickets are auto-assigned to. Blank/unset → no auto-assign (escalation still tightens
+     * the SLA + floats the ticket to the top of the queue). Resolved via the standard
+     * {@code tenant_setting → app_setting → default} chain.
+     */
+    public static final String SETTING_ESCALATION_ASSIGNEE = "routing.escalation-assignee";
+
     private final EmailTicketRepository emailTicketRepository;
     private final EmailClassificationService emailClassificationService;
     private final AiExtractionService aiExtractionService;
@@ -71,6 +79,7 @@ public class TicketProcessingService {
     private final EmbeddingService embeddingService;
     private final SettingsService settingsService;
     private final WebhookEventPublisher webhookEventPublisher;
+    private final TicketAuditService ticketAuditService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
@@ -103,6 +112,7 @@ public class TicketProcessingService {
                                    EmbeddingService embeddingService,
                                    SettingsService settingsService,
                                    WebhookEventPublisher webhookEventPublisher,
+                                   TicketAuditService ticketAuditService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailClassificationService = emailClassificationService;
@@ -120,6 +130,7 @@ public class TicketProcessingService {
         this.embeddingService = embeddingService;
         this.settingsService = settingsService;
         this.webhookEventPublisher = webhookEventPublisher;
+        this.ticketAuditService = ticketAuditService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -250,11 +261,18 @@ public class TicketProcessingService {
             }
             // Persisted together with the PROCESSING transition below — no extra UPDATE.
             ticket.setTicketType(classification.type());
+            // Phase 3.10: smart-routing signals from the same classification call.
+            ticket.setUrgency(classification.urgency());
+            ticket.setSentimentNegative(classification.sentimentNegative());
             // Phase 1.5: refine the provisional (GENERAL) deadline to the per-type window.
             // Still anchored to createdAt — the customer's clock started at receipt.
+            // Phase 3.10: an escalated ticket (HIGH urgency / negative tone) gets a tighter window.
             if (slaService.isEnabled()) {
-                ticket.setSlaDeadlineAt(slaService.deadlineFor(classification.type(), ticket.getCreatedAt()));
+                ticket.setSlaDeadlineAt(slaService.deadlineFor(classification.type(),
+                        classification.isEscalated(), ticket.getCreatedAt()));
             }
+            // Phase 3.10: route an escalated, still-unclaimed ticket to the configured escalation operator.
+            applyEscalationRouting(ticket, classification);
             // Phase 3.5 S2: the customer is booking — notify the CRM. Fires once: a typed ticket is not
             // re-classified (the retry path only re-enters this block when ticketType is still null), and
             // this runs inside the pipeline transaction so the delivery is queued atomically with the verdict.
@@ -370,6 +388,29 @@ public class TicketProcessingService {
             gmailDraftService.saveDraft(ticket);
         }
         return autoSendEligible;
+    }
+
+    /**
+     * Auto-assigns an escalated ticket to the tenant's configured escalation operator (Phase 3.10).
+     *
+     * Routing is deliberately deterministic, not LLM-chosen: the classifier only flags HIGH urgency /
+     * negative tone (it does not know the tenant's operators), and a tenant opts in by setting
+     * {@link #SETTING_ESCALATION_ASSIGNEE} on {@code /settings}. We only ever claim an UNassigned
+     * ticket, so a manual assignment (Phase 3.3) is never overwritten. With no assignee configured the
+     * ticket simply stays unclaimed — escalation still tightened the SLA and floats it to the top.
+     * Mutating {@code assigneeUserId} fires the existing {@code @PostUpdate} live event for free.
+     */
+    private void applyEscalationRouting(EmailTicket ticket, EmailClassificationService.ClassificationResult classification) {
+        if (!classification.isEscalated() || ticket.getAssigneeUserId() != null) {
+            return;
+        }
+        String target = settingsService.getString(SETTING_ESCALATION_ASSIGNEE, "").trim();
+        if (target.isEmpty()) {
+            return;
+        }
+        ticket.setAssigneeUserId(target);
+        ticketAuditService.record(ticket.getId(), TicketAuditService.ACTION_ASSIGN, "auto-escalation to=" + target);
+        log.info("Auto-assigned escalated ticket {} to escalation operator {}", ticket.getId(), target);
     }
 
     /**

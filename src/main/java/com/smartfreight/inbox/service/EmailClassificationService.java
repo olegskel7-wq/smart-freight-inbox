@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.entity.enums.Urgency;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -43,6 +44,13 @@ public class EmailClassificationService {
     /** Feature flag gating the typed (Phase 1.4) prompt; off = pre-1.4 binary classification. */
     public static final String FEATURE_KEY = "feature.ticket-type";
 
+    /**
+     * Feature flag gating the Phase 3.10 smart-routing extension (urgency + sentiment in the same call).
+     * Default ON. It only adds signals on top of the typed verdict — when {@link #FEATURE_KEY} is off
+     * (binary mode) there is no type to ride along, so urgency/sentiment are not requested either.
+     */
+    public static final String FEATURE_SMART_ROUTING = "feature.smart-routing";
+
     /** Maximum email body length sent to the classifier — shorter than for extraction since one-word answer is faster. */
     private static final int MAX_CLASSIFICATION_BODY_CHARS = 1000;
 
@@ -52,10 +60,29 @@ public class EmailClassificationService {
     /**
      * Outcome of one classification call.
      *
-     * @param relevant whether the email is a freight inquiry (false = park as IRRELEVANT)
-     * @param type     business type; null when irrelevant or when {@code feature.ticket-type} is off
+     * @param relevant          whether the email is a freight inquiry (false = park as IRRELEVANT)
+     * @param type              business type; null when irrelevant or when {@code feature.ticket-type} is off
+     * @param urgency           how time-critical the email is (Phase 3.10); NORMAL when smart routing is off
+     * @param sentimentNegative whether the customer's tone reads negative (Phase 3.10); false when off
      */
-    public record ClassificationResult(boolean relevant, TicketType type) {
+    public record ClassificationResult(boolean relevant, TicketType type,
+                                       Urgency urgency, boolean sentimentNegative) {
+
+        /** Relevance + type with no routing signals (NORMAL/calm) — retry path, binary mode, fail-open. */
+        public ClassificationResult(boolean relevant, TicketType type) {
+            this(relevant, type, Urgency.NORMAL, false);
+        }
+
+        /**
+         * The single definition of "escalated" (Phase 3.10): HIGH urgency or a negative tone. Drives the
+         * tighter SLA window and the escalation auto-assign — see {@link SlaService#deadlineFor} and
+         * {@link TicketProcessingService}. (The escalated-first list sort re-encodes this as column order,
+         * and the metric counts the two reasons separately, so those two stay self-contained by design.)
+         */
+        public boolean isEscalated() {
+            return urgency == Urgency.HIGH || sentimentNegative;
+        }
+
         static final ClassificationResult IRRELEVANT = new ClassificationResult(false, null);
     }
 
@@ -106,11 +133,14 @@ public class EmailClassificationService {
         }
 
         boolean typed = settingsService.isFeatureEnabled(FEATURE_KEY, true);
+        // Smart routing (Phase 3.10) rides on the typed verdict — no type, nothing to route.
+        boolean smartRouting = typed && settingsService.isFeatureEnabled(FEATURE_SMART_ROUTING, true);
 
         String truncatedBody = body.substring(0, Math.min(body.length(), MAX_CLASSIFICATION_BODY_CHARS));
         String safeSubject = subject != null ? subject : "";
 
-        String prompt = (typed ? typedPrompt() : binaryPrompt())
+        String instruction = typed ? (smartRouting ? typedRoutingPrompt() : typedPrompt()) : binaryPrompt();
+        String prompt = instruction
                 + "\n\nSubject: " + safeSubject + "\n"
                 + "Email:\n" + truncatedBody;
 
@@ -150,7 +180,7 @@ public class EmailClassificationService {
         }
 
         log.debug("Classification response: '{}'", answer);
-        return record(parseAnswer(answer, typed));
+        return record(parseAnswer(answer, typed, smartRouting));
     }
 
     /**
@@ -164,35 +194,67 @@ public class EmailClassificationService {
         return settingsService.isFeatureEnabled(FEATURE_KEY, true);
     }
 
+    /** Backwards-compatible parse with no smart-routing signals (relevance + type only). */
+    static ClassificationResult parseAnswer(String answer, boolean typed) {
+        return parseAnswer(answer, typed, false);
+    }
+
     /**
-     * Maps the model's one-word answer to a result.
+     * Maps the model's answer to a result.
      *
-     * IRRELEVANT is checked first (it contains "RELEVANT" as a substring). In typed mode the
-     * answer is matched against the {@link TicketType} names; a bare RELEVANT or anything
-     * unrecognised falls back to GENERAL (fail-open). In binary mode the pre-1.4 contract
-     * holds: relevant with no type.
+     * In smart-routing mode (typed + {@code feature.smart-routing}) the model replies
+     * {@code TYPE|URGENCY|SENTIMENT} (e.g. {@code RFQ|HIGH|NEGATIVE}); the answer is split on '|' and
+     * each field parsed independently and leniently. Otherwise only the first field (the type / RELEVANT
+     * / IRRELEVANT word) matters and the routing fields stay at their fail-open defaults (NORMAL/calm).
+     *
+     * IRRELEVANT is checked first (it contains "RELEVANT" as a substring) and short-circuits — spam
+     * carries no urgency/sentiment. In typed mode the type field is matched against the {@link TicketType}
+     * names; a bare RELEVANT or anything unrecognised falls back to GENERAL (fail-open). In binary mode
+     * the pre-1.4 contract holds: relevant with no type.
      *
      * Package-private for unit testing.
      */
-    static ClassificationResult parseAnswer(String answer, boolean typed) {
-        if (answer.startsWith("IRRELEVANT")) {
+    static ClassificationResult parseAnswer(String answer, boolean typed, boolean smartRouting) {
+        String[] fields = answer.split("\\|");   // split always yields length >= 1
+        String typeField = fields[0].trim();
+
+        if (typeField.startsWith("IRRELEVANT")) {
             return ClassificationResult.IRRELEVANT;
         }
         if (!typed) {
-            if (!answer.startsWith("RELEVANT")) {
+            if (!typeField.startsWith("RELEVANT")) {
                 log.warn("Unexpected classification answer '{}' - treating as relevant (fail-open)", answer);
             }
             return new ClassificationResult(true, null);
         }
-        for (TicketType type : TicketType.values()) {
-            if (answer.startsWith(type.name())) {
-                return new ClassificationResult(true, type);
+
+        TicketType type = firstStartingWith(typeField, TicketType.values(), null);
+        if (type == null) {
+            if (!typeField.startsWith("RELEVANT")) {
+                log.warn("Unexpected classification answer '{}' - treating as relevant/GENERAL (fail-open)", answer);
+            }
+            type = TicketType.GENERAL;
+        }
+
+        if (!smartRouting) {
+            return new ClassificationResult(true, type);
+        }
+        // Lenient: unknown/blank urgency fails open to NORMAL (no spurious escalation); negative only on an
+        // explicit NEGATIVE token (POSITIVE/NEUTRAL/blank/noise = calm).
+        Urgency urgency = firstStartingWith(fields.length > 1 ? fields[1] : "", Urgency.values(), Urgency.NORMAL);
+        boolean negative = (fields.length > 2 ? fields[2] : "").trim().startsWith("NEGATIVE");
+        return new ClassificationResult(true, type, urgency, negative);
+    }
+
+    /** First enum constant whose name the (trimmed) field starts with, else {@code fallback} — the shared lenient parse. */
+    private static <E extends Enum<E>> E firstStartingWith(String field, E[] values, E fallback) {
+        String value = field.trim();
+        for (E candidate : values) {
+            if (value.startsWith(candidate.name())) {
+                return candidate;
             }
         }
-        if (!answer.startsWith("RELEVANT")) {
-            log.warn("Unexpected classification answer '{}' - treating as relevant/GENERAL (fail-open)", answer);
-        }
-        return failOpen(true);
+        return fallback;
     }
 
     private static ClassificationResult failOpen(boolean typed) {
@@ -213,6 +275,17 @@ public class EmailClassificationService {
         } else {
             log.info("Email classified as RELEVANT - proceeding to pipeline");
         }
+        // Phase 3.10: count escalations (HIGH urgency and/or negative tone) for routing observability.
+        // Like smartfreight_tickets_type_total above, this counts classification VERDICTS, not unique
+        // tickets — a ticket whose pipeline rolls back after classification and re-classifies on retry
+        // is counted again. That's acceptable for an observability gauge (and consistent with the type
+        // metric); de-duplicating would need per-ticket idempotency the classifier doesn't carry.
+        if (result.urgency() == Urgency.HIGH) {
+            meterRegistry.counter("smartfreight_tickets_escalated_total", "reason", "urgency").increment();
+        }
+        if (result.sentimentNegative()) {
+            meterRegistry.counter("smartfreight_tickets_escalated_total", "reason", "sentiment").increment();
+        }
         return result;
     }
 
@@ -229,6 +302,25 @@ public class EmailClassificationService {
                 + "GENERAL - any other freight-related email\n"
                 + "Reply with exactly one word: IRRELEVANT, RFQ, STATUS_UPDATE, BOOKING_CONFIRM, "
                 + "INVOICE_QUERY, DOCUMENT_REQUEST or GENERAL.";
+    }
+
+    /**
+     * Phase 3.10 prompt: the typed verdict plus urgency and sentiment in ONE answer, pipe-separated —
+     * {@code TYPE|URGENCY|SENTIMENT}. Kept terse and example-anchored so a local 7B stays on format;
+     * the parser is lenient and fail-open, so drift degrades to NORMAL/calm rather than an error.
+     */
+    private static String typedRoutingPrompt() {
+        return "You are a logistics email triage assistant.\n"
+                + "If this email is NOT related to freight, shipping or logistics, reply exactly: IRRELEVANT\n"
+                + "Otherwise reply with THREE fields separated by '|' : TYPE|URGENCY|SENTIMENT\n"
+                + "TYPE is one of: RFQ (price/quote), STATUS_UPDATE (where is it / ETA / tracking), "
+                + "BOOKING_CONFIRM (booking request or confirmation), INVOICE_QUERY (invoice/charges/payment), "
+                + "DOCUMENT_REQUEST (POD, bill of lading, customs papers), GENERAL (any other freight email).\n"
+                + "URGENCY is one of: LOW (no time pressure), NORMAL (standard), "
+                + "HIGH (time-critical: deadline, demurrage, stuck/held shipment, 'urgent', 'asap').\n"
+                + "SENTIMENT is one of: NEUTRAL, POSITIVE, NEGATIVE (angry, frustrated, complaining, threatening to leave).\n"
+                + "Examples: RFQ|NORMAL|NEUTRAL   STATUS_UPDATE|HIGH|NEGATIVE\n"
+                + "Reply with ONLY that one line, no explanation.";
     }
 
     /** Pre-1.4 binary prompt, used when feature.ticket-type is off. */

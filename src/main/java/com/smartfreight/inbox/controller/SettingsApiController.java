@@ -7,10 +7,12 @@ import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler;
 import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
 import com.smartfreight.inbox.service.AutoSendService;
+import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
+import com.smartfreight.inbox.service.TicketProcessingService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -92,6 +94,9 @@ public class SettingsApiController {
     /** Request body for {@code POST /api/settings/notifications}. */
     public record NotificationsRequest(boolean draftEnabled) {}
 
+    /** Request body for {@code POST /api/settings/routing} (Phase 3.10). */
+    public record RoutingRequest(boolean smartRoutingEnabled, String escalationAssignee) {}
+
     /** Request body for {@code POST /api/settings/prompts}. */
     public record PromptsRequest(String extractionPrompt, String draftingPrompt) {}
 
@@ -163,6 +168,22 @@ public class SettingsApiController {
         }
         settingsService.setString(QuoteFollowUpScheduler.FEATURE_KEY, request.enabled() ? "true" : "false");
         settingsService.setString(QuoteFollowUpScheduler.KEY_DELAY_HOURS, String.valueOf(parsed));
+        return buildResponse();
+    }
+
+    /**
+     * POST /api/settings/routing — updates the Phase 3.10 smart-routing gate and the escalation assignee.
+     * The assignee is a Keycloak user UUID (the SPA picks it from the operator list) or blank to clear it;
+     * it is stored as-is (trimmed) — an unknown id simply never matches a real operator and never gets
+     * auto-assigned, so no extra validation is needed here. With the flag off the classifier stops
+     * extracting urgency/sentiment (existing tickets keep their last values).
+     */
+    @PostMapping("/routing")
+    public SettingsResponse saveRouting(@RequestBody RoutingRequest request) {
+        settingsService.setString(EmailClassificationService.FEATURE_SMART_ROUTING,
+                request.smartRoutingEnabled() ? "true" : "false");
+        String assignee = request.escalationAssignee() == null ? "" : request.escalationAssignee().trim();
+        settingsService.setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, assignee);
         return buildResponse();
     }
 
@@ -285,6 +306,8 @@ public class SettingsApiController {
                 settingsService.isFeatureEnabled(QuoteFollowUpScheduler.FEATURE_KEY, false),
                 settingsService.getString(QuoteFollowUpScheduler.KEY_DELAY_HOURS,
                         String.valueOf(QuoteFollowUpScheduler.DEFAULT_DELAY_HOURS)),
+                settingsService.isFeatureEnabled(EmailClassificationService.FEATURE_SMART_ROUTING, true),
+                settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""),
                 mailboxes);
     }
 }
