@@ -28,6 +28,8 @@ public record SettingsResponse(
         String statusUpdateMilestones,
         boolean quoteFollowUpEnabled,
         String quoteFollowUpDelayHours,
+        boolean smartRoutingEnabled,
+        String escalationAssignee,
         List<MailboxDto> mailboxes) {
 
     /**

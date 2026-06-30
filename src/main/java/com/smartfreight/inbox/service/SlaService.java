@@ -48,9 +48,29 @@ public class SlaService {
      * @return deadline = receivedAt + the type's configured window
      */
     public LocalDateTime deadlineFor(TicketType type, LocalDateTime receivedAt) {
+        return deadlineFor(type, false, receivedAt);
+    }
+
+    /**
+     * Reply-by deadline for a ticket, tightened when the AI classifier escalated it (Phase 3.10).
+     *
+     * An escalated ticket (HIGH urgency or negative sentiment — see
+     * {@link EmailClassificationService.ClassificationResult#isEscalated()}) gets the per-type window
+     * scaled by {@code sla.escalation-factor} (default 0.5), so an urgent/angry email is due sooner.
+     * The factor only ever shortens the window (min 1 minute); a normal ticket is unchanged.
+     *
+     * @param type       ticket type; null (unclassified) is treated as GENERAL
+     * @param escalated  whether the classifier escalated this ticket (HIGH urgency / negative tone)
+     * @param receivedAt when the email was received (ticket createdAt) — the SLA clock anchor
+     * @return deadline = receivedAt + the (possibly escalated) window
+     */
+    public LocalDateTime deadlineFor(TicketType type, boolean escalated, LocalDateTime receivedAt) {
         TicketType effective = type != null ? type : TicketType.GENERAL;
         long minutes = properties.getMinutes()
                 .getOrDefault(effective, properties.getDefaultMinutes());
+        if (escalated) {
+            minutes = Math.max(1, Math.round(minutes * properties.getEscalationFactor()));
+        }
         return receivedAt.plusMinutes(minutes);
     }
 }

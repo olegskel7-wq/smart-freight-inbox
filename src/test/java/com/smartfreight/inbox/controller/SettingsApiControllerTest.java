@@ -5,10 +5,12 @@ import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler;
 import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
 import com.smartfreight.inbox.service.AutoSendService;
+import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
+import com.smartfreight.inbox.service.TicketProcessingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -147,6 +149,28 @@ class SettingsApiControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(settingsService, never()).setString(eq(QuoteFollowUpScheduler.KEY_DELAY_HOURS), anyString());
+    }
+
+    @Test
+    void routingSavesFlagAndTrimmedAssignee() throws Exception {
+        mockMvc.perform(post("/api/settings/routing")
+                        .contentType("application/json")
+                        .content("{\"smartRoutingEnabled\":true,\"escalationAssignee\":\"  uuid-123  \"}"))
+                .andExpect(status().isOk());
+
+        verify(settingsService).setString(EmailClassificationService.FEATURE_SMART_ROUTING, "true");
+        verify(settingsService).setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, "uuid-123");
+    }
+
+    @Test
+    void routingBlankAssigneeClearsIt() throws Exception {
+        mockMvc.perform(post("/api/settings/routing")
+                        .contentType("application/json")
+                        .content("{\"smartRoutingEnabled\":false,\"escalationAssignee\":null}"))
+                .andExpect(status().isOk());
+
+        verify(settingsService).setString(EmailClassificationService.FEATURE_SMART_ROUTING, "false");
+        verify(settingsService).setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, "");
     }
 
     @Test

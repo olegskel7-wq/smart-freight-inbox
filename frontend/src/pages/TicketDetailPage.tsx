@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi, ApiError } from '../api/useApi.ts'
+import { useOperators } from '../api/useOperators.ts'
 import { useRoles } from '../auth/roles.ts'
-import type { TicketDetail, User } from '../types.ts'
+import type { TicketDetail } from '../types.ts'
 import { formatConfidence, formatDateTime, statusBadgeClass } from '../util/format.ts'
 
 export default function TicketDetailPage() {
@@ -19,7 +20,8 @@ export default function TicketDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [operators, setOperators] = useState<User[]>([])
+  // A tenant admin can assign to any teammate; non-admins can't read /api/users (403), so skip the fetch.
+  const operators = useOperators(isAdmin)
   const [assignTarget, setAssignTarget] = useState('')
 
   const load = useCallback(async () => {
@@ -36,13 +38,6 @@ export default function TicketDetailPage() {
   useEffect(() => {
     void load()
   }, [load])
-
-  // A tenant admin can assign to any teammate, so load the operator list for the picker (the API
-  // 403s for non-admins anyway; gating the fetch avoids a noisy console error for operators).
-  useEffect(() => {
-    if (!isAdmin) return
-    void api.get<User[]>('/api/users').then(setOperators).catch(() => setOperators([]))
-  }, [api, isAdmin])
 
   const assign = async (userId: string | null) => {
     setBusy(true)
@@ -144,6 +139,13 @@ export default function TicketDetailPage() {
       <dl className="row small text-muted mb-3">
         <dt className="col-sm-2">From</dt><dd className="col-sm-10">{ticket.senderEmail ?? '—'}</dd>
         <dt className="col-sm-2">Type</dt><dd className="col-sm-10">{ticket.ticketType ?? '—'}</dd>
+        <dt className="col-sm-2">Priority</dt>
+        <dd className="col-sm-10">
+          {ticket.urgency === 'HIGH'
+            ? <span className="badge bg-warning text-dark">High urgency</span>
+            : <span>{ticket.urgency ? ticket.urgency.charAt(0) + ticket.urgency.slice(1).toLowerCase() : 'Normal'}</span>}
+          {ticket.sentimentNegative && <span className="badge bg-danger ms-2">Negative tone</span>}
+        </dd>
         <dt className="col-sm-2">Identifier</dt><dd className="col-sm-10">{ticket.extractedIdentifier ?? '—'}</dd>
         <dt className="col-sm-2">Confidence</dt><dd className="col-sm-10">{formatConfidence(ticket.aiConfidence)}</dd>
         <dt className="col-sm-2">SLA deadline</dt>

@@ -77,7 +77,11 @@ export default function TicketsListPage() {
   const myId = auth.user?.profile.sub
   const [params, setParams] = useSearchParams()
 
-  const sort = params.get('sort') ?? 'createdAt'
+  // `sort` is only sent when the operator explicitly picks a column; otherwise the server applies its
+  // default view (escalated-first, then newest). Distinguishing "no preference" from "clicked Received"
+  // is why `sort` stays null until a column is clicked, and every reader guards on `explicitSort` (Phase 3.10).
+  const sort = params.get('sort')
+  const explicitSort = sort !== null
   const dir = params.get('dir') ?? 'desc'
   const status = params.get('status') ?? ''
   const assignee = params.get('assignee') ?? 'all'
@@ -96,7 +100,12 @@ export default function TicketsListPage() {
     setLoading(true)
     setError(null)
     try {
-      const qs = new URLSearchParams({ sort, dir, page: String(page) })
+      const qs = new URLSearchParams({ page: String(page) })
+      // Omit sort/dir unless the operator chose a column, so the server keeps escalated tickets on top.
+      if (sort !== null) {
+        qs.set('sort', sort)
+        qs.set('dir', dir)
+      }
       // A drill-down view (from a summary chip) takes precedence over the status/assignee filters.
       if (view) {
         qs.set('view', view)
@@ -111,7 +120,7 @@ export default function TicketsListPage() {
     } finally {
       setLoading(false)
     }
-  }, [api, sort, dir, status, assignee, view, page])
+  }, [api, explicitSort, sort, dir, status, assignee, view, page])
 
   // The summary strip is best-effort: a failed count never blocks the list.
   const loadStats = useCallback(async () => {
@@ -154,7 +163,8 @@ export default function TicketsListPage() {
   }
 
   const toggleSort = (key: string) => {
-    const nextDir = sort === key && dir === 'desc' ? 'asc' : 'desc'
+    // First click on a column (no explicit sort yet) sets desc; clicking the active column flips it.
+    const nextDir = explicitSort && sort === key && dir === 'desc' ? 'asc' : 'desc'
     update({ sort: key, dir: nextDir, page: '0' })
   }
 
@@ -291,7 +301,7 @@ export default function TicketsListPage() {
                     className="user-select-none"
                   >
                     {c.label}
-                    {sort === c.key && <span className="ms-1">{dir === 'asc' ? '▲' : '▼'}</span>}
+                    {explicitSort && sort === c.key && <span className="ms-1">{dir === 'asc' ? '▲' : '▼'}</span>}
                   </th>
                 ))}
                 <th className="text-end">Actions</th>
@@ -305,7 +315,11 @@ export default function TicketsListPage() {
                   <td className="text-truncate" style={{ maxWidth: 320 }}>
                     <Link to={`/tickets/${t.id}`}>{t.subject || '(no subject)'}</Link>
                   </td>
-                  <td>{t.ticketType ? <span className="sf-type">{t.ticketType}</span> : <span className="text-muted">—</span>}</td>
+                  <td>
+                    {t.ticketType ? <span className="sf-type">{t.ticketType}</span> : <span className="text-muted">—</span>}
+                    {t.urgency === 'HIGH' && <span className="badge bg-warning text-dark ms-1" title="High urgency">Urgent</span>}
+                    {t.sentimentNegative && <span className="badge bg-danger ms-1" title="Negative tone">Angry</span>}
+                  </td>
                   <td>{t.extractedIdentifier ?? '—'}</td>
                   <td>
                     <span className={`badge ${statusBadgeClass(t.status)}`}>{t.status ?? '—'}</span>

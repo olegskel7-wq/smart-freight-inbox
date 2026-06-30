@@ -5,6 +5,7 @@ import com.smartfreight.inbox.entity.TenantDocument;
 import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.entity.enums.Urgency;
 import com.smartfreight.inbox.service.EmailClassificationService.ClassificationResult;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
@@ -97,6 +98,9 @@ class TicketProcessingClassificationTest {
     @Mock
     private com.smartfreight.inbox.webhook.WebhookEventPublisher webhookEventPublisher;
 
+    @Mock
+    private TicketAuditService ticketAuditService;
+
     private TicketProcessingService service;
 
     @BeforeEach
@@ -106,7 +110,7 @@ class TicketProcessingClassificationTest {
                 itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
                 slaService, autoSendService, shipmentWatchService, documentRequestService,
                 feedbackLoopService, knowledgeBaseService, embeddingService, settingsService,
-                webhookEventPublisher, new SimpleMeterRegistry());
+                webhookEventPublisher, ticketAuditService, new SimpleMeterRegistry());
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);
@@ -156,7 +160,7 @@ class TicketProcessingClassificationTest {
         when(emailClassificationService.classify(eq("Container inquiry"), anyString()))
                 .thenReturn(new ClassificationResult(true, TicketType.STATUS_UPDATE));
         when(slaService.isEnabled()).thenReturn(true);
-        when(slaService.deadlineFor(TicketType.STATUS_UPDATE, ticket.getCreatedAt()))
+        when(slaService.deadlineFor(TicketType.STATUS_UPDATE, false, ticket.getCreatedAt()))
                 .thenReturn(ticket.getCreatedAt().plusHours(4));
         stubHappyPipeline();
 
@@ -167,6 +171,59 @@ class TicketProcessingClassificationTest {
         assertThat(ticket.getSlaDeadlineAt()).isEqualTo(ticket.getCreatedAt().plusHours(4));
         assertThat(ticket.getDraftReply()).isNotBlank();
         verify(emailClassificationService).classify(eq("Container inquiry"), anyString());
+    }
+
+    // --- Phase 3.10: smart routing — urgency/sentiment persisted + escalation auto-assign ---
+
+    @Test
+    void receivedTicket_escalated_persistsSignals_andAutoAssignsToEscalationOperator() {
+        EmailTicket ticket = ticket(TicketStatus.RECEIVED);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(emailClassificationService.classify(any(), any()))
+                .thenReturn(new ClassificationResult(true, TicketType.RFQ, Urgency.HIGH, true));
+        when(settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""))
+                .thenReturn("operator-uuid-9");
+        stubHappyPipeline();
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getUrgency()).isEqualTo(Urgency.HIGH);
+        assertThat(ticket.isSentimentNegative()).isTrue();
+        assertThat(ticket.getAssigneeUserId()).isEqualTo("operator-uuid-9");
+        verify(ticketAuditService).record(eq(1L), eq(TicketAuditService.ACTION_ASSIGN), anyString());
+    }
+
+    @Test
+    void receivedTicket_escalated_noAssigneeConfigured_staysUnassigned() {
+        EmailTicket ticket = ticket(TicketStatus.RECEIVED);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(emailClassificationService.classify(any(), any()))
+                .thenReturn(new ClassificationResult(true, TicketType.RFQ, Urgency.HIGH, false));
+        when(settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""))
+                .thenReturn("");
+        stubHappyPipeline();
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getUrgency()).isEqualTo(Urgency.HIGH);
+        assertThat(ticket.getAssigneeUserId()).isNull();
+        verify(ticketAuditService, never()).record(eq(1L), eq(TicketAuditService.ACTION_ASSIGN), anyString());
+    }
+
+    @Test
+    void receivedTicket_escalated_butAlreadyAssigned_isNotReassigned() {
+        EmailTicket ticket = ticket(TicketStatus.RECEIVED);
+        ticket.setAssigneeUserId("already-mine");
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(emailClassificationService.classify(any(), any()))
+                .thenReturn(new ClassificationResult(true, TicketType.RFQ, Urgency.HIGH, true));
+        stubHappyPipeline();
+
+        service.processAttempt(1L, System.nanoTime());
+
+        // A manual owner is never overwritten; the setting is not even read.
+        assertThat(ticket.getAssigneeUserId()).isEqualTo("already-mine");
+        verify(settingsService, never()).getString(eq(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE), anyString());
     }
 
     // Phase 3.9: the feedback loop and the knowledge base receive the SAME memoised embedding supplier,

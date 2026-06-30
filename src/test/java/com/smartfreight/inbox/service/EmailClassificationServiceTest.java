@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.entity.enums.Urgency;
 import com.smartfreight.inbox.service.EmailClassificationService.ClassificationResult;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -94,6 +95,73 @@ class EmailClassificationServiceTest {
 
         assertThat(result.relevant()).isTrue();
         assertThat(result.type()).isNull();
+    }
+
+    // --- Phase 3.10: smart routing (typed + feature.smart-routing → TYPE|URGENCY|SENTIMENT) ---
+
+    @Test
+    void routing_parsesTypeUrgencyAndSentiment() {
+        ClassificationResult result = EmailClassificationService.parseAnswer("RFQ|HIGH|NEGATIVE", true, true);
+
+        assertThat(result.relevant()).isTrue();
+        assertThat(result.type()).isEqualTo(TicketType.RFQ);
+        assertThat(result.urgency()).isEqualTo(Urgency.HIGH);
+        assertThat(result.sentimentNegative()).isTrue();
+    }
+
+    @Test
+    void routing_irrelevant_shortCircuitsWithNoEscalation() {
+        // Spam carries no urgency/sentiment even if the model appends fields.
+        ClassificationResult result = EmailClassificationService.parseAnswer("IRRELEVANT|HIGH|NEGATIVE", true, true);
+
+        assertThat(result.relevant()).isFalse();
+        assertThat(result.urgency()).isEqualTo(Urgency.NORMAL);
+        assertThat(result.sentimentNegative()).isFalse();
+    }
+
+    @Test
+    void routing_missingFields_failOpenToNormalAndCalm() {
+        // Model ignored the format and returned only the type — routing degrades, it does not error.
+        ClassificationResult result = EmailClassificationService.parseAnswer("STATUS_UPDATE", true, true);
+
+        assertThat(result.type()).isEqualTo(TicketType.STATUS_UPDATE);
+        assertThat(result.urgency()).isEqualTo(Urgency.NORMAL);
+        assertThat(result.sentimentNegative()).isFalse();
+    }
+
+    @Test
+    void routing_unknownUrgency_defaultsToNormal() {
+        ClassificationResult result = EmailClassificationService.parseAnswer("RFQ|WHENEVER|NEUTRAL", true, true);
+
+        assertThat(result.urgency()).isEqualTo(Urgency.NORMAL);
+        assertThat(result.sentimentNegative()).isFalse();
+    }
+
+    @Test
+    void routing_positiveSentiment_isNotNegative() {
+        ClassificationResult result = EmailClassificationService.parseAnswer("GENERAL|LOW|POSITIVE", true, true);
+
+        assertThat(result.urgency()).isEqualTo(Urgency.LOW);
+        assertThat(result.sentimentNegative()).isFalse();
+    }
+
+    @Test
+    void routing_off_ignoresExtraFields() {
+        // With smart routing off the pipe fields are not consulted — NORMAL/calm regardless.
+        ClassificationResult result = EmailClassificationService.parseAnswer("RFQ|HIGH|NEGATIVE", true, false);
+
+        assertThat(result.type()).isEqualTo(TicketType.RFQ);
+        assertThat(result.urgency()).isEqualTo(Urgency.NORMAL);
+        assertThat(result.sentimentNegative()).isFalse();
+    }
+
+    // isEscalated() is the single definition consumed by the SLA window and the auto-assign routing.
+    @Test
+    void isEscalated_trueOnHighUrgencyOrNegativeTone_falseOtherwise() {
+        assertThat(new ClassificationResult(true, TicketType.RFQ, Urgency.HIGH, false).isEscalated()).isTrue();
+        assertThat(new ClassificationResult(true, TicketType.RFQ, Urgency.NORMAL, true).isEscalated()).isTrue();
+        assertThat(new ClassificationResult(true, TicketType.RFQ, Urgency.NORMAL, false).isEscalated()).isFalse();
+        assertThat(new ClassificationResult(true, TicketType.RFQ, Urgency.LOW, false).isEscalated()).isFalse();
     }
 
     // --- Phase 1.7: circuit breaker ---
