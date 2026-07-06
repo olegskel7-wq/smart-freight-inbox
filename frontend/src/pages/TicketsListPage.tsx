@@ -5,19 +5,22 @@ import { useApi } from '../api/useApi.ts'
 import { useTicketStream } from '../api/useTicketStream.ts'
 import type { Page, TicketStats, TicketSummary } from '../types.ts'
 import { TICKET_STATUSES } from '../types.ts'
-import { formatConfidence, formatDateTime, statusBadgeClass } from '../util/format.ts'
+import { formatConfidence, formatDateTime, formatDateTimeShort, statusBadgeClass } from '../util/format.ts'
 
-const COLUMNS: { key: string; label: string; sortable: boolean }[] = [
-  { key: 'id', label: 'ID', sortable: true },
-  { key: 'senderEmail', label: 'From', sortable: true },
+// Fixed-layout column plan: px widths pin the compact columns, Subject (no width)
+// absorbs the leftover — the table can never outgrow the card (no horizontal scroll).
+// `cls: 'sf-col-wide'` columns are hidden on narrow laptops (<1300px) in favour of Subject.
+const COLUMNS: { key: string; label: string; sortable: boolean; width?: number; cls?: string }[] = [
+  { key: 'id', label: 'ID', sortable: true, width: 52 },
+  { key: 'senderEmail', label: 'From', sortable: true, width: 150 },
   { key: 'subject', label: 'Subject', sortable: true },
-  { key: 'ticketType', label: 'Type', sortable: true },
-  { key: 'extractedIdentifier', label: 'Identifier', sortable: true },
-  { key: 'status', label: 'Status', sortable: true },
-  { key: 'aiConfidence', label: 'Conf.', sortable: true },
-  { key: 'assignee', label: 'Assignee', sortable: false },
-  { key: 'slaDeadlineAt', label: 'SLA', sortable: true },
-  { key: 'createdAt', label: 'Received', sortable: true },
+  { key: 'ticketType', label: 'Type', sortable: true, width: 105 },
+  { key: 'extractedIdentifier', label: 'Identifier', sortable: true, width: 100, cls: 'sf-col-wide' },
+  { key: 'status', label: 'Status', sortable: true, width: 110 },
+  { key: 'aiConfidence', label: 'Conf.', sortable: true, width: 56, cls: 'sf-col-wide' },
+  { key: 'assignee', label: 'Assignee', sortable: false, width: 120 },
+  { key: 'slaDeadlineAt', label: 'SLA', sortable: true, width: 96 },
+  { key: 'createdAt', label: 'Received', sortable: true, width: 96 },
 ]
 
 // Inline SVG glyphs for the summary chips (no icon-font dependency, no CDN).
@@ -290,7 +293,7 @@ export default function TicketsListPage() {
         </div>
 
         <div className="table-responsive">
-          <table className="table table-hover align-middle mb-0">
+          <table className="table table-hover align-middle mb-0 sf-table-fixed">
             <thead>
               <tr>
                 {COLUMNS.map((c) => (
@@ -298,34 +301,35 @@ export default function TicketsListPage() {
                     key={c.key}
                     role={c.sortable ? 'button' : undefined}
                     onClick={c.sortable ? () => toggleSort(c.key) : undefined}
-                    className="user-select-none"
+                    className={'user-select-none' + (c.cls ? ` ${c.cls}` : '')}
+                    style={c.width ? { width: c.width } : undefined}
                   >
                     {c.label}
                     {explicitSort && sort === c.key && <span className="ms-1">{dir === 'asc' ? '▲' : '▼'}</span>}
                   </th>
                 ))}
-                <th className="text-end">Actions</th>
+                <th className="text-end" style={{ width: 88 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {data?.content.map((t) => (
                 <tr key={t.id}>
                   <td><Link to={`/tickets/${t.id}`}>{t.id}</Link></td>
-                  <td>{t.senderEmail ?? '—'}</td>
-                  <td className="text-truncate" style={{ maxWidth: 320 }}>
+                  <td title={t.senderEmail ?? undefined}>{t.senderEmail ?? '—'}</td>
+                  <td title={t.subject || undefined}>
                     <Link to={`/tickets/${t.id}`}>{t.subject || '(no subject)'}</Link>
                   </td>
-                  <td>
+                  <td className="sf-cell-wrap">
                     {t.ticketType ? <span className="sf-type">{t.ticketType}</span> : <span className="text-muted">—</span>}
                     {t.urgency === 'HIGH' && <span className="badge bg-warning text-dark ms-1" title="High urgency">Urgent</span>}
                     {t.sentimentNegative && <span className="badge bg-danger ms-1" title="Negative tone">Angry</span>}
                   </td>
-                  <td>{t.extractedIdentifier ?? '—'}</td>
-                  <td>
+                  <td className="sf-col-wide" title={t.extractedIdentifier ?? undefined}>{t.extractedIdentifier ?? '—'}</td>
+                  <td className="sf-cell-wrap">
                     <span className={`badge ${statusBadgeClass(t.status)}`}>{t.status ?? '—'}</span>
                     {t.slaBreached && <span className="badge bg-danger ms-1">Breached</span>}
                   </td>
-                  <td>{formatConfidence(t.aiConfidence)}</td>
+                  <td className="sf-col-wide">{formatConfidence(t.aiConfidence)}</td>
                   <td>
                     {t.assigneeUserId ? (
                       <span className="sf-assignee" title={t.assigneeEmail ?? undefined}>
@@ -338,8 +342,8 @@ export default function TicketsListPage() {
                       <span className="text-muted">Unassigned</span>
                     )}
                   </td>
-                  <td>{formatDateTime(t.slaDeadlineAt)}</td>
-                  <td>{formatDateTime(t.createdAt)}</td>
+                  <td title={formatDateTime(t.slaDeadlineAt)}>{formatDateTimeShort(t.slaDeadlineAt)}</td>
+                  <td title={formatDateTime(t.createdAt)}>{formatDateTimeShort(t.createdAt)}</td>
                   <td className="text-end">
                     {!t.assigneeUserId && (
                       <button
