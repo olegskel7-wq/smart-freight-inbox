@@ -8,10 +8,14 @@
     pipeline: ingestion -> classification -> extraction -> draft -> (auto-)reply. Replies
     land in Mailpit: http://localhost:8025.
 
-    Prerequisites:
-      docker compose --profile demo up -d greenmail mailpit
-      backend running with DEMO_MAIL_ENABLED=true (+ DEMO_IMAP_HOST/DEMO_SMTP_HOST=localhost
-      when run from the IDE) and MAILBOX_ENCRYPTION_KEY set.
+    Prerequisites (compose reads MAILBOX_ENCRYPTION_KEY from .env):
+      $env:DEMO_MAIL_ENABLED='true'; docker compose --profile demo up -d
+      From the IDE instead: DEMO_MAIL_ENABLED=true, DEMO_IMAP_HOST=localhost,
+      DEMO_SMTP_HOST=localhost AND MAILBOX_ENCRYPTION_KEY (from .env) in the run config.
+      Road tenant 90001 needs dev-seed V36 (job-ref extraction) - load it via psql.
+
+    Script execution is disabled by default on Windows - run it as:
+      powershell -ExecutionPolicy Bypass -File scripts\demo-mail.ps1 [args]
 
 .EXAMPLE
     .\scripts\demo-mail.ps1 -List

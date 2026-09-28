@@ -361,8 +361,19 @@ services:
     # Only starts with `docker compose --profile demo up -d` + DEMO_MAIL_ENABLED=true.
     image: greenmail/standalone:2.1.2
     profiles: ["demo"]
+    # The bundled cert doesn't name `greenmail`/`localhost`, and Angus Mail 2.x verifies the
+    # server hostname even with ssl.trust — so mint a throwaway self-signed cert with the right
+    # SANs at every start (no key material in the repo) instead of weakening the adapter's TLS.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        keytool -genkeypair -alias greenmail -keyalg RSA -keysize 2048 -validity 3650
+        -dname CN=greenmail -ext SAN=dns:greenmail,dns:localhost -storetype PKCS12
+        -keystore /tmp/demo-tls.p12 -storepass changeit -keypass changeit >/dev/null 2>&1
+        && exec /home/greenmail/run_greenmail.sh
     environment:
-      - GREENMAIL_OPTS=-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users.login=email -Dgreenmail.users=ops:${DEMO_MAIL_PASSWORD:-demo}@felixstowe-freight.example.com,dispatch:${DEMO_MAIL_PASSWORD:-demo}@midlands-haulage.example.com
+      - GREENMAIL_OPTS=-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.tls.keystore.file=/tmp/demo-tls.p12 -Dgreenmail.tls.keystore.password=changeit -Dgreenmail.users.login=email -Dgreenmail.users=ops:${DEMO_MAIL_PASSWORD:-demo}@felixstowe-freight.example.com,dispatch:${DEMO_MAIL_PASSWORD:-demo}@midlands-haulage.example.com
     ports:
       - "3025:3025"
       - "3993:3993"
