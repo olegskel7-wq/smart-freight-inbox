@@ -197,6 +197,8 @@ public class StatusWatchScheduler {
                 .subject("Shipment update: " + watch.getIdentifier())
                 .body("Proactive status update: " + watch.getIdentifier() + " → " + current)
                 .extractedIdentifier(watch.getIdentifier())
+                // Sent through the inbox the customer's status enquiry came in on.
+                .mailboxId(watch.getMailboxId())
                 .ticketType(TicketType.STATUS_UPDATE)
                 .draftReply(draft)
                 // type specific + identifier present + item found, no rate → 0.9 (clears 0.8).

@@ -42,6 +42,10 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Mirrors application.yaml demo.mail.inboxes (tenant 1 / 90001) - keep them in sync.
+# Tenant 1 also watches a second inbox, $quotesInbox: scenarios with a To key are sent there,
+# and their reply in Mailpit must come FROM that address (a reply leaves through the inbox the
+# enquiry arrived on).
+$quotesInbox = 'quotes@felixstowe-freight.example.com'
 $inboxes = @{
     felixstowe = 'ops@felixstowe-freight.example.com'
     midlands   = 'dispatch@midlands-haulage.example.com'
@@ -55,6 +59,10 @@ $scenarios = @(
        From = 'James Whitaker <james.whitaker@northgate-imports.example.com>'
        Subject = 'Quote request: 3 x 40HC Ningbo to Felixstowe, early November'
        Body = "Hello,`r`n`r`nCould you quote for 3 x 40HC, FCL, Ningbo to Felixstowe, cargo ready 4 November? Commodity is flat-pack furniture, approx 18 tonnes per box. We would need delivery to our warehouse in Chelmsford (CM2).`r`n`r`nPlease include THC and customs clearance.`r`n`r`nKind regards,`r`nJames Whitaker`r`nNorthgate Imports Ltd" }
+    @{ Tenant = 'felixstowe'; Name = 'rfq-quotes-desk'; Type = 'RFQ (2nd inbox)'; To = $quotesInbox
+       From = 'Helen Brooks <helen.brooks@brookfield-trading.example.com>'
+       Subject = 'LCL rate Shanghai to Felixstowe, 6 CBM'
+       Body = "Hello quotes team,`r`n`r`nPlease quote LCL Shanghai to Felixstowe for 6 CBM / 2,100 kg of ceramic tiles, cargo ready 20 October, delivered to our unit in Colchester (CO4).`r`n`r`nMany thanks,`r`nHelen Brooks`r`nBrookfield Trading Ltd" }
     @{ Tenant = 'felixstowe'; Name = 'status-container'; Type = 'STATUS_UPDATE'
        From = 'Maria Kowalski <maria.kowalski@globalship.example.com>'
        Subject = 'Where is MSCU1234567?'
@@ -129,7 +137,7 @@ $scenarios = @(
 
 if ($List) {
     $scenarios | ForEach-Object {
-        [pscustomobject]@{ Tenant = $_.Tenant; Scenario = $_.Name; Expected = $_.Type; Subject = $_.Subject }
+        [pscustomobject]@{ Tenant = $_.Tenant; Scenario = $_.Name; Expected = $_.Type; Inbox = $(if ($_.To) { $_.To } else { $inboxes[$_.Tenant] }); Subject = $_.Subject }
     } | Format-Table -AutoSize
     return
 }
@@ -172,7 +180,7 @@ $sent = 0
 try {
     for ($round = 1; $round -le $Repeat; $round++) {
         foreach ($s in $selected) {
-            $to = $inboxes[$s.Tenant]
+            $to = if ($s.To) { $s.To } else { $inboxes[$s.Tenant] }
             $msg = New-Object System.Net.Mail.MailMessage
             $msg.From = New-Object System.Net.Mail.MailAddress($s.From)
             $msg.To.Add($to)

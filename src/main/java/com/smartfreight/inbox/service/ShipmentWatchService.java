@@ -56,6 +56,10 @@ public class ShipmentWatchService {
                     return w;
                 });
         watch.setLastNotifiedStatus(item.getStatus());
+        // Proactive updates follow the latest enquiry's inbox; a ticket without one keeps the old.
+        if (ticket.getMailboxId() != null) {
+            watch.setMailboxId(ticket.getMailboxId());
+        }
         watch.setActive(true);
         watch.setUpdatedAt(LocalDateTime.now());
         watchRepository.save(watch);

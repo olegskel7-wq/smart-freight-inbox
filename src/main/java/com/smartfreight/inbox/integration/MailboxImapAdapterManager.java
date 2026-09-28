@@ -33,7 +33,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link EmailIngestionService#processIncomingEmail} call, so the ticket insert, the
  * per-tenant message-id dedup and the outbox event are all attributed to the mailbox's
  * tenant. This closes the S1 gap where ingestion ran unset (= default tenant) — under S3
- * fail-loud semantics an unbound ingestion would throw at the first DB touch.
+ * fail-loud semantics an unbound ingestion would throw at the first DB touch. The mailbox
+ * id is passed along too and stored on the ticket, so the reply goes out through the inbox
+ * the enquiry came in on.
  *
  * <p>Config changes are detected by fingerprint: an edited row (host, port, username,
  * password, enabled tenant) gets its adapter dropped and rebuilt. The IMAP password is
@@ -140,6 +142,7 @@ public class MailboxImapAdapterManager {
      */
     private IntegrationFlow buildFlow(TenantMailbox mailbox, String password) {
         Long tenantId = mailbox.getTenantId();
+        Long mailboxId = mailbox.getId();
         String url = String.format("imaps://%s:%s@%s:%d/INBOX",
                 encode(mailbox.getUsername()), encode(password), mailbox.getHost(), mailbox.getPort());
 
@@ -164,7 +167,7 @@ public class MailboxImapAdapterManager {
                 .handle(message -> {
                     MimeMessage mimeMessage = (MimeMessage) message.getPayload();
                     TenantContext.runAs(tenantId,
-                            () -> emailIngestionService.processIncomingEmail(mimeMessage));
+                            () -> emailIngestionService.processIncomingEmail(mimeMessage, mailboxId));
                 })
                 .get();
     }

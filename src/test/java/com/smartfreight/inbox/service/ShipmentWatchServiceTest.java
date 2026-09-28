@@ -97,4 +97,31 @@ class ShipmentWatchServiceTest {
 
         verifyNoInteractions(watchRepository);
     }
+
+    @Test
+    void recordsTheEnquirysMailbox_andAReEnquiryMovesIt() {
+        ShipmentWatch existing = new ShipmentWatch();
+        existing.setMailboxId(1L);
+        when(watchRepository.findByIdentifierAndCustomerEmail("MSCU1234567", "customer@acme.com"))
+                .thenReturn(Optional.of(existing));
+        EmailTicket reEnquiry = ticket("customer@acme.com", "MSCU1234567");
+        reEnquiry.setMailboxId(2L);
+
+        service.upsertFromTicket(reEnquiry, item("RELEASED"));
+
+        // Proactive updates follow the inbox the customer last wrote to.
+        assertEquals(2L, existing.getMailboxId());
+    }
+
+    @Test
+    void ticketWithoutMailbox_keepsTheWatchesMailbox() {
+        ShipmentWatch existing = new ShipmentWatch();
+        existing.setMailboxId(1L);
+        when(watchRepository.findByIdentifierAndCustomerEmail("MSCU1234567", "customer@acme.com"))
+                .thenReturn(Optional.of(existing));
+
+        service.upsertFromTicket(ticket("customer@acme.com", "MSCU1234567"), item("RELEASED"));
+
+        assertEquals(1L, existing.getMailboxId());
+    }
 }

@@ -52,6 +52,13 @@ public class ShipmentWatch {
     private String customerEmail;
 
     /**
+     * The mailbox the arming enquiry arrived on (V37) — proactive updates go out through it,
+     * like a reply would. Refreshed on re-enquiry; null → the tenant's default sender.
+     */
+    @Column(name = "mailbox_id")
+    private Long mailboxId;
+
+    /**
      * The status the customer was last notified of (raw backend status name, e.g. "RELEASED").
      * Null until the first notification; compared against the polled status so a milestone is
      * never re-sent.

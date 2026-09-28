@@ -89,6 +89,7 @@ class QuoteFollowUpSchedulerTest {
         t.setSubject("Quote for 2x40ft");
         t.setBody("Please quote Felixstowe to Leeds");
         t.setExtractedIdentifier(null);
+        t.setMailboxId(3L); // the inbox the RFQ arrived on
         return t;
     }
 
@@ -116,6 +117,7 @@ class QuoteFollowUpSchedulerTest {
         assertEquals("customer@acme.com", ticket.getSenderEmail());
         assertEquals("Just following up on our quote.", ticket.getDraftReply());
         assertTrue(ticket.getSubject().startsWith("Following up:"));
+        assertEquals(3L, ticket.getMailboxId(), "nudge leaves through the RFQ's inbox");
 
         assertFalse(f.isActive(), "a single nudge ends the subscription");
         verify(followUpRepository).save(f);

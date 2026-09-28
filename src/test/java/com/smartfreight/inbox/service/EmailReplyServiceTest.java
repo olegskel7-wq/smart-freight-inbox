@@ -39,8 +39,8 @@ class EmailReplyServiceTest {
     @BeforeEach
     void setUp() {
         service = new EmailReplyService(mailSenderProvider, documentRepository, new SimpleMeterRegistry());
-        // Every send resolves the current tenant's sender; here it is the platform sender mock.
-        when(mailSenderProvider.resolve())
+        // Every send resolves the sender for the ticket's mailbox; here it is the platform sender mock.
+        when(mailSenderProvider.resolve(any()))
                 .thenReturn(new MailSenderProvider.ResolvedSender(mailSender, "operator@smartfreight.com"));
         when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
     }
@@ -69,6 +69,17 @@ class EmailReplyServiceTest {
         service.sendReply(ticket);
 
         verify(mailSender, times(1)).send(mimeMessage);
+    }
+
+    // Multi-inbox: the sender is resolved for the mailbox the ticket arrived on.
+    @Test
+    void sendReply_resolvesSenderForTicketsMailbox() {
+        EmailTicket ticket = buildTicket("customer@example.com", "Quote", "Here is our quote.", "<msg-q@x>");
+        ticket.setMailboxId(5L);
+
+        service.sendReply(ticket);
+
+        verify(mailSenderProvider).resolve(5L);
     }
 
     // Сценарий 2: In-Reply-To и References заголовки выставляются по messageId тикета

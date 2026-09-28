@@ -191,6 +191,17 @@ public class EmailTicket {
     private boolean proactive = false;
 
     /**
+     * The {@link TenantMailbox} this enquiry arrived on (V37) — a tenant may watch several
+     * inboxes, and {@code MailSenderProvider} replies through this one so the customer hears
+     * back from the address they wrote to. Proactive tickets inherit it from the ticket they
+     * derive from. Null for pre-V37/seeded tickets or once the mailbox is deleted (the DB
+     * clears it) — the sender then falls back to the tenant default. Write-once
+     * ({@code updatable = false}): a stale entity must never re-point it at a deleted mailbox.
+     */
+    @Column(name = "mailbox_id", updatable = false)
+    private Long mailboxId;
+
+    /**
      * Heuristic confidence score 0.0–1.0 (Phase 1.6), computed from verifiable pipeline facts
      * (type classified, identifier extracted, item found, rate matched) — deliberately NOT an
      * LLM self-assessment, which small models cannot calibrate. Written on every drafting run
