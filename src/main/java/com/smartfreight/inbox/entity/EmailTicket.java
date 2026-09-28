@@ -191,6 +191,14 @@ public class EmailTicket {
     private boolean proactive = false;
 
     /**
+     * The {@link TenantMailbox} this enquiry arrived on (V37) — the reply leaves through it, see
+     * {@code MailSenderProvider}. Null for pre-V37/seeded tickets or once the mailbox is deleted.
+     * Write-once: a stale entity must never re-point it at a deleted mailbox.
+     */
+    @Column(name = "mailbox_id", updatable = false)
+    private Long mailboxId;
+
+    /**
      * Heuristic confidence score 0.0–1.0 (Phase 1.6), computed from verifiable pipeline facts
      * (type classified, identifier extracted, item found, rate matched) — deliberately NOT an
      * LLM self-assessment, which small models cannot calibrate. Written on every drafting run

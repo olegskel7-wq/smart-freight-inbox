@@ -19,10 +19,18 @@ public interface TenantMailboxRepository extends JpaRepository<TenantMailbox, Lo
     List<TenantMailbox> findByEnabledTrue();
 
     /**
-     * The current tenant's outbound sender: the first enabled mailbox that has SMTP
-     * configured (deterministic oldest-first). Tenant-filtered by {@code @TenantId}, so
-     * it must be called inside a tenant context. Empty → no per-tenant SMTP → the caller
-     * falls back to the platform account.
+     * A ticket's own mailbox as its outbound sender — only if it is enabled and has SMTP
+     * configured. A derived query (not {@code findById}) on purpose: it goes through the
+     * {@code @TenantId} filter as well as RLS, so another tenant's mailbox id resolves to
+     * empty, never to that tenant's account.
+     */
+    Optional<TenantMailbox> findByIdAndEnabledTrueAndSmtpHostIsNotNull(Long id);
+
+    /**
+     * The current tenant's default outbound sender: the first enabled mailbox that has SMTP
+     * configured (deterministic oldest-first) — used when a ticket's own mailbox is unknown
+     * or unusable. Tenant-filtered by {@code @TenantId}, so it must be called inside a tenant
+     * context. Empty → no per-tenant SMTP → the caller falls back to the platform account.
      */
     Optional<TenantMailbox> findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc();
 

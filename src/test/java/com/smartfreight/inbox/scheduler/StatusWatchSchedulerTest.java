@@ -83,6 +83,7 @@ class StatusWatchSchedulerTest {
         w.setCustomerEmail("customer@acme.com");
         w.setLastNotifiedStatus(lastNotified);
         w.setActive(true);
+        w.setMailboxId(3L); // the inbox the arming enquiry arrived on
         return w;
     }
 
@@ -117,6 +118,7 @@ class StatusWatchSchedulerTest {
         assertEquals("customer@acme.com", ticket.getSenderEmail());
         assertEquals("MSCU1234567", ticket.getExtractedIdentifier());
         assertEquals("Your shipment is released.", ticket.getDraftReply());
+        assertEquals(3L, ticket.getMailboxId(), "sent through the inbox the enquiry came in on");
 
         assertEquals("RELEASED", w.getLastNotifiedStatus());
         assertTrue(w.isActive());

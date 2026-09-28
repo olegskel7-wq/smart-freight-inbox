@@ -52,6 +52,9 @@ import org.mockito.quality.Strictness;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class EmailIngestionServiceTest {
 
+    /** The tenant_mailbox the adapter received the message on. */
+    private static final Long MAILBOX_ID = 7L;
+
     @Mock
     private EmailTicketRepository emailTicketRepository;
 
@@ -155,7 +158,7 @@ class EmailIngestionServiceTest {
                 .build();
         when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
 
-        emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
 
         ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
         verify(emailTicketRepository).save(captor.capture());
@@ -168,6 +171,8 @@ class EmailIngestionServiceTest {
         // Phase 1.3 session 3: ingestion persists as RECEIVED — classification happens
         // later in the RabbitMQ consumer, never on the IMAP thread.
         assertThat(captured.getStatus()).isEqualTo(TicketStatus.RECEIVED);
+        // Multi-inbox: the receiving mailbox is recorded so the reply leaves through it.
+        assertThat(captured.getMailboxId()).isEqualTo(MAILBOX_ID);
     }
 
     /**
@@ -185,7 +190,7 @@ class EmailIngestionServiceTest {
         when(slaService.isEnabled()).thenReturn(true);
         when(slaService.deadlineFor(isNull(), any())).thenReturn(deadline);
 
-        emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
 
         ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
         verify(emailTicketRepository).save(captor.capture());
@@ -201,7 +206,7 @@ class EmailIngestionServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0, EmailTicket.class));
         when(slaService.isEnabled()).thenReturn(false);
 
-        emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
 
         ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
         verify(emailTicketRepository).save(captor.capture());
@@ -225,7 +230,7 @@ class EmailIngestionServiceTest {
         when(emailTicketRepository.findByMessageId("<duplicate@example.com>"))
                 .thenReturn(Optional.of(EmailTicket.builder().id(1L).build()));
 
-        emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
 
         verify(emailTicketRepository, never()).save(any());
         verifyNoInteractions(ticketEventPublisher);
@@ -245,7 +250,7 @@ class EmailIngestionServiceTest {
         email.setText("Body text");
         // Message-ID antraštė specialiai nenustatoma
 
-        emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
 
         verify(emailTicketRepository, never()).save(any());
     }
@@ -270,7 +275,7 @@ class EmailIngestionServiceTest {
                 .messageId("<multipart-001@example.com>").build();
         when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
 
-        emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
 
         ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
         verify(emailTicketRepository).save(captor.capture());
@@ -298,7 +303,7 @@ class EmailIngestionServiceTest {
                 .messageId("<outbox-001@example.com>").build();
         when(emailTicketRepository.save(any())).thenReturn(savedTicket);
 
-        emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
 
         // The event carries the saved ticket's tenant (stamped by Hibernate @TenantId).
         verify(ticketEventPublisher).publishTicketCreated(99L, 1L);
@@ -324,7 +329,7 @@ class EmailIngestionServiceTest {
                 .messageId("<spam-001@example.com>").build();
         when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
 
-        emailIngestionService.processIncomingEmail(email);
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
 
         ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
         verify(emailTicketRepository).save(captor.capture());

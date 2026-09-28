@@ -103,9 +103,11 @@ public class EmailIngestionService {
      * If save() throws an exception, no ticket is created and no event is recorded.
      *
      * @param mimeMessage received Jakarta Mail message object
+     * @param mailboxId   the {@code tenant_mailbox} the message arrived on — stored on the ticket
+     *                    so the reply leaves through the same inbox
      */
     @Transactional
-    public void processIncomingEmail(MimeMessage mimeMessage) {
+    public void processIncomingEmail(MimeMessage mimeMessage, Long mailboxId) {
         try {
             String[] draftFlag = mimeMessage.getHeader(DraftNotificationService.DRAFT_HEADER_NAME);
             if (draftFlag != null && draftFlag.length > 0
@@ -164,6 +166,7 @@ public class EmailIngestionService {
                     .senderEmail(senderEmail)
                     .body(body)
                     .attachmentText(attachmentText.isBlank() ? null : attachmentText)
+                    .mailboxId(mailboxId)
                     // RECEIVED = persisted but not yet classified; the consumer decides
                     // IRRELEVANT vs pipeline. NEW is reserved for the retry re-entry path.
                     .status(TicketStatus.RECEIVED)

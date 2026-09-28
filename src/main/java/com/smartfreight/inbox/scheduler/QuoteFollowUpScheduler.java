@@ -193,6 +193,8 @@ public class QuoteFollowUpScheduler {
                 .subject("Following up: " + subject)
                 .body("Proactive quote follow-up for ticket " + followUp.getTicketId())
                 .extractedIdentifier(original.getExtractedIdentifier())
+                // The nudge continues the quote's conversation — same inbox the RFQ came in on.
+                .mailboxId(original.getMailboxId())
                 .ticketType(TicketType.RFQ)
                 .draftReply(draft)
                 // type specific + identifier maybe present + no item lookup, no rate. RFQ is not in

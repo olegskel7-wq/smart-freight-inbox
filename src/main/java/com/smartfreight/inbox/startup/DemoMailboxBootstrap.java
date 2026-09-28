@@ -12,6 +12,8 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
  * Wires the demo tenants to the fake mail servers (Phase 4.8 S2 — demo mail harness).
  *
@@ -25,7 +27,8 @@ import org.springframework.stereotype.Component;
  * run ({@code localhost}) and the compose stack ({@code greenmail}) just rewrites the host.
  *
  * <p>Harness off → the demo rows are DELETED (they are generated config, rebuilt on the next
- * demo start; nothing references {@code tenant_mailbox}). Merely disabling them is not enough:
+ * demo start; tickets that arrived on them just lose their {@code mailbox_id} — V37's
+ * ON DELETE SET NULL). Merely disabling them is not enough:
  * a lingering row still counts as "this tenant has a mailbox", so {@link MailboxBootstrap}
  * would never re-import the env mailbox again. For the same reason this runner is ordered
  * AFTER {@link MailboxBootstrap}.
@@ -70,23 +73,33 @@ public class DemoMailboxBootstrap implements ApplicationRunner {
                     + "cannot be stored. Set the key; no demo adapter will run until then.");
             return;
         }
-        properties.getInboxes().forEach((tenantId, address) -> {
+        properties.getInboxes().forEach((tenantId, addresses) -> {
             try {
                 if (!TenantContext.callAsSystem(() -> tenants.existsById(tenantId))) {
-                    log.warn("Demo mailbox {} skipped: tenant {} does not exist (seed it with the "
-                            + "dev-seed V31 demo dataset first)", address, tenantId);
+                    log.warn("Demo mailboxes {} skipped: tenant {} does not exist (seed it with the "
+                            + "dev-seed V31 demo dataset first)", addresses, tenantId);
                     return;
                 }
-                TenantContext.runAs(tenantId, () -> upsert(tenantId, address));
+                addresses.forEach(address -> upsertSafely(tenantId, address));
+                TenantContext.runAs(tenantId, () -> warnIfDefaultSenderIsNotDemo(tenantId, addresses));
             } catch (RuntimeException e) {
-                log.error("Demo mailbox {} (tenant {}) could not be set up", address, tenantId, e);
+                log.error("Demo mailboxes {} (tenant {}) could not be set up", addresses, tenantId, e);
             }
         });
     }
 
+    /** One failing inbox never blocks its siblings. */
+    private void upsertSafely(Long tenantId, String address) {
+        try {
+            TenantContext.runAs(tenantId, () -> upsert(tenantId, address));
+        } catch (RuntimeException e) {
+            log.error("Demo mailbox {} (tenant {}) could not be set up", address, tenantId, e);
+        }
+    }
+
     /** No tenant-existence check: under RLS the lookup for a missing tenant is simply empty. */
     private void tearDown() {
-        properties.getInboxes().forEach((tenantId, address) -> {
+        properties.getInboxes().forEach((tenantId, addresses) -> addresses.forEach(address -> {
             try {
                 TenantContext.runAs(tenantId, () -> mailboxes.findFirstByUsernameOrderByIdAsc(address)
                         .ifPresent(mailbox -> {
@@ -97,7 +110,7 @@ public class DemoMailboxBootstrap implements ApplicationRunner {
             } catch (RuntimeException e) {
                 log.error("Demo mailbox {} (tenant {}) could not be removed", address, tenantId, e);
             }
-        });
+        }));
     }
 
     private void upsert(Long tenantId, String address) {
@@ -114,17 +127,24 @@ public class DemoMailboxBootstrap implements ApplicationRunner {
         // heals a row left under a since-rotated MAILBOX_ENCRYPTION_KEY.
         mailbox.setPasswordEnc(secretCipher.encrypt(properties.getPassword()));
         mailbox.setEnabled(true);
-        TenantMailbox saved = mailboxes.save(mailbox);
+        mailboxes.save(mailbox);
         log.info("Demo mailbox {} {} → IMAPS {}:{}, SMTP {}:{} (tenant {})", address,
                 created ? "created" : "updated", properties.getImapHost(), properties.getImapPort(),
                 properties.getSmtpHost(), properties.getSmtpPort(), tenantId);
+    }
 
-        // Mirrors MailSenderProvider.resolve(): replies leave through the tenant's oldest enabled
-        // SMTP mailbox — warn if that is not the demo one (then Mailpit never sees them).
+    /**
+     * Demo mail is answered through the inbox it arrived on ({@code MailSenderProvider}), so it
+     * always lands in Mailpit. Only tickets tied to NO mailbox — the SQL-seeded demo tickets —
+     * fall back to the tenant's oldest SMTP mailbox: warn if that is a real account, because an
+     * operator replying to a seeded ticket would then send real mail to a fake address.
+     */
+    private void warnIfDefaultSenderIsNotDemo(Long tenantId, List<String> demoAddresses) {
         mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc()
-                .filter(sender -> !sender.getId().equals(saved.getId()))
-                .ifPresent(sender -> log.warn("Tenant {} has an older SMTP mailbox {} — replies will "
-                        + "go out through it, NOT Mailpit. Disable it on /settings for the demo.",
+                .filter(sender -> !demoAddresses.contains(sender.getUsername()))
+                .ifPresent(sender -> log.warn("Tenant {} has an older SMTP mailbox {} — demo mail is "
+                        + "answered from its own inbox, but seeded tickets (no inbox) reply through it, "
+                        + "NOT Mailpit. Disable it on /settings for the demo.",
                         tenantId, sender.getUsername()));
     }
 }

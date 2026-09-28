@@ -10,6 +10,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.core.annotation.Order;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -30,6 +31,7 @@ import static org.mockito.Mockito.when;
 class DemoMailboxBootstrapTest {
 
     private static final String ADDRESS = "ops@felixstowe-freight.example.com";
+    private static final String QUOTES_ADDRESS = "quotes@felixstowe-freight.example.com";
     private static final String ROAD_ADDRESS = "dispatch@midlands-haulage.example.com";
 
     private DemoMailProperties properties;
@@ -41,7 +43,7 @@ class DemoMailboxBootstrapTest {
     @BeforeEach
     void setUp() {
         properties = new DemoMailProperties();
-        properties.setInboxes(Map.of(1L, ADDRESS));
+        properties.setInboxes(Map.of(1L, List.of(ADDRESS)));
         mailboxes = mock(TenantMailboxRepository.class);
         tenants = mock(TenantRepository.class);
         cipher = mock(SecretCipher.class);
@@ -135,9 +137,9 @@ class DemoMailboxBootstrapTest {
     @Test
     void oneFailingInbox_neitherAbortsStartupNorBlocksTheNext() {
         properties.setEnabled(true);
-        Map<Long, String> inboxes = new LinkedHashMap<>();
-        inboxes.put(1L, ADDRESS);
-        inboxes.put(90001L, ROAD_ADDRESS);
+        Map<Long, List<String>> inboxes = new LinkedHashMap<>();
+        inboxes.put(1L, List.of(ADDRESS));
+        inboxes.put(90001L, List.of(ROAD_ADDRESS));
         properties.setInboxes(inboxes);
         when(tenants.existsById(90001L)).thenReturn(true);
         when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenThrow(new IllegalStateException("db down"));
@@ -146,6 +148,37 @@ class DemoMailboxBootstrapTest {
         assertThatCode(() -> bootstrap.run(null)).doesNotThrowAnyException();
 
         assertThat(captureSaved().getUsername()).isEqualTo(ROAD_ADDRESS);
+    }
+
+    @Test
+    void twoInboxesOnOneTenant_bothSetUp_andAFailingOneDoesNotBlockItsSibling() {
+        properties.setEnabled(true);
+        properties.setInboxes(Map.of(1L, List.of(ADDRESS, QUOTES_ADDRESS)));
+        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenThrow(new IllegalStateException("db down"));
+        when(mailboxes.findFirstByUsernameOrderByIdAsc(QUOTES_ADDRESS)).thenReturn(Optional.empty());
+
+        assertThatCode(() -> bootstrap.run(null)).doesNotThrowAnyException();
+
+        TenantMailbox saved = captureSaved();
+        assertThat(saved.getUsername()).isEqualTo(QUOTES_ADDRESS);
+        // Each inbox answers FROM its own address.
+        assertThat(saved.getFromAddress()).isEqualTo(QUOTES_ADDRESS);
+    }
+
+    @Test
+    void disabled_removesEveryDemoInboxOfATenant() {
+        properties.setInboxes(Map.of(1L, List.of(ADDRESS, QUOTES_ADDRESS)));
+        TenantMailbox ops = demoRow();
+        TenantMailbox quotes = demoRow();
+        quotes.setId(8L);
+        quotes.setUsername(QUOTES_ADDRESS);
+        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenReturn(Optional.of(ops));
+        when(mailboxes.findFirstByUsernameOrderByIdAsc(QUOTES_ADDRESS)).thenReturn(Optional.of(quotes));
+
+        bootstrap.run(null);
+
+        verify(mailboxes).delete(ops);
+        verify(mailboxes).delete(quotes);
     }
 
     @Test

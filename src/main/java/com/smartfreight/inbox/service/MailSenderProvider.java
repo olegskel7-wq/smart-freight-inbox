@@ -18,11 +18,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * Resolves the outbound SMTP sender for the CURRENT tenant (Phase 2.2 SMTP close-out).
  *
  * <p>Mirrors {@link OllamaClientProvider}: a per-tenant override on top of a platform
- * default. If the tenant has an enabled {@code tenant_mailbox} row with SMTP configured
- * ({@code smtp_host} set), replies are sent through THAT account, FROM the tenant's own
- * address; otherwise they fall back to the single platform SMTP account from {@code smtp.*}
- * env ({@link com.smartfreight.inbox.config.SmtpConfig}'s bean). Tenants that only set up
- * inbound IMAP keep working unchanged.
+ * default. Resolution order, first usable wins (usable = enabled with {@code smtp_host} set):
+ * <ol>
+ *   <li>the mailbox the ticket arrived on ({@code email_ticket.mailbox_id}, V37) — a tenant
+ *       may watch several inboxes, and the customer must hear back FROM the address they
+ *       wrote to, through that same account;</li>
+ *   <li>the tenant's oldest SMTP mailbox — for tickets with no mailbox (pre-V37, seeded) or
+ *       one that is disabled, SMTP-less or deleted;</li>
+ *   <li>the single platform SMTP account from {@code smtp.*} env
+ *       ({@link com.smartfreight.inbox.config.SmtpConfig}'s bean) — tenants that only set up
+ *       inbound IMAP keep working unchanged.</li>
+ * </ol>
  *
  * <p>One {@link JavaMailSender} per distinct SMTP config, cached and keyed by a fingerprint
  * (host|port|username|encrypted-password-hash) — an edited mailbox rebuilds its sender on
@@ -30,9 +36,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * IMAP adapters. The SMTP password reuses the mailbox's AES-GCM {@code passwordEnc}: one
  * account, one credential.
  *
- * <p>Must be called inside a tenant context — {@link TenantMailboxRepository}'s lookup is
- * {@code @TenantId}-filtered. Every send site (operator UI, auto-send, proactive scheduler)
- * already runs inside one.
+ * <p>Must be called inside a tenant context — {@link TenantMailboxRepository}'s lookups are
+ * {@code @TenantId}-filtered (and RLS-guarded), so a mailbox id of another tenant resolves to
+ * nothing and falls through to this tenant's own default. Every send site (operator UI,
+ * auto-send, proactive scheduler) already runs inside one.
  */
 @Service
 public class MailSenderProvider {
@@ -57,10 +64,16 @@ public class MailSenderProvider {
         this.platformFrom = platformFrom;
     }
 
-    /** The sender + from-address for the current tenant (platform account if none configured). */
-    public ResolvedSender resolve() {
+    /**
+     * The sender + from-address for a reply in the current tenant.
+     *
+     * @param mailboxId the mailbox the ticket arrived on; null → the tenant's default sender
+     */
+    public ResolvedSender resolve(Long mailboxId) {
         if (secretCipher.isConfigured()) {
-            Optional<TenantMailbox> mailbox = mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc();
+            Optional<TenantMailbox> mailbox = Optional.ofNullable(mailboxId)
+                    .flatMap(mailboxes::findByIdAndEnabledTrueAndSmtpHostIsNotNull)
+                    .or(mailboxes::findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc);
             if (mailbox.isPresent()) {
                 TenantMailbox m = mailbox.get();
                 JavaMailSender sender = senders.computeIfAbsent(fingerprint(m), fp -> buildSender(m));

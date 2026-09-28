@@ -26,9 +26,8 @@ import java.util.Optional;
  * 3. {@link #sendReply} sends the message via SMTP to the sender's address
  * 4. In-Reply-To/References headers are set for correct threading
  *
- * The SMTP transport and FROM address are resolved per send by {@link MailSenderProvider}:
- * a tenant with its own mailbox SMTP configured sends from its own account, everyone else
- * falls back to the platform SMTP account ({@link com.smartfreight.inbox.config.SmtpConfig}).
+ * The SMTP transport and FROM address are resolved per send by {@link MailSenderProvider},
+ * from the mailbox the ticket arrived on (with tenant/platform fallbacks).
  */
 @Service
 public class EmailReplyService {
@@ -68,7 +67,7 @@ public class EmailReplyService {
      * @throws RuntimeException if SMTP sending failed
      */
     public void sendReply(EmailTicket ticket) {
-        MailSenderProvider.ResolvedSender resolved = mailSenderProvider.resolve();
+        MailSenderProvider.ResolvedSender resolved = mailSenderProvider.resolve(ticket.getMailboxId());
         JavaMailSender mailSender = resolved.sender();
         // Phase 2.7: a document-request reply may carry an attachment. Resolve it up front so the
         // helper is multipart ONLY when there is a file — text-only replies keep their exact prior

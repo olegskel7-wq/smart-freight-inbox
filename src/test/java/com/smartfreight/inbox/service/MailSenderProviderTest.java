@@ -10,14 +10,19 @@ import org.springframework.mail.javamail.JavaMailSenderImpl;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link MailSenderProvider} — per-tenant SMTP resolution with platform
- * fallback (Phase 2.2 SMTP close-out).
+ * Unit tests for {@link MailSenderProvider} — per-tenant SMTP resolution: the ticket's own
+ * mailbox, then the tenant's default SMTP mailbox, then the platform account.
+ *
+ * <p>"Usable" (enabled + SMTP host) is filtered by the repository query, so here an unusable
+ * ticket mailbox is simply an empty by-id lookup; the real filtering and tenant scoping are
+ * proven on Postgres in {@code TicketMailboxTenantIsolationTest}.
  */
 class MailSenderProviderTest {
 
@@ -35,11 +40,16 @@ class MailSenderProviderTest {
     }
 
     private TenantMailbox smtpMailbox(String fromAddress) {
+        return smtpMailbox(1L, "inbox@acme.co.uk", fromAddress);
+    }
+
+    private TenantMailbox smtpMailbox(Long id, String username, String fromAddress) {
         TenantMailbox m = new TenantMailbox();
+        m.setId(id);
         m.setTenantId(1L);
         m.setHost("imap.gmail.com");
         m.setPort(993);
-        m.setUsername("inbox@acme.co.uk");
+        m.setUsername(username);
         m.setPasswordEnc("ENC(pw)");
         m.setSmtpHost("smtp.gmail.com");
         m.setSmtpPort(587);
@@ -48,12 +58,66 @@ class MailSenderProviderTest {
     }
 
     @Test
+    void resolve_ticketMailboxUsable_winsOverTenantDefault() {
+        when(cipher.isConfigured()).thenReturn(true);
+        when(cipher.decrypt(any())).thenReturn("pw");
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(2L))
+                .thenReturn(Optional.of(smtpMailbox(2L, "quotes@acme.co.uk", "quotes@acme.co.uk")));
+
+        MailSenderProvider.ResolvedSender resolved = provider.resolve(2L);
+
+        assertThat(resolved.from()).isEqualTo("quotes@acme.co.uk");
+        assertThat(((JavaMailSenderImpl) resolved.sender()).getUsername()).isEqualTo("quotes@acme.co.uk");
+        // The oldest-mailbox rule is only a fallback — not even consulted here.
+        verify(mailboxes, never()).findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc();
+    }
+
+    @Test
+    void resolve_ticketMailboxUnusable_fallsBackToTenantDefault() {
+        // Disabled, SMTP-less, deleted or another tenant's → the by-id lookup is empty.
+        when(cipher.isConfigured()).thenReturn(true);
+        when(cipher.decrypt(any())).thenReturn("pw");
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(2L)).thenReturn(Optional.empty());
+        when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
+                .thenReturn(Optional.of(smtpMailbox(1L, "ops@acme.co.uk", "ops@acme.co.uk")));
+
+        MailSenderProvider.ResolvedSender resolved = provider.resolve(2L);
+
+        assertThat(resolved.from()).isEqualTo("ops@acme.co.uk");
+    }
+
+    @Test
+    void resolve_ticketMailboxUnusableAndNoTenantSmtp_fallsBackToPlatform() {
+        when(cipher.isConfigured()).thenReturn(true);
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(2L)).thenReturn(Optional.empty());
+        when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc()).thenReturn(Optional.empty());
+
+        MailSenderProvider.ResolvedSender resolved = provider.resolve(2L);
+
+        assertThat(resolved.sender()).isSameAs(platformSender);
+        assertThat(resolved.from()).isEqualTo("platform@smartfreight.com");
+    }
+
+    @Test
+    void resolve_noTicketMailbox_usesTenantDefaultWithoutByIdLookup() {
+        when(cipher.isConfigured()).thenReturn(true);
+        when(cipher.decrypt(any())).thenReturn("pw");
+        when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
+                .thenReturn(Optional.of(smtpMailbox("sales@acme.co.uk")));
+
+        MailSenderProvider.ResolvedSender resolved = provider.resolve(null);
+
+        assertThat(resolved.from()).isEqualTo("sales@acme.co.uk");
+        verify(mailboxes, never()).findByIdAndEnabledTrueAndSmtpHostIsNotNull(any());
+    }
+
+    @Test
     void resolve_noTenantSmtp_fallsBackToPlatform() {
         when(cipher.isConfigured()).thenReturn(true);
         when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
                 .thenReturn(Optional.empty());
 
-        MailSenderProvider.ResolvedSender resolved = provider.resolve();
+        MailSenderProvider.ResolvedSender resolved = provider.resolve(null);
 
         assertThat(resolved.sender()).isSameAs(platformSender);
         assertThat(resolved.from()).isEqualTo("platform@smartfreight.com");
@@ -63,10 +127,11 @@ class MailSenderProviderTest {
     void resolve_cipherNotConfigured_fallsBackWithoutQueryingMailboxes() {
         when(cipher.isConfigured()).thenReturn(false);
 
-        MailSenderProvider.ResolvedSender resolved = provider.resolve();
+        MailSenderProvider.ResolvedSender resolved = provider.resolve(2L);
 
         assertThat(resolved.sender()).isSameAs(platformSender);
         // No point reading mailboxes — the password could not be decrypted anyway.
+        verify(mailboxes, never()).findByIdAndEnabledTrueAndSmtpHostIsNotNull(any());
         verify(mailboxes, never()).findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc();
     }
 
@@ -77,7 +142,7 @@ class MailSenderProviderTest {
         when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
                 .thenReturn(Optional.of(smtpMailbox("sales@acme.co.uk")));
 
-        MailSenderProvider.ResolvedSender resolved = provider.resolve();
+        MailSenderProvider.ResolvedSender resolved = provider.resolve(null);
 
         assertThat(resolved.sender()).isNotSameAs(platformSender);
         assertThat(resolved.sender()).isInstanceOf(JavaMailSenderImpl.class);
@@ -96,7 +161,7 @@ class MailSenderProviderTest {
         when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
                 .thenReturn(Optional.of(smtpMailbox(null)));
 
-        MailSenderProvider.ResolvedSender resolved = provider.resolve();
+        MailSenderProvider.ResolvedSender resolved = provider.resolve(null);
 
         assertThat(resolved.from()).isEqualTo("inbox@acme.co.uk");
     }
@@ -105,14 +170,32 @@ class MailSenderProviderTest {
     void resolve_sameConfig_cachesSenderInstance() {
         when(cipher.isConfigured()).thenReturn(true);
         when(cipher.decrypt("ENC(pw)")).thenReturn("pw");
-        when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(1L))
                 .thenReturn(Optional.of(smtpMailbox("sales@acme.co.uk")));
 
-        JavaMailSender first = provider.resolve().sender();
-        JavaMailSender second = provider.resolve().sender();
+        JavaMailSender first = provider.resolve(1L).sender();
+        JavaMailSender second = provider.resolve(1L).sender();
 
         // Same fingerprint → one built sender reused (decrypt happens once at build time).
         assertThat(second).isSameAs(first);
         verify(cipher).decrypt("ENC(pw)");
+    }
+
+    @Test
+    void resolve_twoInboxesOfOneTenant_getDistinctSenders() {
+        when(cipher.isConfigured()).thenReturn(true);
+        when(cipher.decrypt(any())).thenReturn("pw");
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(1L))
+                .thenReturn(Optional.of(smtpMailbox(1L, "ops@acme.co.uk", null)));
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(2L))
+                .thenReturn(Optional.of(smtpMailbox(2L, "quotes@acme.co.uk", null)));
+
+        MailSenderProvider.ResolvedSender ops = provider.resolve(1L);
+        MailSenderProvider.ResolvedSender quotes = provider.resolve(2L);
+
+        // Different accounts → different cached transports, each FROM its own address.
+        assertThat(quotes.sender()).isNotSameAs(ops.sender());
+        assertThat(ops.from()).isEqualTo("ops@acme.co.uk");
+        assertThat(quotes.from()).isEqualTo("quotes@acme.co.uk");
     }
 }
