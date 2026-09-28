@@ -22,7 +22,7 @@ import java.util.Map;
 @Setter
 public class DemoMailProperties {
 
-    /** Master switch. Off = demo mailboxes (if any were created earlier) are disabled. */
+    /** Master switch. Off = demo mailboxes (if any were created earlier) are removed. */
     private boolean enabled = false;
 
     /** GreenMail IMAPS endpoint (self-signed cert — trusted per host by the IMAP adapter). */
@@ -33,9 +33,9 @@ public class DemoMailProperties {
     private String smtpHost = "mailpit";
     private int smtpPort = 1025;
 
-    /** Password of every GreenMail demo account (matches GREENMAIL_OPTS in docker-compose). */
+    /** Password stored for the demo accounts. GreenMail runs with auth disabled, so any value works. */
     private String password = "demo";
 
-    /** Tenant id → the demo inbox address that tenant's adapter watches. */
+    /** Tenant id → the demo inbox address that tenant's adapter watches (mirrored in scripts/demo-mail.ps1). */
     private Map<Long, String> inboxes = new LinkedHashMap<>();
 }

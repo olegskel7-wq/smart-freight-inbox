@@ -189,7 +189,8 @@ mailbox:
 # Demo mail harness (Phase 4.8 S2). DEMO_MAIL_ENABLED=true + `docker compose --profile demo up`
 # wires each demo tenant to a GreenMail IMAPS inbox and routes its replies to Mailpit
 # (http://localhost:8025). Feed traffic with scripts/demo-mail.ps1. From the IDE, set
-# DEMO_IMAP_HOST=localhost and DEMO_SMTP_HOST=localhost. Off = demo mailboxes get disabled.
+# DEMO_IMAP_HOST=localhost and DEMO_SMTP_HOST=localhost. Off = demo mailboxes get removed.
+# The inbox addresses below are mirrored in scripts/demo-mail.ps1 ($inboxes) — keep them in sync.
 demo:
   mail:
     enabled: ${DEMO_MAIL_ENABLED:false}

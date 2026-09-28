@@ -8,8 +8,11 @@
     pipeline: ingestion -> classification -> extraction -> draft -> (auto-)reply. Replies
     land in Mailpit: http://localhost:8025.
 
-    Prerequisites (compose reads MAILBOX_ENCRYPTION_KEY from .env):
-      $env:DEMO_MAIL_ENABLED='true'; docker compose --profile demo up -d
+    Prerequisites (compose reads MAILBOX_ENCRYPTION_KEY from .env). Put these two lines in .env
+    so routine `docker compose up -d` runs keep the demo on:
+      COMPOSE_PROFILES=demo
+      DEMO_MAIL_ENABLED=true
+    then: docker compose up -d
       From the IDE instead: DEMO_MAIL_ENABLED=true, DEMO_IMAP_HOST=localhost,
       DEMO_SMTP_HOST=localhost AND MAILBOX_ENCRYPTION_KEY (from .env) in the run config.
       Road tenant 90001 needs dev-seed V36 (job-ref extraction) - load it via psql.
@@ -36,6 +39,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Mirrors application.yaml demo.mail.inboxes (tenant 1 / 90001) - keep them in sync.
 $inboxes = @{
     felixstowe = 'ops@felixstowe-freight.example.com'
     midlands   = 'dispatch@midlands-haulage.example.com'
