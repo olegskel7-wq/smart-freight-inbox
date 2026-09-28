@@ -191,12 +191,9 @@ public class EmailTicket {
     private boolean proactive = false;
 
     /**
-     * The {@link TenantMailbox} this enquiry arrived on (V37) — a tenant may watch several
-     * inboxes, and {@code MailSenderProvider} replies through this one so the customer hears
-     * back from the address they wrote to. Proactive tickets inherit it from the ticket they
-     * derive from. Null for pre-V37/seeded tickets or once the mailbox is deleted (the DB
-     * clears it) — the sender then falls back to the tenant default. Write-once
-     * ({@code updatable = false}): a stale entity must never re-point it at a deleted mailbox.
+     * The {@link TenantMailbox} this enquiry arrived on (V37) — the reply leaves through it, see
+     * {@code MailSenderProvider}. Null for pre-V37/seeded tickets or once the mailbox is deleted.
+     * Write-once: a stale entity must never re-point it at a deleted mailbox.
      */
     @Column(name = "mailbox_id", updatable = false)
     private Long mailboxId;

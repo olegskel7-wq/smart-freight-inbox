@@ -50,7 +50,7 @@ class MailSenderProviderTest {
         m.setHost("imap.gmail.com");
         m.setPort(993);
         m.setUsername(username);
-        m.setPasswordEnc("ENC(" + username + ")");
+        m.setPasswordEnc("ENC(pw)");
         m.setSmtpHost("smtp.gmail.com");
         m.setSmtpPort(587);
         m.setFromAddress(fromAddress);
@@ -138,7 +138,7 @@ class MailSenderProviderTest {
     @Test
     void resolve_tenantSmtp_buildsSenderFromMailbox() {
         when(cipher.isConfigured()).thenReturn(true);
-        when(cipher.decrypt("ENC(inbox@acme.co.uk)")).thenReturn("pw");
+        when(cipher.decrypt("ENC(pw)")).thenReturn("pw");
         when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
                 .thenReturn(Optional.of(smtpMailbox("sales@acme.co.uk")));
 
@@ -157,7 +157,7 @@ class MailSenderProviderTest {
     @Test
     void resolve_tenantSmtpWithoutFromAddress_usesUsername() {
         when(cipher.isConfigured()).thenReturn(true);
-        when(cipher.decrypt("ENC(inbox@acme.co.uk)")).thenReturn("pw");
+        when(cipher.decrypt("ENC(pw)")).thenReturn("pw");
         when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
                 .thenReturn(Optional.of(smtpMailbox(null)));
 
@@ -169,7 +169,7 @@ class MailSenderProviderTest {
     @Test
     void resolve_sameConfig_cachesSenderInstance() {
         when(cipher.isConfigured()).thenReturn(true);
-        when(cipher.decrypt("ENC(inbox@acme.co.uk)")).thenReturn("pw");
+        when(cipher.decrypt("ENC(pw)")).thenReturn("pw");
         when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(1L))
                 .thenReturn(Optional.of(smtpMailbox("sales@acme.co.uk")));
 
@@ -178,7 +178,7 @@ class MailSenderProviderTest {
 
         // Same fingerprint → one built sender reused (decrypt happens once at build time).
         assertThat(second).isSameAs(first);
-        verify(cipher).decrypt("ENC(inbox@acme.co.uk)");
+        verify(cipher).decrypt("ENC(pw)");
     }
 
     @Test

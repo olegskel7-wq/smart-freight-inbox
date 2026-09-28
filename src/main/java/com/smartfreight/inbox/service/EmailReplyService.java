@@ -26,10 +26,8 @@ import java.util.Optional;
  * 3. {@link #sendReply} sends the message via SMTP to the sender's address
  * 4. In-Reply-To/References headers are set for correct threading
  *
- * The SMTP transport and FROM address are resolved per send by {@link MailSenderProvider}:
- * the reply leaves through the mailbox the ticket arrived on (multi-inbox tenants), else the
- * tenant's default SMTP mailbox, else the platform SMTP account
- * ({@link com.smartfreight.inbox.config.SmtpConfig}).
+ * The SMTP transport and FROM address are resolved per send by {@link MailSenderProvider},
+ * from the mailbox the ticket arrived on (with tenant/platform fallbacks).
  */
 @Service
 public class EmailReplyService {

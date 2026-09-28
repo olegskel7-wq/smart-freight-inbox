@@ -80,18 +80,21 @@ public class DemoMailboxBootstrap implements ApplicationRunner {
                             + "dev-seed V31 demo dataset first)", addresses, tenantId);
                     return;
                 }
-                for (String address : addresses) {
-                    try {
-                        TenantContext.runAs(tenantId, () -> upsert(tenantId, address));
-                    } catch (RuntimeException e) {
-                        log.error("Demo mailbox {} (tenant {}) could not be set up", address, tenantId, e);
-                    }
-                }
+                addresses.forEach(address -> upsertSafely(tenantId, address));
                 TenantContext.runAs(tenantId, () -> warnIfDefaultSenderIsNotDemo(tenantId, addresses));
             } catch (RuntimeException e) {
                 log.error("Demo mailboxes {} (tenant {}) could not be set up", addresses, tenantId, e);
             }
         });
+    }
+
+    /** One failing inbox never blocks its siblings. */
+    private void upsertSafely(Long tenantId, String address) {
+        try {
+            TenantContext.runAs(tenantId, () -> upsert(tenantId, address));
+        } catch (RuntimeException e) {
+            log.error("Demo mailbox {} (tenant {}) could not be set up", address, tenantId, e);
+        }
     }
 
     /** No tenant-existence check: under RLS the lookup for a missing tenant is simply empty. */

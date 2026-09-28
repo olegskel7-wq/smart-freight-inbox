@@ -112,6 +112,16 @@ class TicketMailboxTenantIsolationTest {
                 provider.resolve(tickets.findById(ticketId).orElseThrow().getMailboxId()).from());
     }
 
+    private String fromFor(Long tenant, Long mailboxId) {
+        return TenantContext.callAs(tenant, () -> provider.resolve(mailboxId).from());
+    }
+
+    /** Read straight from the V37 column, not the entity. */
+    private Long storedMailboxId(Long ticketId) {
+        return TenantContext.callAsSystem(() -> jdbc.queryForObject(
+                "SELECT mailbox_id FROM email_ticket WHERE id = ?", Long.class, ticketId));
+    }
+
     @Test
     void ticketMailbox_winsOverTheTenantsOlderInbox() {
         mailbox(tenantA, "ops@a.test", true, true);
@@ -120,10 +130,7 @@ class TicketMailboxTenantIsolationTest {
         Long ticketId = ticket(tenantA, quotes);
 
         assertThat(replyFrom(tenantA, ticketId)).isEqualTo("quotes@a.test");
-        // Persisted in the V37 column, not just on the entity.
-        Long stored = TenantContext.callAsSystem(() -> jdbc.queryForObject(
-                "SELECT mailbox_id FROM email_ticket WHERE id = ?", Long.class, ticketId));
-        assertThat(stored).isEqualTo(quotes);
+        assertThat(storedMailboxId(ticketId)).isEqualTo(quotes);
     }
 
     @Test
@@ -141,15 +148,14 @@ class TicketMailboxTenantIsolationTest {
         Long foreign = mailbox(tenantB, "sales@b.test", true, true);
 
         // Tenant A has no SMTP of its own → platform, NOT tenant B's account.
-        String from = TenantContext.callAs(tenantA, () -> provider.resolve(foreign).from());
-        assertThat(from).isEqualTo("platform@smartfreight.com");
+        assertThat(fromFor(tenantA, foreign)).isEqualTo("platform@smartfreight.com");
 
         // With its own inbox, tenant A falls back to that one.
         mailbox(tenantA, "ops@a.test", true, true);
-        assertThat(TenantContext.callAs(tenantA, () -> provider.resolve(foreign).from())).isEqualTo("ops@a.test");
+        assertThat(fromFor(tenantA, foreign)).isEqualTo("ops@a.test");
 
         // Same id seen from its owner resolves normally — the lookup is tenant-scoped, not broken.
-        assertThat(TenantContext.callAs(tenantB, () -> provider.resolve(foreign).from())).isEqualTo("sales@b.test");
+        assertThat(fromFor(tenantB, foreign)).isEqualTo("sales@b.test");
     }
 
     @Test
@@ -169,9 +175,7 @@ class TicketMailboxTenantIsolationTest {
         // As on /settings: delete inside the tenant (RLS on), via the repository.
         TenantContext.runAs(tenantA, () -> mailboxes.deleteById(quotes));
 
-        Long stored = TenantContext.callAsSystem(() -> jdbc.queryForObject(
-                "SELECT mailbox_id FROM email_ticket WHERE id = ? AND tenant_id = ?", Long.class, ticketId, tenantA));
-        assertThat(stored).isNull();
+        assertThat(storedMailboxId(ticketId)).isNull();
         assertThat(replyFrom(tenantA, ticketId)).isEqualTo("ops@a.test");
     }
 }
