@@ -25,4 +25,7 @@ public interface TenantMailboxRepository extends JpaRepository<TenantMailbox, Lo
      * falls back to the platform account.
      */
     Optional<TenantMailbox> findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc();
+
+    /** The current tenant's mailbox for an account address — demo harness upsert key. */
+    Optional<TenantMailbox> findFirstByUsernameOrderByIdAsc(String username);
 }

@@ -47,6 +47,9 @@ services:
       - KEYCLOAK_REALM=${KEYCLOAK_REALM:-smartfreight}
       - KEYCLOAK_ADMIN_CLIENT_ID=${KEYCLOAK_ADMIN_CLIENT_ID:-smartfreight-admin}
       - KEYCLOAK_ADMIN_CLIENT_SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-smartfreight-admin-secret}
+      # Phase 4.8 S2 demo mail harness — pair with `--profile demo` (greenmail + mailpit below).
+      - DEMO_MAIL_ENABLED=${DEMO_MAIL_ENABLED:-false}
+      - DEMO_MAIL_PASSWORD=${DEMO_MAIL_PASSWORD:-demo}
     depends_on:
       postgres:
         condition: service_healthy
@@ -348,6 +351,35 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - llm_internal
+
+  greenmail:
+    # Phase 4.8 S2 demo mail harness: fake mail server holding the demo tenants' inboxes.
+    # scripts/demo-mail.ps1 drops scenario emails in over SMTP :3025; the backend's IMAP IDLE
+    # adapters read them over IMAPS :3993 (self-signed cert — the adapter trusts the host).
+    # Only starts with `docker compose --profile demo up -d` + DEMO_MAIL_ENABLED=true.
+    image: greenmail/standalone:2.1.2
+    profiles: ["demo"]
+    environment:
+      - GREENMAIL_OPTS=-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users.login=email -Dgreenmail.users=ops:${DEMO_MAIL_PASSWORD:-demo}@felixstowe-freight.example.com,dispatch:${DEMO_MAIL_PASSWORD:-demo}@midlands-haulage.example.com
+    ports:
+      - "3025:3025"
+      - "3993:3993"
+    networks:
+      - llm_internal
+
+  mailpit:
+    # Phase 4.8 S2: catches every reply the demo tenants send — http://localhost:8025 is the
+    # customer's view of the conversation during a demo. Accepts any SMTP credentials.
+    image: axllent/mailpit:v1.21
+    profiles: ["demo"]
+    environment:
+      - MP_SMTP_AUTH_ACCEPT_ANY=1
+      - MP_SMTP_AUTH_ALLOW_INSECURE=1
+    ports:
+      - "1025:1025"
+      - "8025:8025"
     networks:
       - llm_internal
 
