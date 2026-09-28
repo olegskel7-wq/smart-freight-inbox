@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -28,7 +29,11 @@ import org.springframework.stereotype.Component;
  * to import" — same convention the old static {@code ImapConfig} used to disable itself.
  */
 @Component
+@Order(MailboxBootstrap.ORDER)
 public class MailboxBootstrap implements ApplicationRunner {
+
+    /** Runs before {@link DemoMailboxBootstrap}: a demo row must never pre-empt the env import. */
+    static final int ORDER = 0;
 
     private static final Logger log = LoggerFactory.getLogger(MailboxBootstrap.class);
 

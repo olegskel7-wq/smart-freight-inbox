@@ -186,6 +186,18 @@ mailbox:
   reconcile-interval-ms: 30000
   encryption-key: ${MAILBOX_ENCRYPTION_KEY:}
 
+# Demo mail harness (Phase 4.8 S2): demo tenants read GreenMail, reply into Mailpit.
+# How to run it (compose or IDE): see the header of scripts/demo-mail.ps1.
+demo:
+  mail:
+    enabled: ${DEMO_MAIL_ENABLED:false}
+    imap-host: ${DEMO_IMAP_HOST:greenmail}
+    smtp-host: ${DEMO_SMTP_HOST:mailpit}
+    # Mirrored in scripts/demo-mail.ps1 ($inboxes) — keep them in sync.
+    inboxes:
+      1: ops@felixstowe-freight.example.com
+      90001: dispatch@midlands-haulage.example.com
+
 # Login brute-force protection (Phase 2.3) is delegated to Keycloak (realm setting
 # bruteForceProtected) — the Phase 2.6 Redis login throttle was removed with form login.
 
