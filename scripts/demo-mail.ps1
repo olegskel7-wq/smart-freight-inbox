@@ -8,14 +8,16 @@
     pipeline: ingestion -> classification -> extraction -> draft -> (auto-)reply. Replies
     land in Mailpit: http://localhost:8025.
 
-    Prerequisites (compose reads MAILBOX_ENCRYPTION_KEY from .env). Put these two lines in .env
-    so routine `docker compose up -d` runs keep the demo on:
-      COMPOSE_PROFILES=demo
-      DEMO_MAIL_ENABLED=true
-    then: docker compose up -d
-      From the IDE instead: DEMO_MAIL_ENABLED=true, DEMO_IMAP_HOST=localhost,
-      DEMO_SMTP_HOST=localhost AND MAILBOX_ENCRYPTION_KEY (from .env) in the run config.
-      Road tenant 90001 needs dev-seed V36 (job-ref extraction) - load it via psql.
+    HOW TO RUN THE HARNESS (the one place this is documented):
+    - Compose: put these two lines in .env (it already holds MAILBOX_ENCRYPTION_KEY), so every
+      routine `docker compose up -d` keeps the demo on - then run `docker compose up -d`:
+        COMPOSE_PROFILES=demo
+        DEMO_MAIL_ENABLED=true
+    - IDE run config instead: DEMO_MAIL_ENABLED=true, DEMO_IMAP_HOST=localhost,
+      DEMO_SMTP_HOST=localhost and MAILBOX_ENCRYPTION_KEY (copy from .env).
+    - Road tenant 90001 needs dev-seed V36 (job-ref extraction) - load it via psql.
+    - Turn it OFF before any real pilot mail (ROADMAP Gate B14): delete both .env lines,
+      `docker compose up -d` (backend removes the demo mailboxes), `docker compose stop greenmail mailpit`.
 
     Script execution is disabled by default on Windows - run it as:
       powershell -ExecutionPolicy Bypass -File scripts\demo-mail.ps1 [args]
@@ -165,7 +167,7 @@ if (-not $selected) {
 }
 
 $client = New-Object System.Net.Mail.SmtpClient($SmtpHost, $SmtpPort)
-$client.EnableSsl = $false
+$total = @($selected).Count * $Repeat
 $sent = 0
 try {
     for ($round = 1; $round -le $Repeat; $round++) {
@@ -179,20 +181,15 @@ try {
             # System.Net.Mail adds no Message-ID, and ingestion drops mail without one.
             $domain = ($msg.From.Address -split '@')[1]
             $msg.Headers.Add('Message-ID', "<demo-$([guid]::NewGuid().ToString('N'))@$domain>")
-            $stream = $null
             if ($s.Attachment) {
+                # MailMessage.Dispose() disposes its attachments and their streams too.
                 $stream = New-Object System.IO.MemoryStream(, (New-DemoPdf $s.Attachment.Lines))
                 $msg.Attachments.Add((New-Object System.Net.Mail.Attachment($stream, $s.Attachment.Name, 'application/pdf')))
             }
-            try {
-                $client.Send($msg)
-            } finally {
-                $msg.Dispose()
-                if ($stream) { $stream.Dispose() }
-            }
+            try { $client.Send($msg) } finally { $msg.Dispose() }
             $sent++
             Write-Host ("[{0,-10}] {1,-17} -> {2}  ({3})" -f $s.Tenant, $s.Name, $to, $s.Type)
-            if ($DelaySeconds -gt 0) { Start-Sleep -Seconds $DelaySeconds }
+            if ($DelaySeconds -gt 0 -and $sent -lt $total) { Start-Sleep -Seconds $DelaySeconds }
         }
     }
 } finally {

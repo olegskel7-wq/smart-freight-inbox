@@ -47,11 +47,8 @@ services:
       - KEYCLOAK_REALM=${KEYCLOAK_REALM:-smartfreight}
       - KEYCLOAK_ADMIN_CLIENT_ID=${KEYCLOAK_ADMIN_CLIENT_ID:-smartfreight-admin}
       - KEYCLOAK_ADMIN_CLIENT_SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-smartfreight-admin-secret}
-      # Phase 4.8 S2 demo mail harness — pair with the `demo` profile (greenmail + mailpit below).
-      # Keep it on across routine `docker compose up -d` runs by putting BOTH lines in .env:
-      #   COMPOSE_PROFILES=demo
-      #   DEMO_MAIL_ENABLED=true
-      # Off (the default) REMOVES the demo mailboxes on the next backend start.
+      # Phase 4.8 S2 demo mail harness (greenmail + mailpit below) — how to run: header of
+      # scripts/demo-mail.ps1. Off (the default) REMOVES the demo mailboxes on backend start.
       - DEMO_MAIL_ENABLED=${DEMO_MAIL_ENABLED:-false}
     depends_on:
       postgres:

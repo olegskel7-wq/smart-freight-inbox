@@ -12,8 +12,6 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
-
 /**
  * Wires the demo tenants to the fake mail servers (Phase 4.8 S2 — demo mail harness).
  *
@@ -60,38 +58,46 @@ public class DemoMailboxBootstrap implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         if (properties.isEnabled()) {
-            if (!secretCipher.isConfigured()) {
-                log.warn("DEMO_MAIL_ENABLED is set but MAILBOX_ENCRYPTION_KEY is not — demo mailboxes "
-                        + "cannot be stored. Set the key; no demo adapter will run until then.");
-                return;
-            }
-            if (!validPort(properties.getImapPort()) || !validPort(properties.getSmtpPort())) {
-                log.warn("Demo mail harness not started: invalid port (IMAP {}, SMTP {})",
-                        properties.getImapPort(), properties.getSmtpPort());
-                return;
-            }
+            setUp();
+        } else {
+            tearDown();
         }
-        for (Map.Entry<Long, String> inbox : properties.getInboxes().entrySet()) {
-            Long tenantId = inbox.getKey();
-            String address = inbox.getValue();
+    }
+
+    private void setUp() {
+        if (!secretCipher.isConfigured()) {
+            log.warn("DEMO_MAIL_ENABLED is set but MAILBOX_ENCRYPTION_KEY is not — demo mailboxes "
+                    + "cannot be stored. Set the key; no demo adapter will run until then.");
+            return;
+        }
+        properties.getInboxes().forEach((tenantId, address) -> {
             try {
                 if (!TenantContext.callAsSystem(() -> tenants.existsById(tenantId))) {
-                    if (properties.isEnabled()) {
-                        log.warn("Demo mailbox {} skipped: tenant {} does not exist (seed it with the "
-                                + "dev-seed V31 demo dataset first)", address, tenantId);
-                    }
-                    continue;
+                    log.warn("Demo mailbox {} skipped: tenant {} does not exist (seed it with the "
+                            + "dev-seed V31 demo dataset first)", address, tenantId);
+                    return;
                 }
-                if (properties.isEnabled()) {
-                    TenantContext.runAs(tenantId, () -> upsert(tenantId, address));
-                } else {
-                    TenantContext.runAs(tenantId, () -> removeIfPresent(tenantId, address));
-                }
+                TenantContext.runAs(tenantId, () -> upsert(tenantId, address));
             } catch (RuntimeException e) {
-                log.error("Demo mailbox {} (tenant {}) could not be {}", address, tenantId,
-                        properties.isEnabled() ? "set up" : "removed", e);
+                log.error("Demo mailbox {} (tenant {}) could not be set up", address, tenantId, e);
             }
-        }
+        });
+    }
+
+    /** No tenant-existence check: under RLS the lookup for a missing tenant is simply empty. */
+    private void tearDown() {
+        properties.getInboxes().forEach((tenantId, address) -> {
+            try {
+                TenantContext.runAs(tenantId, () -> mailboxes.findFirstByUsernameOrderByIdAsc(address)
+                        .ifPresent(mailbox -> {
+                            mailboxes.delete(mailbox);
+                            log.info("Demo mail harness is off — removed demo mailbox {} (tenant {})",
+                                    address, tenantId);
+                        }));
+            } catch (RuntimeException e) {
+                log.error("Demo mailbox {} (tenant {}) could not be removed", address, tenantId, e);
+            }
+        });
     }
 
     private void upsert(Long tenantId, String address) {
@@ -104,41 +110,21 @@ public class DemoMailboxBootstrap implements ApplicationRunner {
         mailbox.setSmtpHost(properties.getSmtpHost());
         mailbox.setSmtpPort(properties.getSmtpPort());
         mailbox.setFromAddress(address);
-        // Re-encrypt only on change: a fresh IV every start would alter the fingerprint and
-        // force a needless adapter rebuild on each restart.
-        if (created || !storedPasswordMatches(mailbox)) {
-            mailbox.setPasswordEnc(secretCipher.encrypt(properties.getPassword()));
-        }
+        // Always re-encrypt: this runs once per start, before any adapter exists, and it also
+        // heals a row left under a since-rotated MAILBOX_ENCRYPTION_KEY.
+        mailbox.setPasswordEnc(secretCipher.encrypt(properties.getPassword()));
         mailbox.setEnabled(true);
         TenantMailbox saved = mailboxes.save(mailbox);
         log.info("Demo mailbox {} {} → IMAPS {}:{}, SMTP {}:{} (tenant {})", address,
                 created ? "created" : "updated", properties.getImapHost(), properties.getImapPort(),
                 properties.getSmtpHost(), properties.getSmtpPort(), tenantId);
 
+        // Mirrors MailSenderProvider.resolve(): replies leave through the tenant's oldest enabled
+        // SMTP mailbox — warn if that is not the demo one (then Mailpit never sees them).
         mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc()
                 .filter(sender -> !sender.getId().equals(saved.getId()))
                 .ifPresent(sender -> log.warn("Tenant {} has an older SMTP mailbox {} — replies will "
                         + "go out through it, NOT Mailpit. Disable it on /settings for the demo.",
                         tenantId, sender.getUsername()));
-    }
-
-    /** False also when the row was encrypted under a since-rotated key — then just re-encrypt. */
-    private boolean storedPasswordMatches(TenantMailbox mailbox) {
-        try {
-            return properties.getPassword().equals(secretCipher.decrypt(mailbox.getPasswordEnc()));
-        } catch (IllegalStateException e) {
-            return false;
-        }
-    }
-
-    private void removeIfPresent(Long tenantId, String address) {
-        mailboxes.findFirstByUsernameOrderByIdAsc(address).ifPresent(mailbox -> {
-            mailboxes.delete(mailbox);
-            log.info("Demo mail harness is off — removed demo mailbox {} (tenant {})", address, tenantId);
-        });
-    }
-
-    private static boolean validPort(int port) {
-        return port >= 1 && port <= 65535;
     }
 }

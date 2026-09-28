@@ -36,6 +36,6 @@ public class DemoMailProperties {
     /** Password stored for the demo accounts. GreenMail runs with auth disabled, so any value works. */
     private String password = "demo";
 
-    /** Tenant id → the demo inbox address that tenant's adapter watches (mirrored in scripts/demo-mail.ps1). */
+    /** Tenant id → the demo inbox address that tenant's adapter watches. */
     private Map<Long, String> inboxes = new LinkedHashMap<>();
 }

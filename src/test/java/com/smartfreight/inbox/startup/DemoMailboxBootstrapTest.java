@@ -19,7 +19,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -83,42 +82,26 @@ class DemoMailboxBootstrapTest {
     }
 
     @Test
-    void enabled_existingRow_rewritesHostButKeepsCiphertextWhenPasswordUnchanged() {
+    void enabled_existingRow_rewritesHostAndReEncrypts() {
         properties.setEnabled(true);
         properties.setImapHost("localhost");
         TenantMailbox existing = demoRow();
-        existing.setPasswordEnc("ENC(old-iv)");
+        existing.setPasswordEnc("ENC(under-rotated-key)");
         when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenReturn(Optional.of(existing));
-        when(cipher.decrypt("ENC(old-iv)")).thenReturn("demo");
 
         bootstrap.run(null);
 
         TenantMailbox saved = captureSaved();
         assertThat(saved.getHost()).isEqualTo("localhost");
-        // Same password → same ciphertext → unchanged fingerprint, no adapter rebuild.
-        assertThat(saved.getPasswordEnc()).isEqualTo("ENC(old-iv)");
-        verify(cipher, never()).encrypt(anyString());
+        // Always re-encrypted under the current key — also heals a row from a rotated key.
+        assertThat(saved.getPasswordEnc()).isEqualTo("ENC(demo)");
     }
 
     @Test
-    void enabled_rowUnderRotatedKey_isReEncrypted() {
-        properties.setEnabled(true);
-        TenantMailbox existing = demoRow();
-        existing.setPasswordEnc("ENC(old-key)");
-        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenReturn(Optional.of(existing));
-        when(cipher.decrypt("ENC(old-key)")).thenThrow(new IllegalStateException("bad tag"));
-
-        bootstrap.run(null);
-
-        assertThat(captureSaved().getPasswordEnc()).isEqualTo("ENC(demo)");
-    }
-
-    @Test
-    void enabled_olderSmtpMailboxOnTenant_stillSavesAndDoesNotThrow() {
+    void enabled_olderSmtpMailboxOnTenant_stillSavesTheDemoRow() {
         properties.setEnabled(true);
         TenantMailbox existing = demoRow();
         when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenReturn(Optional.of(existing));
-        when(cipher.decrypt("ENC(demo)")).thenReturn("demo");
         TenantMailbox older = new TenantMailbox();
         older.setId(2L);
         older.setUsername("inbox@real-customer.co.uk");
@@ -127,18 +110,6 @@ class DemoMailboxBootstrapTest {
         assertThatCode(() -> bootstrap.run(null)).doesNotThrowAnyException();
 
         verify(mailboxes).save(existing);
-        verify(mailboxes).findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc();
-    }
-
-    @Test
-    void enabled_demoRowIsTheSender_comparesAgainstSavedId() {
-        properties.setEnabled(true);
-        TenantMailbox existing = demoRow();
-        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenReturn(Optional.of(existing));
-        when(cipher.decrypt("ENC(demo)")).thenReturn("demo");
-        when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc()).thenReturn(Optional.of(existing));
-
-        assertThatCode(() -> bootstrap.run(null)).doesNotThrowAnyException();
     }
 
     @Test
@@ -155,16 +126,6 @@ class DemoMailboxBootstrapTest {
     void enabled_withoutEncryptionKey_storesNothing() {
         properties.setEnabled(true);
         when(cipher.isConfigured()).thenReturn(false);
-
-        bootstrap.run(null);
-
-        verify(mailboxes, never()).save(any());
-    }
-
-    @Test
-    void enabled_invalidPort_storesNothing() {
-        properties.setEnabled(true);
-        properties.setImapPort(0);
 
         bootstrap.run(null);
 
@@ -213,10 +174,10 @@ class DemoMailboxBootstrapTest {
 
     @Test
     void disabled_failure_doesNotAbortStartup() {
-        when(tenants.existsById(1L)).thenThrow(new IllegalStateException("db down"));
+        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenThrow(new IllegalStateException("db down"));
 
         assertThatCode(() -> bootstrap.run(null)).doesNotThrowAnyException();
-        verify(mailboxes, times(0)).delete(any());
+        verify(mailboxes, never()).delete(any());
     }
 
     private TenantMailbox demoRow() {

@@ -186,19 +186,14 @@ mailbox:
   reconcile-interval-ms: 30000
   encryption-key: ${MAILBOX_ENCRYPTION_KEY:}
 
-# Demo mail harness (Phase 4.8 S2). DEMO_MAIL_ENABLED=true + `docker compose --profile demo up`
-# wires each demo tenant to a GreenMail IMAPS inbox and routes its replies to Mailpit
-# (http://localhost:8025). Feed traffic with scripts/demo-mail.ps1. From the IDE, set
-# DEMO_IMAP_HOST=localhost and DEMO_SMTP_HOST=localhost. Off = demo mailboxes get removed.
-# The inbox addresses below are mirrored in scripts/demo-mail.ps1 ($inboxes) — keep them in sync.
+# Demo mail harness (Phase 4.8 S2): demo tenants read GreenMail, reply into Mailpit.
+# How to run it (compose or IDE): see the header of scripts/demo-mail.ps1.
 demo:
   mail:
     enabled: ${DEMO_MAIL_ENABLED:false}
     imap-host: ${DEMO_IMAP_HOST:greenmail}
-    imap-port: ${DEMO_IMAP_PORT:3993}
     smtp-host: ${DEMO_SMTP_HOST:mailpit}
-    smtp-port: ${DEMO_SMTP_PORT:1025}
-    password: ${DEMO_MAIL_PASSWORD:demo}
+    # Mirrored in scripts/demo-mail.ps1 ($inboxes) — keep them in sync.
     inboxes:
       1: ops@felixstowe-freight.example.com
       90001: dispatch@midlands-haulage.example.com
