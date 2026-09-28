@@ -164,12 +164,13 @@ public class MailboxImapAdapterManager {
                         .shouldMarkMessagesAsRead(true)
                         .shouldDeleteMessages(false)
                         .autoStartup(true))
-                .handle(message -> {
-                    MimeMessage mimeMessage = (MimeMessage) message.getPayload();
-                    TenantContext.runAs(tenantId,
-                            () -> emailIngestionService.processIncomingEmail(mimeMessage, mailboxId));
-                })
+                .handle(message -> ingest(tenantId, mailboxId, (MimeMessage) message.getPayload()))
                 .get();
+    }
+
+    /** One arrived message → ticket, inside the mailbox's tenant and attributed to the mailbox. */
+    void ingest(Long tenantId, Long mailboxId, MimeMessage mimeMessage) {
+        TenantContext.runAs(tenantId, () -> emailIngestionService.processIncomingEmail(mimeMessage, mailboxId));
     }
 
     private static String fingerprint(TenantMailbox mailbox) {
