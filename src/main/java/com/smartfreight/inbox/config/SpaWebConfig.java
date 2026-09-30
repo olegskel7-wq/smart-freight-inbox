@@ -3,6 +3,7 @@ package com.smartfreight.inbox.config;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.resource.PathResourceResolver;
 
@@ -29,6 +30,16 @@ public class SpaWebConfig implements WebMvcConfigurer {
 
     private static final String LOCATION = "classpath:/static/app/";
 
+    /**
+     * The bare root never reaches the resolver below: the resource handler rejects an empty path
+     * with a 404 before any resolver runs. Forward it to the shell; React Router then redirects
+     * {@code /} to {@code /tickets}.
+     */
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addViewController("/").setViewName("forward:/index.html");
+    }
+
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/**")
@@ -44,7 +55,7 @@ public class SpaWebConfig implements WebMvcConfigurer {
                                 return requested;
                             }
                         }
-                        // Root or an unmapped client-side route — hand back the SPA shell so
+                        // An unmapped client-side route — hand back the SPA shell so
                         // React Router can take over.
                         Resource index = location.createRelative("index.html");
                         return (index.exists() && index.isReadable()) ? index : null;
