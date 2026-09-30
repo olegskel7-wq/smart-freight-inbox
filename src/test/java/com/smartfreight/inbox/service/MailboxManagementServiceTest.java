@@ -153,6 +153,83 @@ class MailboxManagementServiceTest {
         assertThat(m.getFromAddress()).isNull();
     }
 
+    // Re-pointing without the password would let a caller who never knew it redirect the stored
+    // credential to their own server (security review of B15) — every such change needs it re-entered.
+
+    @Test
+    void update_imapHostChangedWithoutPassword_rejected() {
+        TenantMailbox m = existing();
+
+        assertThatThrownBy(() -> service.update(7L, "imap.attacker.tld", 993, "inbox@acme.co.uk", "",
+                "smtp.gmail.com", 587, "sales@acme.co.uk"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Re-enter the password");
+        verify(mailboxes, never()).saveAndFlush(any());
+        assertThat(m.getPasswordEnc()).isEqualTo("ENC(old)");
+    }
+
+    @Test
+    void update_imapPortOrUsernameChangedWithoutPassword_rejected() {
+        existing();
+
+        assertThatThrownBy(() -> service.update(7L, "imap.gmail.com", 143, "inbox@acme.co.uk", null,
+                "smtp.gmail.com", 587, null))
+                .hasMessageContaining("Re-enter the password");
+        assertThatThrownBy(() -> service.update(7L, "imap.gmail.com", 993, "other@acme.co.uk", null,
+                "smtp.gmail.com", 587, null))
+                .hasMessageContaining("Re-enter the password");
+        verify(mailboxes, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void update_smtpRepointedWithoutPassword_rejected() {
+        existing();
+
+        assertThatThrownBy(() -> service.update(7L, "imap.gmail.com", 993, "inbox@acme.co.uk", "",
+                "smtp.attacker.tld", 587, null))
+                .hasMessageContaining("Re-enter the password");
+        assertThatThrownBy(() -> service.update(7L, "imap.gmail.com", 993, "inbox@acme.co.uk", "",
+                "smtp.gmail.com", 25, null))
+                .hasMessageContaining("Re-enter the password");
+        verify(mailboxes, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void update_smtpAddedToInboundOnlyMailboxWithoutPassword_rejected() {
+        TenantMailbox m = existing();
+        m.setSmtpHost(null);
+        m.setSmtpPort(null);
+
+        assertThatThrownBy(() -> service.update(7L, "imap.gmail.com", 993, "inbox@acme.co.uk", "",
+                "smtp.gmail.com", 587, null))
+                .hasMessageContaining("Re-enter the password");
+    }
+
+    @Test
+    void update_repointedWithNewPassword_allowed() {
+        TenantMailbox m = existing();
+        when(cipher.encrypt("new-pw")).thenReturn("ENC(new-pw)");
+
+        service.update(7L, "outlook.office365.com", 993, "inbox@acme.co.uk", "new-pw",
+                "smtp.office365.com", 587, null);
+
+        assertThat(m.getHost()).isEqualTo("outlook.office365.com");
+        assertThat(m.getPasswordEnc()).isEqualTo("ENC(new-pw)");
+        verify(mailboxes).saveAndFlush(m);
+    }
+
+    @Test
+    void update_fromAddressOnlyOrTrimmedSameHost_needsNoPassword() {
+        TenantMailbox m = existing();
+
+        service.update(7L, " imap.gmail.com ", 993, " inbox@acme.co.uk ", "",
+                "smtp.gmail.com", null, "quotes@acme.co.uk");
+
+        // Trim + the 587 default normalise back to the stored endpoint — not a re-point.
+        assertThat(m.getFromAddress()).isEqualTo("quotes@acme.co.uk");
+        verify(mailboxes).saveAndFlush(m);
+    }
+
     @Test
     void update_unknownId_isNotFound() {
         when(mailboxes.findById(99L)).thenReturn(Optional.empty());

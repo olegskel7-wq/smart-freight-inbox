@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * CRUD facade for the current tenant's mailboxes, used by the {@code /settings} UI
@@ -65,21 +66,31 @@ public class MailboxManagementService {
      * Delete + re-add would null that link ({@code ON DELETE SET NULL}).
      *
      * <p>Same validation as {@link #create}. A blank {@code rawPassword} keeps the stored one (the
-     * form never shows it); a blank {@code smtpHost} makes the mailbox inbound-only again. The
-     * enabled flag is untouched — pausing is {@link #setEnabled}. The IMAP adapter and the cached
-     * SMTP sender are keyed by a config fingerprint, so both rebuild on their own.
+     * form never shows it) — but only while the password keeps going where it went before: any
+     * change to the IMAP host/port/username, or pointing SMTP at a new host/port, needs the password
+     * re-entered. Otherwise a caller who never knew the password could re-point the mailbox at a
+     * server they control and the adapter would log in there with the decrypted stored one (security
+     * review of B15). Dropping SMTP or changing only the from-address stays password-free. A blank
+     * {@code smtpHost} makes the mailbox inbound-only again. The enabled flag is untouched — pausing
+     * is {@link #setEnabled}. The IMAP adapter and the cached SMTP sender are keyed by a config
+     * fingerprint, so both rebuild on their own.
      *
      * @throws MailboxNotFoundException if the id is not one of the caller's mailboxes
-     * @throws IllegalArgumentException on blank/invalid input
+     * @throws IllegalArgumentException on blank/invalid input, or a re-pointed mailbox without a password
      * @throws IllegalStateException    when a new password is given but MAILBOX_ENCRYPTION_KEY is missing
      */
     @Transactional
     public void update(Long id, String host, int port, String username, String rawPassword,
                        String smtpHost, Integer smtpPort, String fromAddress) {
         TenantMailbox mailbox = findInCurrentTenant(id);
+        Destination before = Destination.of(mailbox);
         applyConfig(mailbox, host, port, username, smtpHost, smtpPort, fromAddress);
         if (rawPassword != null && !rawPassword.isBlank()) {
             mailbox.setPasswordEnc(secretCipher.encrypt(rawPassword));
+        } else if (before.repointedBy(Destination.of(mailbox))) {
+            // Thrown after applyConfig mutated the managed entity — the transaction rolls it back.
+            throw new IllegalArgumentException(
+                    "Re-enter the password when changing the server, port, username or SMTP settings.");
         }
         // Flush now so a (host, username) clash surfaces here as DataIntegrityViolationException
         // (→ 409 in the controller), not later at commit.
@@ -135,6 +146,22 @@ public class MailboxManagementService {
             mailbox.setSmtpHost(null);
             mailbox.setSmtpPort(null);
             mailbox.setFromAddress(null);
+        }
+    }
+
+    /** Where the stored password is sent: the IMAP login and, when set, the SMTP AUTH. */
+    private record Destination(String host, int port, String username, String smtpHost, Integer smtpPort) {
+
+        static Destination of(TenantMailbox m) {
+            return new Destination(m.getHost(), m.getPort(), m.getUsername(), m.getSmtpHost(), m.getSmtpPort());
+        }
+
+        /** True if {@code next} would send the password to an endpoint this one did not. */
+        boolean repointedBy(Destination next) {
+            boolean imap = !host.equals(next.host) || port != next.port || !username.equals(next.username);
+            boolean smtp = next.smtpHost != null
+                    && (!next.smtpHost.equals(smtpHost) || !Objects.equals(next.smtpPort, smtpPort));
+            return imap || smtp;
         }
     }
 

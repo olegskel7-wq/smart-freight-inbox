@@ -28,6 +28,16 @@ const toEdit = (m: MailboxRow): MailboxEdit => ({
   fromAddress: m.fromAddress ?? '',
 })
 
+// Mirrors MailboxManagementService: re-pointing IMAP, or pointing SMTP at a new host/port, sends the
+// password somewhere new, so the server demands it re-entered. Here it only makes the field required.
+const repoints = (e: MailboxEdit, m: MailboxRow): boolean => {
+  const smtpHost = e.smtpHost.trim()
+  const imap = e.host.trim() !== m.host || Number(e.port) !== m.port || e.username.trim() !== m.username
+  const smtp = smtpHost !== ''
+    && (smtpHost !== (m.smtpHost ?? '') || Number(e.smtpPort || 587) !== m.smtpPort)
+  return imap || smtp
+}
+
 // React port of settings.html (Phase 3.2). Each card saves its own section through /api/settings/*;
 // a successful save returns the refreshed snapshot, which re-seeds the form. The platform SMTP block is
 // read-only (environment-sourced). The old Thymeleaf page stays live until cutover.
@@ -300,9 +310,12 @@ export default function SettingsPage() {
                                    value={editing.username} onChange={(e) => setEdit({ username: e.target.value })} required />
                           </div>
                           <div className="col-sm-3">
-                            <label className="form-label small mb-0">New password</label>
+                            <label className="form-label small mb-0">
+                              {repoints(editing, m) ? 'Password (required for new server)' : 'New password'}
+                            </label>
                             <input type="password" className="form-control form-control-sm" autoComplete="new-password"
-                                   placeholder="Leave blank to keep"
+                                   placeholder={repoints(editing, m) ? 'Re-enter password' : 'Leave blank to keep'}
+                                   required={repoints(editing, m)}
                                    value={editing.password} onChange={(e) => setEdit({ password: e.target.value })} />
                           </div>
                           <div className="col-sm-4">

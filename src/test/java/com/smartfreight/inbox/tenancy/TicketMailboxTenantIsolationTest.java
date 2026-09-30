@@ -220,8 +220,24 @@ class TicketMailboxTenantIsolationTest {
         Long quotes = mailbox(tenantA, "quotes@a.test", true, true);
 
         assertThatThrownBy(() -> TenantContext.runAs(tenantA, () -> mailboxService.update(quotes,
-                "imap.test", 993, "ops@a.test", null, "smtp.test", 587, null)))
+                "imap.test", 993, "ops@a.test", "ops-pw", "smtp.test", 587, null)))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void repointingWithoutThePassword_isRejectedAndTheRowStaysPut() {
+        Long quotes = mailbox(tenantA, "quotes@a.test", true, true);
+        String ciphertext = storedPasswordEnc(quotes);
+
+        assertThatThrownBy(() -> TenantContext.runAs(tenantA, () -> mailboxService.update(quotes,
+                "imap.attacker.tld", 993, "quotes@a.test", "", "smtp.attacker.tld", 587, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Re-enter the password");
+
+        assertThat(TenantContext.callAsSystem(() -> jdbc.queryForObject(
+                "SELECT host || '|' || smtp_host FROM tenant_mailbox WHERE id = ?", String.class, quotes)))
+                .isEqualTo("imap.test|smtp.test");
+        assertThat(storedPasswordEnc(quotes)).isEqualTo(ciphertext);
     }
 
     private String storedPasswordEnc(Long mailboxId) {
