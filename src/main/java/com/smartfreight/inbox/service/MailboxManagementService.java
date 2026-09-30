@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
+import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.repository.ShipmentWatchRepository;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -25,10 +27,15 @@ import java.util.Objects;
 public class MailboxManagementService {
 
     private final TenantMailboxRepository mailboxes;
+    private final EmailTicketRepository tickets;
+    private final ShipmentWatchRepository watches;
     private final SecretCipher secretCipher;
 
-    public MailboxManagementService(TenantMailboxRepository mailboxes, SecretCipher secretCipher) {
+    public MailboxManagementService(TenantMailboxRepository mailboxes, EmailTicketRepository tickets,
+                                    ShipmentWatchRepository watches, SecretCipher secretCipher) {
         this.mailboxes = mailboxes;
+        this.tickets = tickets;
+        this.watches = watches;
         this.secretCipher = secretCipher;
     }
 
@@ -75,7 +82,13 @@ public class MailboxManagementService {
      * is {@link #setEnabled}. The IMAP adapter and the cached SMTP sender are keyed by a config
      * fingerprint, so both rebuild on their own.
      *
+     * <p>The username IS the account: once mail has arrived on the mailbox (a ticket or a status
+     * watch points at it) it can no longer be renamed — otherwise customers who wrote to the old
+     * address would get replies from a different one, the very thing V37 fixed. A typo fixed before
+     * the first email, or a case-only change, stays allowed; a new address is a new mailbox.
+     *
      * @throws MailboxNotFoundException if the id is not one of the caller's mailboxes
+     * @throws MailboxInUseException    when renaming the account of a mailbox that has received mail
      * @throws IllegalArgumentException on blank/invalid input, or a re-pointed mailbox without a password
      * @throws IllegalStateException    when a new password is given but MAILBOX_ENCRYPTION_KEY is missing
      */
@@ -85,6 +98,10 @@ public class MailboxManagementService {
         TenantMailbox mailbox = findInCurrentTenant(id);
         Destination before = Destination.of(mailbox);
         applyConfig(mailbox, host, port, username, smtpHost, smtpPort, fromAddress);
+        if (!mailbox.getUsername().equalsIgnoreCase(before.username())
+                && (tickets.existsByMailboxId(id) || watches.existsByMailboxId(id))) {
+            throw new MailboxInUseException();
+        }
         if (rawPassword != null && !rawPassword.isBlank()) {
             mailbox.setPasswordEnc(secretCipher.encrypt(rawPassword));
         } else if (before.repointedBy(Destination.of(mailbox))) {
@@ -156,11 +173,15 @@ public class MailboxManagementService {
             return new Destination(m.getHost(), m.getPort(), m.getUsername(), m.getSmtpHost(), m.getSmtpPort());
         }
 
-        /** True if {@code next} would send the password to an endpoint this one did not. */
+        /**
+         * True if {@code next} would send the password to an endpoint this one did not. Host names
+         * and mail addresses are case-insensitive, so a case-only change is not a re-point.
+         */
         boolean repointedBy(Destination next) {
-            boolean imap = !host.equals(next.host) || port != next.port || !username.equals(next.username);
+            boolean imap = !host.equalsIgnoreCase(next.host) || port != next.port
+                    || !username.equalsIgnoreCase(next.username);
             boolean smtp = next.smtpHost != null
-                    && (!next.smtpHost.equals(smtpHost) || !Objects.equals(next.smtpPort, smtpPort));
+                    && (!next.smtpHost.equalsIgnoreCase(smtpHost) || !Objects.equals(next.smtpPort, smtpPort));
             return imap || smtp;
         }
     }
@@ -179,6 +200,15 @@ public class MailboxManagementService {
     public static class MailboxNotFoundException extends IllegalArgumentException {
         public MailboxNotFoundException(Long id) {
             super("Mailbox not found: " + id);
+        }
+    }
+
+    /** The account (username) of a mailbox that has already received mail cannot be renamed. */
+    public static class MailboxInUseException extends RuntimeException {
+        public MailboxInUseException() {
+            super("This mailbox has already received mail, so its username can't be changed — replies to "
+                    + "those customers would come from a different address. Add the new address as a "
+                    + "separate mailbox and disable this one.");
         }
     }
 }

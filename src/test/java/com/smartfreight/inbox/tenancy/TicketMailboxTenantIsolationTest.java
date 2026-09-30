@@ -5,6 +5,7 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.Tenant;
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.repository.ShipmentWatchRepository;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
 import com.smartfreight.inbox.repository.TenantRepository;
 import com.smartfreight.inbox.service.MailSenderProvider;
@@ -53,6 +54,9 @@ class TicketMailboxTenantIsolationTest {
     private EmailTicketRepository tickets;
 
     @Autowired
+    private ShipmentWatchRepository watches;
+
+    @Autowired
     private TenantRepository tenants;
 
     @Autowired
@@ -69,7 +73,7 @@ class TicketMailboxTenantIsolationTest {
     @BeforeEach
     void setUp() {
         provider = new MailSenderProvider(mailboxes, cipher, platformSender, "platform@smartfreight.com");
-        mailboxService = new MailboxManagementService(mailboxes, cipher);
+        mailboxService = new MailboxManagementService(mailboxes, tickets, watches, cipher);
         tenantA = TenantContext.callAsSystem(
                 () -> tenants.save(Tenant.builder().name("mbx-a-" + UUID.randomUUID()).build()).getId());
         tenantB = TenantContext.callAsSystem(
@@ -238,6 +242,24 @@ class TicketMailboxTenantIsolationTest {
                 "SELECT host || '|' || smtp_host FROM tenant_mailbox WHERE id = ?", String.class, quotes)))
                 .isEqualTo("imap.test|smtp.test");
         assertThat(storedPasswordEnc(quotes)).isEqualTo(ciphertext);
+    }
+
+    @Test
+    void renamingAMailboxThatReceivedMail_isRejected_butATypoFixBeforeTheFirstEmailIsNot() {
+        Long quotes = mailbox(tenantA, "quotes@a.test", true, true);
+        Long typo = mailbox(tenantA, "ordres@a.test", true, true);
+        Long ticketId = ticket(tenantA, quotes);
+
+        // Mail arrived on quotes@ → its account can't become someone else's.
+        assertThatThrownBy(() -> TenantContext.runAs(tenantA, () -> mailboxService.update(quotes,
+                "imap.test", 993, "sales@a.test", "pw", "smtp.test", 587, null)))
+                .isInstanceOf(MailboxManagementService.MailboxInUseException.class);
+        assertThat(replyFrom(tenantA, ticketId)).isEqualTo("quotes@a.test");
+
+        // Nothing ever arrived on the misspelt one → fixing it is fine.
+        TenantContext.runAs(tenantA, () -> mailboxService.update(typo,
+                "imap.test", 993, "orders@a.test", "pw", "smtp.test", 587, "orders@a.test"));
+        assertThat(fromFor(tenantA, typo)).isEqualTo("orders@a.test");
     }
 
     private String storedPasswordEnc(Long mailboxId) {

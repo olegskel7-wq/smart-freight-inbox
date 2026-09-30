@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
+import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.repository.ShipmentWatchRepository;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,8 @@ import static org.mockito.Mockito.when;
 class MailboxManagementServiceTest {
 
     private TenantMailboxRepository mailboxes;
+    private EmailTicketRepository tickets;
+    private ShipmentWatchRepository watches;
     private SecretCipher cipher;
     private MailboxManagementService service;
 
@@ -31,7 +35,9 @@ class MailboxManagementServiceTest {
     void setUp() {
         mailboxes = mock(TenantMailboxRepository.class);
         cipher = mock(SecretCipher.class);
-        service = new MailboxManagementService(mailboxes, cipher);
+        tickets = mock(EmailTicketRepository.class);
+        watches = mock(ShipmentWatchRepository.class);
+        service = new MailboxManagementService(mailboxes, tickets, watches, cipher);
     }
 
     @Test
@@ -227,6 +233,57 @@ class MailboxManagementServiceTest {
 
         // Trim + the 587 default normalise back to the stored endpoint — not a re-point.
         assertThat(m.getFromAddress()).isEqualTo("quotes@acme.co.uk");
+        verify(mailboxes).saveAndFlush(m);
+    }
+
+    // The username IS the account: once mail arrived on it, renaming would make its customers get
+    // replies from a different address — a new address is a new mailbox.
+
+    @Test
+    void update_renamingAMailboxWithTickets_rejectedAsInUse() {
+        TenantMailbox m = existing();
+        when(tickets.existsByMailboxId(7L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(7L, "imap.gmail.com", 993, "sales@other.co.uk", "pw",
+                "smtp.gmail.com", 587, null))
+                .isInstanceOf(MailboxManagementService.MailboxInUseException.class);
+        verify(mailboxes, never()).saveAndFlush(any());
+        verify(cipher, never()).encrypt(anyString());
+        assertThat(m.getPasswordEnc()).isEqualTo("ENC(old)");
+    }
+
+    @Test
+    void update_renamingAMailboxWithOnlyAStatusWatch_rejectedAsInUse() {
+        existing();
+        when(watches.existsByMailboxId(7L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(7L, "imap.gmail.com", 993, "sales@other.co.uk", "pw",
+                "smtp.gmail.com", 587, null))
+                .isInstanceOf(MailboxManagementService.MailboxInUseException.class);
+    }
+
+    @Test
+    void update_fixingAUsernameTypoBeforeAnyMail_allowedWithThePassword() {
+        TenantMailbox m = existing();
+        when(cipher.encrypt("pw")).thenReturn("ENC(pw)");
+
+        service.update(7L, "imap.gmail.com", 993, "orders@acme.co.uk", "pw",
+                "smtp.gmail.com", 587, null);
+
+        assertThat(m.getUsername()).isEqualTo("orders@acme.co.uk");
+        verify(mailboxes).saveAndFlush(m);
+    }
+
+    @Test
+    void update_caseOnlyChanges_areNeitherARenameNorARepoint() {
+        TenantMailbox m = existing();
+        when(tickets.existsByMailboxId(7L)).thenReturn(true);
+
+        service.update(7L, "IMAP.gmail.com", 993, "Inbox@Acme.co.uk", "",
+                "SMTP.gmail.com", 587, "sales@acme.co.uk");
+
+        assertThat(m.getUsername()).isEqualTo("Inbox@Acme.co.uk");
+        assertThat(m.getPasswordEnc()).isEqualTo("ENC(old)");
         verify(mailboxes).saveAndFlush(m);
     }
 

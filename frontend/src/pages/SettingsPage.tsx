@@ -30,11 +30,12 @@ const toEdit = (m: MailboxRow): MailboxEdit => ({
 
 // Mirrors MailboxManagementService: re-pointing IMAP, or pointing SMTP at a new host/port, sends the
 // password somewhere new, so the server demands it re-entered. Here it only makes the field required.
+// Host names and addresses are case-insensitive, like on the server.
 const repoints = (e: MailboxEdit, m: MailboxRow): boolean => {
-  const smtpHost = e.smtpHost.trim()
-  const imap = e.host.trim() !== m.host || Number(e.port) !== m.port || e.username.trim() !== m.username
-  const smtp = smtpHost !== ''
-    && (smtpHost !== (m.smtpHost ?? '') || Number(e.smtpPort || 587) !== m.smtpPort)
+  const same = (a: string, b: string | null) => a.trim().toLowerCase() === (b ?? '').toLowerCase()
+  const imap = !same(e.host, m.host) || Number(e.port) !== m.port || !same(e.username, m.username)
+  const smtp = e.smtpHost.trim() !== ''
+    && (!same(e.smtpHost, m.smtpHost) || Number(e.smtpPort || 587) !== m.smtpPort)
   return imap || smtp
 }
 
@@ -162,7 +163,7 @@ export default function SettingsPage() {
         saved = true
         return s
       },
-      'Mailbox updated — its IMAP adapter reconnects with the new settings within ~30 seconds.',
+      'Mailbox updated — changes apply within ~30 seconds.',
     )
     // Keep the form open on an error so the operator can fix the input.
     if (saved) setEditing(null)
@@ -237,7 +238,9 @@ export default function SettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.mailboxes.map((m) => (
+                {data.mailboxes.map((m) => {
+                  const needsPassword = editing?.id === m.id && repoints(editing, m)
+                  return (
                   <Fragment key={m.id}>
                   <tr>
                     <td><code>{m.host}</code></td>
@@ -308,14 +311,17 @@ export default function SettingsPage() {
                             <label className="form-label small mb-0">Username</label>
                             <input type="text" className="form-control form-control-sm" autoComplete="off"
                                    value={editing.username} onChange={(e) => setEdit({ username: e.target.value })} required />
+                            <div className="form-text small">
+                              Can only be changed until the first email arrives — a new address is a new mailbox.
+                            </div>
                           </div>
                           <div className="col-sm-3">
                             <label className="form-label small mb-0">
-                              {repoints(editing, m) ? 'Password (required for new server)' : 'New password'}
+                              {needsPassword ? 'Password (required for new server)' : 'New password'}
                             </label>
                             <input type="password" className="form-control form-control-sm" autoComplete="new-password"
-                                   placeholder={repoints(editing, m) ? 'Re-enter password' : 'Leave blank to keep'}
-                                   required={repoints(editing, m)}
+                                   placeholder={needsPassword ? 'Re-enter password' : 'Leave blank to keep'}
+                                   required={needsPassword}
                                    value={editing.password} onChange={(e) => setEdit({ password: e.target.value })} />
                           </div>
                           <div className="col-sm-4">
@@ -350,7 +356,8 @@ export default function SettingsPage() {
                     </tr>
                   )}
                   </Fragment>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           ) : (

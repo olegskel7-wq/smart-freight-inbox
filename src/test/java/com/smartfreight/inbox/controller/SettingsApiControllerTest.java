@@ -252,6 +252,29 @@ class SettingsApiControllerTest {
     }
 
     @Test
+    void updateRenamingAMailboxInUseIsConflictWithTheReason() throws Exception {
+        doThrow(new MailboxManagementService.MailboxInUseException())
+                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
+
+        mockMvc.perform(put("/api/settings/mailboxes/7")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.x.com\",\"username\":\"sales@other.co.uk\",\"password\":\"p\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(status().reason(org.hamcrest.Matchers.containsString("separate mailbox")));
+    }
+
+    @Test
+    void updateWithoutEncryptionKeyIsBadRequestNotServerError() throws Exception {
+        doThrow(new IllegalStateException("MAILBOX_ENCRYPTION_KEY is not set"))
+                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
+
+        mockMvc.perform(put("/api/settings/mailboxes/7")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.x.com\",\"username\":\"u\",\"password\":\"new\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void deleteUnknownMailboxIsNotFound() throws Exception {
         doThrow(new IllegalArgumentException("Mailbox not found: 99"))
                 .when(mailboxService).delete(anyLong());

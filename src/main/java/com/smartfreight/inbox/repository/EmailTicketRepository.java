@@ -396,4 +396,10 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
            "   AND LOWER(t.senderEmail) LIKE CONCAT('%', :email, '%')")
     boolean existsInboundReplyFrom(@Param("email") String email,
                                    @Param("since") java.time.LocalDateTime since);
+
+    /**
+     * Whether any (non-deleted) ticket arrived on — and so replies through — this mailbox (V37).
+     * Guards renaming the mailbox's account (Gate B15). Tenant-scoped like every entity query.
+     */
+    boolean existsByMailboxId(Long mailboxId);
 }

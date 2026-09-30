@@ -214,7 +214,8 @@ public class SettingsApiController {
      * PUT /api/settings/mailboxes/{id} — edits a mailbox in place (Gate B15): new password, server or SMTP
      * settings without delete + re-add, so open tickets keep their {@code mailbox_id} and keep replying
      * through it. The reconciler rebuilds the adapter within one pass. Unknown/foreign id → 404, invalid
-     * input → 400, a (host, username) clash with another mailbox → 409.
+     * input or a re-point without the password → 400, a (host, username) clash with another mailbox or
+     * renaming the account of a mailbox that has received mail → 409.
      */
     @PutMapping("/mailboxes/{id}")
     public SettingsResponse updateMailbox(@PathVariable Long id, @RequestBody MailboxRequest request) {
@@ -224,6 +225,8 @@ public class SettingsApiController {
                     request.smtpHost(), request.smtpPort(), request.fromAddress());
         } catch (MailboxManagementService.MailboxNotFoundException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (MailboxManagementService.MailboxInUseException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Another mailbox with this host + username is already configured.");

@@ -20,4 +20,7 @@ public interface ShipmentWatchRepository extends JpaRepository<ShipmentWatch, Lo
 
     /** Upsert lookup within the current tenant: a customer re-asking updates their existing watch. */
     Optional<ShipmentWatch> findByIdentifierAndCustomerEmail(String identifier, String customerEmail);
+
+    /** Whether any watch (active or not) replies through this mailbox — guards renaming it (Gate B15). */
+    boolean existsByMailboxId(Long mailboxId);
 }
