@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
+import com.smartfreight.inbox.service.MailTlsPolicy;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.Gauge;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -52,6 +54,7 @@ public class MailboxImapAdapterManager {
     private final IntegrationFlowContext flowContext;
     private final EmailIngestionService emailIngestionService;
     private final SecretCipher secretCipher;
+    private final MailTlsPolicy mailTlsPolicy;
 
     /** mailbox id → fingerprint of the config the running adapter was built from. */
     private final Map<Long, String> running = new ConcurrentHashMap<>();
@@ -59,10 +62,12 @@ public class MailboxImapAdapterManager {
     public MailboxImapAdapterManager(IntegrationFlowContext flowContext,
                                      EmailIngestionService emailIngestionService,
                                      SecretCipher secretCipher,
+                                     MailTlsPolicy mailTlsPolicy,
                                      MeterRegistry meterRegistry) {
         this.flowContext = flowContext;
         this.emailIngestionService = emailIngestionService;
         this.secretCipher = secretCipher;
+        this.mailTlsPolicy = mailTlsPolicy;
         Gauge.builder("smartfreight_imap_adapters_active", running, Map::size)
                 .description("IMAP IDLE adapters currently registered (one per enabled tenant mailbox)")
                 .register(meterRegistry);
@@ -148,24 +153,29 @@ public class MailboxImapAdapterManager {
 
         return IntegrationFlow
                 .from(Mail.imapIdleAdapter(url)
-                        .javaMailProperties(p -> {
-                            p.put("mail.store.protocol", "imaps");
-                            p.put("mail.imaps.user", mailbox.getUsername());
-                            p.put("mail.imaps.password", password);
-                            p.put("mail.imaps.auth", "true");
-                            p.put("mail.imaps.connectiontimeout", "10000");
-                            p.put("mail.imaps.timeout", "60000");
-                            p.put("mail.imaps.keepalive.interval", "60000");
-                            p.put("mail.imaps.ssl.enable", "true");
-                            p.put("mail.imaps.ssl.trust", mailbox.getHost());
-                            p.put("mail.imaps.partialfetch", "false");
-                            p.put("mail.imaps.fetchsize", "1048576");
-                        })
+                        .javaMailProperties(javaMailProperties(mailbox, password))
                         .shouldMarkMessagesAsRead(true)
                         .shouldDeleteMessages(false)
                         .autoStartup(true))
                 .handle(message -> ingest(tenantId, mailboxId, (MimeMessage) message.getPayload()))
                 .get();
+    }
+
+    /** The adapter's JavaMail session config; TLS verification comes from {@link MailTlsPolicy}. */
+    Properties javaMailProperties(TenantMailbox mailbox, String password) {
+        Properties p = new Properties();
+        p.put("mail.store.protocol", "imaps");
+        p.put("mail.imaps.user", mailbox.getUsername());
+        p.put("mail.imaps.password", password);
+        p.put("mail.imaps.auth", "true");
+        p.put("mail.imaps.connectiontimeout", "10000");
+        p.put("mail.imaps.timeout", "60000");
+        p.put("mail.imaps.keepalive.interval", "60000");
+        p.put("mail.imaps.ssl.enable", "true");
+        p.put("mail.imaps.partialfetch", "false");
+        p.put("mail.imaps.fetchsize", "1048576");
+        mailTlsPolicy.applyImaps(p, mailbox.getHost());
+        return p;
     }
 
     /** One arrived message → ticket, inside the mailbox's tenant and attributed to the mailbox. */

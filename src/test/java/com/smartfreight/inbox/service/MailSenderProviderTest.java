@@ -2,12 +2,14 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
+import com.smartfreight.inbox.startup.DemoMailProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 
 import java.util.Optional;
+import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,6 +31,7 @@ class MailSenderProviderTest {
     private TenantMailboxRepository mailboxes;
     private SecretCipher cipher;
     private JavaMailSender platformSender;
+    private DemoMailProperties demo;
     private MailSenderProvider provider;
 
     @BeforeEach
@@ -36,7 +39,9 @@ class MailSenderProviderTest {
         mailboxes = mock(TenantMailboxRepository.class);
         cipher = mock(SecretCipher.class);
         platformSender = mock(JavaMailSender.class);
-        provider = new MailSenderProvider(mailboxes, cipher, platformSender, "platform@smartfreight.com");
+        demo = new DemoMailProperties();
+        provider = new MailSenderProvider(mailboxes, cipher, new MailTlsPolicy(demo), platformSender,
+                "platform@smartfreight.com");
     }
 
     private TenantMailbox smtpMailbox(String fromAddress) {
@@ -152,6 +157,36 @@ class MailSenderProviderTest {
         assertThat(built.getUsername()).isEqualTo("inbox@acme.co.uk");
         assertThat(built.getPassword()).isEqualTo("pw");
         assertThat(resolved.from()).isEqualTo("sales@acme.co.uk");
+    }
+
+    @Test
+    void resolve_realSmtpHost_requiresStartTlsAndVerifiesTheCertificate() {
+        when(cipher.isConfigured()).thenReturn(true);
+        when(cipher.decrypt("ENC(pw)")).thenReturn("pw");
+        when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc())
+                .thenReturn(Optional.of(smtpMailbox("sales@acme.co.uk")));
+
+        Properties props = ((JavaMailSenderImpl) provider.resolve(null).sender()).getJavaMailProperties();
+
+        assertThat(props.getProperty("mail.smtp.starttls.required")).isEqualTo("true");
+        assertThat(props.getProperty("mail.smtp.ssl.checkserveridentity")).isEqualTo("true");
+        assertThat(props).doesNotContainKey("mail.smtp.ssl.trust");
+    }
+
+    @Test
+    void resolve_demoMailpitMailbox_keepsWorkingWithoutTls() {
+        demo.setEnabled(true);
+        TenantMailbox mailpit = smtpMailbox("ops@felixstowe-freight.example.com");
+        mailpit.setSmtpHost("mailpit");
+        mailpit.setSmtpPort(1025);
+        when(cipher.isConfigured()).thenReturn(true);
+        when(cipher.decrypt("ENC(pw)")).thenReturn("pw");
+        when(mailboxes.findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc()).thenReturn(Optional.of(mailpit));
+
+        Properties props = ((JavaMailSenderImpl) provider.resolve(null).sender()).getJavaMailProperties();
+
+        assertThat(props).doesNotContainKey("mail.smtp.starttls.required");
+        assertThat(props.getProperty("mail.smtp.ssl.trust")).isEqualTo("mailpit");
     }
 
     @Test

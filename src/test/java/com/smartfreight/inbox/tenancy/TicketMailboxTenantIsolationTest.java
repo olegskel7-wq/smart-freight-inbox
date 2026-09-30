@@ -9,8 +9,10 @@ import com.smartfreight.inbox.repository.ShipmentWatchRepository;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
 import com.smartfreight.inbox.repository.TenantRepository;
 import com.smartfreight.inbox.service.MailSenderProvider;
+import com.smartfreight.inbox.service.MailTlsPolicy;
 import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.SecretCipher;
+import com.smartfreight.inbox.startup.DemoMailProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -72,7 +74,8 @@ class TicketMailboxTenantIsolationTest {
 
     @BeforeEach
     void setUp() {
-        provider = new MailSenderProvider(mailboxes, cipher, platformSender, "platform@smartfreight.com");
+        provider = new MailSenderProvider(mailboxes, cipher, new MailTlsPolicy(new DemoMailProperties()),
+                platformSender, "platform@smartfreight.com");
         mailboxService = new MailboxManagementService(mailboxes, tickets, watches, cipher);
         tenantA = TenantContext.callAsSystem(
                 () -> tenants.save(Tenant.builder().name("mbx-a-" + UUID.randomUUID()).build()).getId());
