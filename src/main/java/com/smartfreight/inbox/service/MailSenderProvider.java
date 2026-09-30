@@ -115,7 +115,6 @@ public class MailSenderProvider {
         sender.setUsername(m.getUsername());
         sender.setPassword(secretCipher.decrypt(m.getPasswordEnc()));
 
-        // Same TLS/timeout profile as the platform SmtpConfig bean.
         mailTlsPolicy.applySmtp(sender.getJavaMailProperties(), sender.getHost(), sender.getPort());
 
         log.info("Built per-tenant SMTP sender for {}:{} (user {})",

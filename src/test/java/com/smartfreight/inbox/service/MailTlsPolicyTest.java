@@ -171,6 +171,7 @@ class MailTlsPolicyTest {
         private final Thread thread = new Thread(this::serve, "fake-smtp");
 
         FakeSmtpServer() throws IOException {
+            socket.setSoTimeout(5000);   // a client that never connects fails the test fast
             thread.setDaemon(true);
             thread.start();
         }

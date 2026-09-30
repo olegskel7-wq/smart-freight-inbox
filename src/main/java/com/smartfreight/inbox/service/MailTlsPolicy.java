@@ -26,7 +26,7 @@ import java.util.Properties;
 public class MailTlsPolicy {
 
     /** SMTPS — TLS from the first byte; every other SMTP port must STARTTLS. */
-    static final int SMTPS_PORT = 465;
+    private static final int SMTPS_PORT = 465;
 
     private final DemoMailProperties demo;
 
@@ -68,6 +68,6 @@ public class MailTlsPolicy {
     }
 
     private boolean isDemo(String host, String demoHost) {
-        return demo.isEnabled() && host != null && host.equalsIgnoreCase(demoHost);
+        return demo.isEnabled() && demoHost.equalsIgnoreCase(host);
     }
 }

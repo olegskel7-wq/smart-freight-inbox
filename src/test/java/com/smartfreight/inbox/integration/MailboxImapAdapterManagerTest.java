@@ -56,7 +56,7 @@ class MailboxImapAdapterManagerTest {
 
     @Test
     void javaMailProperties_realMailbox_verifiesTheServerCertificate() {
-        Properties p = manager.javaMailProperties(mailbox("imap.gmail.com", 993), "pw");
+        Properties p = manager.javaMailProperties(mailbox("imap.gmail.com"), "pw");
 
         assertThat(p.getProperty("mail.imaps.ssl.enable")).isEqualTo("true");
         assertThat(p.getProperty("mail.imaps.ssl.checkserveridentity")).isEqualTo("true");
@@ -67,19 +67,15 @@ class MailboxImapAdapterManagerTest {
     void javaMailProperties_demoGreenMailMailbox_trustsItsSelfSignedCert() {
         demo.setEnabled(true);
 
-        Properties p = manager.javaMailProperties(mailbox("greenmail", 3993), "demo");
+        Properties p = manager.javaMailProperties(mailbox("greenmail"), "demo");
 
         assertThat(p.getProperty("mail.imaps.ssl.trust")).isEqualTo("greenmail");
     }
 
-    private static TenantMailbox mailbox(String host, int port) {
+    private static TenantMailbox mailbox(String host) {
         TenantMailbox m = new TenantMailbox();
-        m.setId(7L);
-        m.setTenantId(1L);
         m.setHost(host);
-        m.setPort(port);
         m.setUsername("inbox@acme.co.uk");
-        m.setPasswordEnc("ENC(pw)");
         return m;
     }
 }
