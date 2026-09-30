@@ -12,6 +12,18 @@ export class ApiError extends Error {
   }
 }
 
+/** The backend answers errors as {error, message} (GlobalExceptionHandler) — show the message, not raw JSON. */
+async function errorText(res: Response): Promise<string> {
+  const text = await res.text().catch(() => '')
+  try {
+    const message = (JSON.parse(text) as { message?: unknown }).message
+    if (typeof message === 'string' && message) return message
+  } catch {
+    // Not JSON (e.g. a proxy error page) — fall through to the raw text.
+  }
+  return text || res.statusText
+}
+
 /**
  * Thin JSON client bound to the current Keycloak access token. Every call sends
  * `Authorization: Bearer <token>`; a 401 (expired/invalid token) triggers a fresh sign-in
@@ -34,10 +46,7 @@ export function useApi() {
         void auth.signinRedirect()
         throw new ApiError(401, 'Unauthorized')
       }
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        throw new ApiError(res.status, text || res.statusText)
-      }
+      if (!res.ok) throw new ApiError(res.status, await errorText(res))
       if (res.status === 204) return undefined as T
       const ct = res.headers.get('content-type') ?? ''
       return (ct.includes('application/json') ? res.json() : res.text()) as Promise<T>
@@ -71,10 +80,7 @@ export function useApi() {
           void auth.signinRedirect()
           throw new ApiError(401, 'Unauthorized')
         }
-        if (!res.ok) {
-          const text = await res.text().catch(() => '')
-          throw new ApiError(res.status, text || res.statusText)
-        }
+        if (!res.ok) throw new ApiError(res.status, await errorText(res))
         const match = /filename="?([^"]+)"?/.exec(res.headers.get('content-disposition') ?? '')
         return { blob: await res.blob(), filename: match ? match[1] : 'document' }
       },
