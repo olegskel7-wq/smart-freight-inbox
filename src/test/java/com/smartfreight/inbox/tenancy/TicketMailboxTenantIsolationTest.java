@@ -8,6 +8,7 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
 import com.smartfreight.inbox.repository.TenantRepository;
 import com.smartfreight.inbox.service.MailSenderProvider;
+import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.SecretCipher;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +61,7 @@ class TicketMailboxTenantIsolationTest {
     private final SecretCipher cipher = new SecretCipher(TEST_KEY);
     private final JavaMailSender platformSender = mock(JavaMailSender.class);
     private MailSenderProvider provider;
+    private MailboxManagementService mailboxService;
 
     private Long tenantA;
     private Long tenantB;
@@ -67,6 +69,7 @@ class TicketMailboxTenantIsolationTest {
     @BeforeEach
     void setUp() {
         provider = new MailSenderProvider(mailboxes, cipher, platformSender, "platform@smartfreight.com");
+        mailboxService = new MailboxManagementService(mailboxes, cipher);
         tenantA = TenantContext.callAsSystem(
                 () -> tenants.save(Tenant.builder().name("mbx-a-" + UUID.randomUUID()).build()).getId());
         tenantB = TenantContext.callAsSystem(
@@ -177,5 +180,52 @@ class TicketMailboxTenantIsolationTest {
 
         assertThat(storedMailboxId(ticketId)).isNull();
         assertThat(replyFrom(tenantA, ticketId)).isEqualTo("ops@a.test");
+    }
+
+    // ---- Gate B15: edit in place instead of delete + re-add ----
+
+    @Test
+    void editingTheMailbox_keepsTheTicketLinkAndUsesTheNewConfig() {
+        mailbox(tenantA, "ops@a.test", true, true);
+        Long quotes = mailbox(tenantA, "quotes@a.test", true, true);
+        Long ticketId = ticket(tenantA, quotes);
+        String oldCiphertext = storedPasswordEnc(quotes);
+
+        // Password rotation + new reply address, as the /settings edit form sends it.
+        TenantContext.runAs(tenantA, () -> mailboxService.update(quotes, "imap.test", 993, "quotes@a.test",
+                "rotated-pw", "smtp.test", 465, "quotes-desk@a.test"));
+
+        assertThat(storedMailboxId(ticketId)).isEqualTo(quotes);
+        assertThat(replyFrom(tenantA, ticketId)).isEqualTo("quotes-desk@a.test");
+        assertThat(storedPasswordEnc(quotes)).isNotEqualTo(oldCiphertext);
+        assertThat(cipher.decrypt(storedPasswordEnc(quotes))).isEqualTo("rotated-pw");
+    }
+
+    @Test
+    void anotherTenantCannotEditTheMailbox() {
+        Long foreign = mailbox(tenantB, "sales@b.test", true, true);
+
+        assertThatThrownBy(() -> TenantContext.runAs(tenantA, () -> mailboxService.update(foreign,
+                "imap.evil", 993, "attacker@a.test", "pw", null, null, null)))
+                .isInstanceOf(MailboxManagementService.MailboxNotFoundException.class);
+
+        assertThat(fromFor(tenantB, foreign)).isEqualTo("sales@b.test");
+        assertThat(TenantContext.callAsSystem(() -> jdbc.queryForObject(
+                "SELECT host FROM tenant_mailbox WHERE id = ?", String.class, foreign))).isEqualTo("imap.test");
+    }
+
+    @Test
+    void editingIntoAnotherMailboxsAccount_isRejectedByTheUniqueConstraint() {
+        mailbox(tenantA, "ops@a.test", true, true);
+        Long quotes = mailbox(tenantA, "quotes@a.test", true, true);
+
+        assertThatThrownBy(() -> TenantContext.runAs(tenantA, () -> mailboxService.update(quotes,
+                "imap.test", 993, "ops@a.test", null, "smtp.test", 587, null)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private String storedPasswordEnc(Long mailboxId) {
+        return TenantContext.callAsSystem(() -> jdbc.queryForObject(
+                "SELECT password_enc FROM tenant_mailbox WHERE id = ?", String.class, mailboxId));
     }
 }

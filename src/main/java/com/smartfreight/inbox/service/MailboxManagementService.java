@@ -15,7 +15,7 @@ import java.util.List;
  * <p>All reads and writes run inside the caller's tenant scope — {@code @TenantId}
  * filters queries and stamps inserts, RLS (V21) backs it up below the ORM. Passwords
  * are encrypted here ({@link SecretCipher}) so the controller and the entity never see
- * the scheme; rotation = delete + re-add (the adapter rebuilds either way).
+ * the scheme; rotation = {@link #update} in place, so tickets keep their mailbox link.
  *
  * <p>Changes take effect without a restart: {@code MailboxReconciler} picks them up on
  * its next pass (default ≤30 s) and starts/stops/rebuilds the IMAP adapters to match.
@@ -49,32 +49,41 @@ public class MailboxManagementService {
     @Transactional
     public void create(String host, int port, String username, String rawPassword,
                        String smtpHost, Integer smtpPort, String fromAddress) {
-        if (host == null || host.isBlank()
-                || username == null || username.isBlank()
-                || rawPassword == null || rawPassword.isBlank()) {
+        if (rawPassword == null || rawPassword.isBlank()) {
             throw new IllegalArgumentException("Host, username and password are all required.");
         }
-        if (port < 1 || port > 65535) {
-            throw new IllegalArgumentException("Port must be between 1 and 65535.");
-        }
         TenantMailbox mailbox = new TenantMailbox();
-        mailbox.setHost(host.trim());
-        mailbox.setPort(port);
-        mailbox.setUsername(username.trim());
+        applyConfig(mailbox, host, port, username, smtpHost, smtpPort, fromAddress);
         mailbox.setPasswordEnc(secretCipher.encrypt(rawPassword));
         mailbox.setEnabled(true);
-
-        if (smtpHost != null && !smtpHost.isBlank()) {
-            int resolvedSmtpPort = smtpPort != null ? smtpPort : 587;
-            if (resolvedSmtpPort < 1 || resolvedSmtpPort > 65535) {
-                throw new IllegalArgumentException("SMTP port must be between 1 and 65535.");
-            }
-            mailbox.setSmtpHost(smtpHost.trim());
-            mailbox.setSmtpPort(resolvedSmtpPort);
-            mailbox.setFromAddress(fromAddress != null && !fromAddress.isBlank()
-                    ? fromAddress.trim() : null);
-        }
         mailboxes.save(mailbox);
+    }
+
+    /**
+     * Edits a mailbox in place (Gate B15) — the row keeps its id, so tickets that arrived on it
+     * ({@code email_ticket.mailbox_id}, V37) keep replying through it after a password rotation.
+     * Delete + re-add would null that link ({@code ON DELETE SET NULL}).
+     *
+     * <p>Same validation as {@link #create}. A blank {@code rawPassword} keeps the stored one (the
+     * form never shows it); a blank {@code smtpHost} makes the mailbox inbound-only again. The
+     * enabled flag is untouched — pausing is {@link #setEnabled}. The IMAP adapter and the cached
+     * SMTP sender are keyed by a config fingerprint, so both rebuild on their own.
+     *
+     * @throws MailboxNotFoundException if the id is not one of the caller's mailboxes
+     * @throws IllegalArgumentException on blank/invalid input
+     * @throws IllegalStateException    when a new password is given but MAILBOX_ENCRYPTION_KEY is missing
+     */
+    @Transactional
+    public void update(Long id, String host, int port, String username, String rawPassword,
+                       String smtpHost, Integer smtpPort, String fromAddress) {
+        TenantMailbox mailbox = findInCurrentTenant(id);
+        applyConfig(mailbox, host, port, username, smtpHost, smtpPort, fromAddress);
+        if (rawPassword != null && !rawPassword.isBlank()) {
+            mailbox.setPasswordEnc(secretCipher.encrypt(rawPassword));
+        }
+        // Flush now so a (host, username) clash surfaces here as DataIntegrityViolationException
+        // (→ 409 in the controller), not later at commit.
+        mailboxes.saveAndFlush(mailbox);
     }
 
     /**
@@ -99,9 +108,50 @@ public class MailboxManagementService {
         mailboxes.delete(findInCurrentTenant(id));
     }
 
+    /** Validates and copies the fields shared by {@link #create} and {@link #update}. */
+    private static void applyConfig(TenantMailbox mailbox, String host, int port, String username,
+                                    String smtpHost, Integer smtpPort, String fromAddress) {
+        if (host == null || host.isBlank() || username == null || username.isBlank()) {
+            throw new IllegalArgumentException("Host, username and password are all required.");
+        }
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException("Port must be between 1 and 65535.");
+        }
+        mailbox.setHost(host.trim());
+        mailbox.setPort(port);
+        mailbox.setUsername(username.trim());
+
+        if (smtpHost != null && !smtpHost.isBlank()) {
+            int resolvedSmtpPort = smtpPort != null ? smtpPort : 587;
+            if (resolvedSmtpPort < 1 || resolvedSmtpPort > 65535) {
+                throw new IllegalArgumentException("SMTP port must be between 1 and 65535.");
+            }
+            mailbox.setSmtpHost(smtpHost.trim());
+            mailbox.setSmtpPort(resolvedSmtpPort);
+            mailbox.setFromAddress(fromAddress != null && !fromAddress.isBlank()
+                    ? fromAddress.trim() : null);
+        } else {
+            // Inbound-only: replies fall back to the platform account.
+            mailbox.setSmtpHost(null);
+            mailbox.setSmtpPort(null);
+            mailbox.setFromAddress(null);
+        }
+    }
+
     /** Tenant-filtered load — a foreign tenant's id reads as "not found". */
     private TenantMailbox findInCurrentTenant(Long id) {
         return mailboxes.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Mailbox not found: " + id));
+                .orElseThrow(() -> new MailboxNotFoundException(id));
+    }
+
+    /**
+     * The id is not one of the caller's mailboxes. Extends {@link IllegalArgumentException} so the
+     * toggle/delete handlers keep mapping it to 404; the update handler catches it first to tell it
+     * apart from a validation error (400).
+     */
+    public static class MailboxNotFoundException extends IllegalArgumentException {
+        public MailboxNotFoundException(Long id) {
+            super("Mailbox not found: " + id);
+        }
     }
 }

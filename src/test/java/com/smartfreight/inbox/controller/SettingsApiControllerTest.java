@@ -38,6 +38,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -191,6 +192,62 @@ class SettingsApiControllerTest {
         mockMvc.perform(post("/api/settings/mailboxes")
                         .contentType("application/json")
                         .content("{\"host\":\"imap.x.com\",\"port\":993,\"username\":\"u\",\"password\":\"p\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void getExposesSmtpFieldsForTheEditFormButNeverThePassword() throws Exception {
+        mockMvc.perform(get("/api/settings"))
+                .andExpect(jsonPath("$.mailboxes[0].smtpHost").value("smtp.acme.co.uk"))
+                .andExpect(jsonPath("$.mailboxes[0].fromAddress").value("sales@acme.co.uk"))
+                .andExpect(jsonPath("$.mailboxes[0].password").doesNotExist())
+                .andExpect(jsonPath("$.mailboxes[0].passwordEnc").doesNotExist());
+    }
+
+    @Test
+    void updateMailboxEditsInPlaceAndReturnsSnapshot() throws Exception {
+        mockMvc.perform(put("/api/settings/mailboxes/7")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.acme.co.uk\",\"port\":993,\"username\":\"ops@acme.co.uk\","
+                                + "\"password\":\"\",\"smtpHost\":\"smtp.acme.co.uk\",\"smtpPort\":465,"
+                                + "\"fromAddress\":\"sales@acme.co.uk\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mailboxes[0].id").value(7));
+
+        verify(mailboxService).update(7L, "imap.acme.co.uk", 993, "ops@acme.co.uk", "",
+                "smtp.acme.co.uk", 465, "sales@acme.co.uk");
+    }
+
+    @Test
+    void updateUnknownMailboxIsNotFound() throws Exception {
+        doThrow(new MailboxManagementService.MailboxNotFoundException(99L))
+                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
+
+        mockMvc.perform(put("/api/settings/mailboxes/99")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.x.com\",\"username\":\"u\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void updateInvalidInputIsBadRequest() throws Exception {
+        doThrow(new IllegalArgumentException("Port must be between 1 and 65535."))
+                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
+
+        mockMvc.perform(put("/api/settings/mailboxes/7")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.x.com\",\"port\":70000,\"username\":\"u\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateMailboxMapsDuplicateToConflict() throws Exception {
+        doThrow(new DataIntegrityViolationException("dup"))
+                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
+
+        mockMvc.perform(put("/api/settings/mailboxes/7")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.x.com\",\"username\":\"taken\"}"))
                 .andExpect(status().isConflict());
     }
 

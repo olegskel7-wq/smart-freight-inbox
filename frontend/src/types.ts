@@ -163,6 +163,10 @@ export interface MailboxRow {
   sendsAs: string | null
   enabled: boolean
   running: boolean
+  // Raw SMTP config — seeds the edit form (Gate B15). The password is never returned.
+  smtpHost: string | null
+  smtpPort: number | null
+  fromAddress: string | null
 }
 
 // Rates DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2). Monetary fields are

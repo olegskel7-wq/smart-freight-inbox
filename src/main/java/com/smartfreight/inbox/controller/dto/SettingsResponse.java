@@ -35,7 +35,8 @@ public record SettingsResponse(
     /**
      * Row view of a tenant mailbox. {@code sendsAs} is the address replies go out from when this mailbox
      * has its own SMTP (else null → the SPA shows the platform fallback); {@code running} reflects whether
-     * the IMAP adapter is registered yet (the reconciler starts it within ~30 s).
+     * the IMAP adapter is registered yet (the reconciler starts it within ~30 s). The raw SMTP fields
+     * seed the edit form (Gate B15); the password is never returned.
      */
     public record MailboxDto(
             long id,
@@ -44,7 +45,10 @@ public record SettingsResponse(
             String username,
             String sendsAs,
             boolean enabled,
-            boolean running) {
+            boolean running,
+            String smtpHost,
+            Integer smtpPort,
+            String fromAddress) {
 
         public static MailboxDto from(TenantMailbox m, boolean running) {
             String sendsAs = m.getSmtpHost() == null
@@ -52,7 +56,8 @@ public record SettingsResponse(
                     : (m.getFromAddress() != null ? m.getFromAddress() : m.getUsername());
             return new MailboxDto(
                     m.getId(), m.getHost(), m.getPort(), m.getUsername(),
-                    sendsAs, m.isEnabled(), running);
+                    sendsAs, m.isEnabled(), running,
+                    m.getSmtpHost(), m.getSmtpPort(), m.getFromAddress());
         }
     }
 }
