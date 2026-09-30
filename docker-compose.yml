@@ -50,6 +50,12 @@ services:
       # Phase 4.8 S2 demo mail harness (greenmail + mailpit below) — how to run: header of
       # scripts/demo-mail.ps1. Off (the default) REMOVES the demo mailboxes on backend start.
       - DEMO_MAIL_ENABLED=${DEMO_MAIL_ENABLED:-false}
+      # Mail TLS is verified against the JVM truststore (MailTlsPolicy). Dev only: set
+      # USE_SYSTEM_CA_CERTS=1 in .env to also trust the *.crt files in certs/extra-ca (e.g. an
+      # antivirus that re-signs IMAPS/SMTP traffic) — see certs/extra-ca/README.md. Unset in prod.
+      - USE_SYSTEM_CA_CERTS=${USE_SYSTEM_CA_CERTS:-}
+    volumes:
+      - ./certs/extra-ca:/certificates:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -357,7 +363,8 @@ services:
   greenmail:
     # Phase 4.8 S2 demo mail harness: fake mail server holding the demo tenants' inboxes.
     # scripts/demo-mail.ps1 drops scenario emails in over SMTP :3025; the backend's IMAP IDLE
-    # adapters read them over IMAPS :3993 (self-signed cert — the adapter trusts the host).
+    # adapters read them over IMAPS :3993 (self-signed cert — MailTlsPolicy trusts THIS host, and
+    # only while DEMO_MAIL_ENABLED; every other mailbox is verified against the JVM truststore).
     # auth.disabled: any login is accepted and a mailbox exists per address on first use, so the
     # demo addresses live in ONE place (application.yaml demo.mail.inboxes) — fake data only.
     # Host ports bound to 127.0.0.1: nothing outside this machine needs the demo mail servers.

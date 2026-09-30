@@ -30,4 +30,7 @@ COPY --from=build /build/target/inbox-*.jar app.jar
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]
+# The base image's own entrypoint runs first: with USE_SYSTEM_CA_CERTS set it imports
+# /certificates/*.crt into the JVM truststore (dev: a TLS-inspecting antivirus's root CA —
+# see certs/extra-ca/README.md); unset (the default, and prod) it just execs java.
+ENTRYPOINT ["/__cacert_entrypoint.sh", "java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]

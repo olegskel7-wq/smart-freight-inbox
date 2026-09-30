@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -48,6 +47,7 @@ public class MailSenderProvider {
 
     private final TenantMailboxRepository mailboxes;
     private final SecretCipher secretCipher;
+    private final MailTlsPolicy mailTlsPolicy;
     private final JavaMailSender platformSender;
     private final String platformFrom;
 
@@ -60,10 +60,12 @@ public class MailSenderProvider {
 
     public MailSenderProvider(TenantMailboxRepository mailboxes,
                               SecretCipher secretCipher,
+                              MailTlsPolicy mailTlsPolicy,
                               JavaMailSender platformSender,
                               @Value("${smtp.username}") String platformFrom) {
         this.mailboxes = mailboxes;
         this.secretCipher = secretCipher;
+        this.mailTlsPolicy = mailTlsPolicy;
         this.platformSender = platformSender;
         this.platformFrom = platformFrom;
     }
@@ -113,15 +115,7 @@ public class MailSenderProvider {
         sender.setUsername(m.getUsername());
         sender.setPassword(secretCipher.decrypt(m.getPasswordEnc()));
 
-        // Same STARTTLS/timeout profile as the platform SmtpConfig bean.
-        Properties props = sender.getJavaMailProperties();
-        props.put("mail.transport.protocol", "smtp");
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.starttls.enable", "true");
-        props.put("mail.smtp.ssl.trust", m.getSmtpHost());
-        props.put("mail.smtp.connectiontimeout", "10000");
-        props.put("mail.smtp.timeout", "10000");
-        props.put("mail.smtp.writetimeout", "10000");
+        mailTlsPolicy.applySmtp(sender.getJavaMailProperties(), sender.getHost(), sender.getPort());
 
         log.info("Built per-tenant SMTP sender for {}:{} (user {})",
                 m.getSmtpHost(), sender.getPort(), m.getUsername());

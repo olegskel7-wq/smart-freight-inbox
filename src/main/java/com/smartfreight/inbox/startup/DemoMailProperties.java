@@ -26,11 +26,11 @@ public class DemoMailProperties {
     /** Master switch. Off = demo mailboxes (if any were created earlier) are removed. */
     private boolean enabled = false;
 
-    /** GreenMail IMAPS endpoint (self-signed cert — trusted per host by the IMAP adapter). */
+    /** GreenMail IMAPS endpoint (self-signed cert — the TLS exemption is in {@code MailTlsPolicy}). */
     private String imapHost = "greenmail";
     private int imapPort = 3993;
 
-    /** Mailpit SMTP endpoint — accepts any credentials, catches every reply. */
+    /** Mailpit SMTP endpoint — plain SMTP, accepts any credentials, catches every reply. */
     private String smtpHost = "mailpit";
     private int smtpPort = 1025;
 

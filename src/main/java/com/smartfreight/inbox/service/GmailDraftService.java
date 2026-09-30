@@ -42,16 +42,19 @@ public class GmailDraftService {
     private final String password;
 
     private final SettingsService settingsService;
+    private final MailTlsPolicy mailTlsPolicy;
     private final Counter draftSavedCounter;
     private final Counter draftFailedCounter;
 
     public GmailDraftService(SettingsService settingsService,
+                             MailTlsPolicy mailTlsPolicy,
                              MeterRegistry meterRegistry,
                              @Value("${spring.mail.host}") String host,
                              @Value("${spring.mail.port:993}") int port,
                              @Value("${spring.mail.username}") String username,
                              @Value("${spring.mail.password}") String password) {
         this.settingsService = settingsService;
+        this.mailTlsPolicy = mailTlsPolicy;
         this.host = host;
         this.port = port;
         this.username = username;
@@ -110,15 +113,14 @@ public class GmailDraftService {
         }
     }
 
-    private Properties buildImapProperties() {
+    Properties buildImapProperties() {
         Properties props = new Properties();
         props.put("mail.store.protocol",         "imaps");
         props.put("mail.imaps.host",              host);
         props.put("mail.imaps.port",              String.valueOf(port));
-        props.put("mail.imaps.ssl.enable",        "true");
-        props.put("mail.imaps.ssl.trust",         host);
         props.put("mail.imaps.connectiontimeout", "10000");
         props.put("mail.imaps.timeout",           "10000");
+        mailTlsPolicy.applyImaps(props, host);
         return props;
     }
 
