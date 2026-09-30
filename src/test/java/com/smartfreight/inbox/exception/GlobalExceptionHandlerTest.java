@@ -75,6 +75,18 @@ class GlobalExceptionHandlerTest {
     }
 
     /**
+     * ResponseStatusException (every /api controller's 400/404/409) keeps its status and reason —
+     * the catch-all used to turn it into a 500 "An unexpected error occurred".
+     */
+    @Test
+    void responseStatusException_keepsItsStatusAndReason() throws Exception {
+        mockMvc.perform(get("/test/conflict"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("CONFLICT"))
+                .andExpect(jsonPath("$.message").value("This mailbox is already configured."));
+    }
+
+    /**
      * Pagalbinis REST valdiklis, skirtas išimčių išmetimui testuose.
      *
      * Kiekvienas galūninis taškas meta skirtingo tipo išimtį –
@@ -97,6 +109,12 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/generic-exception")
         String throwGenericException() {
             throw new RuntimeException("Something went terribly wrong");
+        }
+
+        @GetMapping("/conflict")
+        String throwConflict() {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT, "This mailbox is already configured.");
         }
     }
 }

@@ -14,6 +14,9 @@ import com.smartfreight.inbox.service.TicketProcessingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -24,10 +27,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -38,6 +41,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -186,7 +190,7 @@ class SettingsApiControllerTest {
     @Test
     void addMailboxMapsDuplicateToConflict() throws Exception {
         doThrow(new DataIntegrityViolationException("dup"))
-                .when(mailboxService).create(anyString(), anyInt(), anyString(), anyString(), any(), any(), any());
+                .when(mailboxService).create(anyString(), any(), anyString(), anyString(), any(), any(), any());
 
         mockMvc.perform(post("/api/settings/mailboxes")
                         .contentType("application/json")
@@ -195,8 +199,64 @@ class SettingsApiControllerTest {
     }
 
     @Test
+    void getExposesSmtpFieldsForTheEditFormButNeverThePassword() throws Exception {
+        mockMvc.perform(get("/api/settings"))
+                .andExpect(jsonPath("$.mailboxes[0].smtpHost").value("smtp.acme.co.uk"))
+                .andExpect(jsonPath("$.mailboxes[0].fromAddress").value("sales@acme.co.uk"))
+                .andExpect(jsonPath("$.mailboxes[0].password").doesNotExist())
+                .andExpect(jsonPath("$.mailboxes[0].passwordEnc").doesNotExist());
+    }
+
+    @Test
+    void updateMailboxEditsInPlaceAndReturnsSnapshot() throws Exception {
+        mockMvc.perform(put("/api/settings/mailboxes/7")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.acme.co.uk\",\"port\":993,\"username\":\"ops@acme.co.uk\","
+                                + "\"password\":\"\",\"smtpHost\":\"smtp.acme.co.uk\",\"smtpPort\":465,"
+                                + "\"fromAddress\":\"sales@acme.co.uk\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mailboxes[0].id").value(7));
+
+        verify(mailboxService).update(7L, "imap.acme.co.uk", 993, "ops@acme.co.uk", "",
+                "smtp.acme.co.uk", 465, "sales@acme.co.uk");
+    }
+
+
+    /** Every way update can fail → the status the SPA branches on (one table instead of a test each). */
+    static Stream<Arguments> updateFailures() {
+        return Stream.of(
+                Arguments.of(new MailboxManagementService.MailboxNotFoundException(99L), 404),
+                Arguments.of(new IllegalArgumentException("Port must be between 1 and 65535."), 400),
+                Arguments.of(new IllegalStateException("MAILBOX_ENCRYPTION_KEY is not set"), 400),
+                Arguments.of(new DataIntegrityViolationException("dup"), 409),
+                Arguments.of(new MailboxManagementService.MailboxInUseException(), 409));
+    }
+
+    @ParameterizedTest
+    @MethodSource("updateFailures")
+    void updateMapsEachFailureToItsStatus(RuntimeException failure, int expectedStatus) throws Exception {
+        doThrow(failure).when(mailboxService).update(anyLong(), any(), any(), any(), any(), any(), any(), any());
+
+        mockMvc.perform(put("/api/settings/mailboxes/7")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.x.com\",\"username\":\"u\",\"password\":\"p\"}"))
+                .andExpect(status().is(expectedStatus));
+    }
+
+    @Test
+    void updateRenamingAMailboxInUseExplainsWhatToDoInstead() throws Exception {
+        doThrow(new MailboxManagementService.MailboxInUseException())
+                .when(mailboxService).update(anyLong(), any(), any(), any(), any(), any(), any(), any());
+
+        mockMvc.perform(put("/api/settings/mailboxes/7")
+                        .contentType("application/json")
+                        .content("{\"host\":\"imap.x.com\",\"username\":\"sales@other.co.uk\",\"password\":\"p\"}"))
+                .andExpect(status().reason(org.hamcrest.Matchers.containsString("separate mailbox")));
+    }
+
+    @Test
     void deleteUnknownMailboxIsNotFound() throws Exception {
-        doThrow(new IllegalArgumentException("Mailbox not found: 99"))
+        doThrow(new MailboxManagementService.MailboxNotFoundException(99L))
                 .when(mailboxService).delete(anyLong());
 
         mockMvc.perform(delete("/api/settings/mailboxes/99"))

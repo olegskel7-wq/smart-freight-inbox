@@ -30,9 +30,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *       inbound IMAP keep working unchanged.</li>
  * </ol>
  *
- * <p>One {@link JavaMailSender} per distinct SMTP config, cached and keyed by a fingerprint
- * (host|port|username|encrypted-password-hash) — an edited mailbox rebuilds its sender on
- * the next send, the same change-detection idea {@code MailboxImapAdapterManager} uses for
+ * <p>One {@link JavaMailSender} per mailbox, cached with the fingerprint of the config it was
+ * built from (host|port|username|encrypted-password-hash) — an edited mailbox replaces its sender
+ * on the next send, the same change-detection idea {@code MailboxImapAdapterManager} uses for
  * IMAP adapters. The SMTP password reuses the mailbox's AES-GCM {@code passwordEnc}: one
  * account, one credential.
  *
@@ -51,8 +51,12 @@ public class MailSenderProvider {
     private final JavaMailSender platformSender;
     private final String platformFrom;
 
-    /** SMTP config fingerprint → built sender. Bounded by the number of distinct tenant accounts. */
-    private final Map<String, JavaMailSender> senders = new ConcurrentHashMap<>();
+    /**
+     * Mailbox id → the sender built from its current config. Keyed by id (ids are global), not by
+     * fingerprint, so an in-place edit (Gate B15) REPLACES the old sender — and the stale decrypted
+     * password inside it — instead of piling up one entry per rotation. Bounded by the mailbox count.
+     */
+    private final Map<Long, CachedSender> senders = new ConcurrentHashMap<>();
 
     public MailSenderProvider(TenantMailboxRepository mailboxes,
                               SecretCipher secretCipher,
@@ -76,13 +80,30 @@ public class MailSenderProvider {
                     .or(mailboxes::findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc);
             if (mailbox.isPresent()) {
                 TenantMailbox m = mailbox.get();
-                JavaMailSender sender = senders.computeIfAbsent(fingerprint(m), fp -> buildSender(m));
+                JavaMailSender sender = senderFor(m);
                 String from = (m.getFromAddress() != null && !m.getFromAddress().isBlank())
                         ? m.getFromAddress() : m.getUsername();
                 return new ResolvedSender(sender, from);
             }
         }
         return new ResolvedSender(platformSender, platformFrom);
+    }
+
+    /** Lock-free on a hit (every send); compute() only when the mailbox is new or was edited. */
+    private JavaMailSender senderFor(TenantMailbox m) {
+        String fingerprint = fingerprint(m);
+        CachedSender cached = senders.get(m.getId());
+        if (cached != null && cached.fingerprint().equals(fingerprint)) {
+            return cached.sender();
+        }
+        return senders.compute(m.getId(), (id, current) ->
+                current != null && current.fingerprint().equals(fingerprint)
+                        ? current : new CachedSender(fingerprint, buildSender(m))).sender();
+    }
+
+    /** How many mailbox senders are cached — lets tests check a rotation replaces rather than adds. */
+    int cachedSenderCount() {
+        return senders.size();
     }
 
     private JavaMailSender buildSender(TenantMailbox m) {
@@ -110,6 +131,10 @@ public class MailSenderProvider {
     private static String fingerprint(TenantMailbox m) {
         return m.getTenantId() + "|" + m.getSmtpHost() + "|" + m.getSmtpPort()
                 + "|" + m.getUsername() + "|" + m.getPasswordEnc().hashCode();
+    }
+
+    /** A built sender and the config fingerprint it was built from. */
+    private record CachedSender(String fingerprint, JavaMailSender sender) {
     }
 
     /** A resolved SMTP transport and the address replies go out FROM. */

@@ -97,20 +97,25 @@ public class DemoMailboxBootstrap implements ApplicationRunner {
         }
     }
 
-    /** No tenant-existence check: under RLS the lookup for a missing tenant is simply empty. */
+    /**
+     * Removes every mailbox of a demo tenant that points at the fake IMAP server — matched by host,
+     * not by the configured address, so a demo inbox renamed on /settings (Gate B15) is still found
+     * and never left behind pointing at a stopped GreenMail. No tenant-existence check: under RLS the
+     * lookup for a missing tenant is simply empty.
+     */
     private void tearDown() {
-        properties.getInboxes().forEach((tenantId, addresses) -> addresses.forEach(address -> {
+        properties.getInboxes().keySet().forEach(tenantId -> {
             try {
-                TenantContext.runAs(tenantId, () -> mailboxes.findFirstByUsernameOrderByIdAsc(address)
-                        .ifPresent(mailbox -> {
+                TenantContext.runAs(tenantId, () -> mailboxes.findByHost(properties.getImapHost())
+                        .forEach(mailbox -> {
                             mailboxes.delete(mailbox);
                             log.info("Demo mail harness is off — removed demo mailbox {} (tenant {})",
-                                    address, tenantId);
+                                    mailbox.getUsername(), tenantId);
                         }));
             } catch (RuntimeException e) {
-                log.error("Demo mailbox {} (tenant {}) could not be removed", address, tenantId, e);
+                log.error("Demo mailboxes (tenant {}) could not be removed", tenantId, e);
             }
-        }));
+        });
     }
 
     private void upsert(Long tenantId, String address) {

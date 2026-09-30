@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -81,7 +82,10 @@ public class SettingsApiController {
     /** Request body for {@code POST /api/settings/quotefollowup}. */
     public record QuoteFollowUpRequest(boolean enabled, String delayHours) {}
 
-    /** Request body for {@code POST /api/settings/mailboxes}. */
+    /**
+     * Request body for {@code POST /api/settings/mailboxes} and {@code PUT /api/settings/mailboxes/{id}}
+     * (on PUT a blank password keeps the stored one).
+     */
     public record MailboxRequest(String host, Integer port, String username, String password,
                                  String smtpHost, Integer smtpPort, String fromAddress) {}
 
@@ -194,12 +198,36 @@ public class SettingsApiController {
     @PostMapping("/mailboxes")
     public SettingsResponse addMailbox(@RequestBody MailboxRequest request) {
         try {
-            int port = request.port() != null ? request.port() : 993;
-            mailboxService.create(request.host(), port, request.username(), request.password(),
+            mailboxService.create(request.host(), request.port(), request.username(), request.password(),
                     request.smtpHost(), request.smtpPort(), request.fromAddress());
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "This mailbox (host + username) is already configured.");
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return buildResponse();
+    }
+
+    /**
+     * PUT /api/settings/mailboxes/{id} — edits a mailbox in place (Gate B15): new password, server or SMTP
+     * settings without delete + re-add, so open tickets keep their {@code mailbox_id} and keep replying
+     * through it. The reconciler rebuilds the adapter within one pass. Unknown/foreign id → 404, invalid
+     * input or a re-point without the password → 400, a (host, username) clash with another mailbox or
+     * renaming the account of a mailbox that has received mail → 409.
+     */
+    @PutMapping("/mailboxes/{id}")
+    public SettingsResponse updateMailbox(@PathVariable Long id, @RequestBody MailboxRequest request) {
+        try {
+            mailboxService.update(id, request.host(), request.port(), request.username(), request.password(),
+                    request.smtpHost(), request.smtpPort(), request.fromAddress());
+        } catch (MailboxManagementService.MailboxNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (MailboxManagementService.MailboxInUseException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Another mailbox with this host + username is already configured.");
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
@@ -211,7 +239,7 @@ public class SettingsApiController {
     public SettingsResponse toggleMailbox(@PathVariable Long id, @RequestBody ToggleRequest request) {
         try {
             mailboxService.setEnabled(id, request.enabled());
-        } catch (IllegalArgumentException e) {
+        } catch (MailboxManagementService.MailboxNotFoundException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
         return buildResponse();
@@ -222,7 +250,7 @@ public class SettingsApiController {
     public ResponseEntity<Void> deleteMailbox(@PathVariable Long id) {
         try {
             mailboxService.delete(id);
-        } catch (IllegalArgumentException e) {
+        } catch (MailboxManagementService.MailboxNotFoundException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
         return ResponseEntity.noContent().build();

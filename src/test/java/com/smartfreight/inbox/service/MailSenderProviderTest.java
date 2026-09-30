@@ -182,6 +182,24 @@ class MailSenderProviderTest {
     }
 
     @Test
+    void resolve_rotatedPassword_rebuildsAndReplacesTheCachedSender() {
+        TenantMailbox mailbox = smtpMailbox("sales@acme.co.uk");
+        when(cipher.isConfigured()).thenReturn(true);
+        when(cipher.decrypt("ENC(pw)")).thenReturn("pw");
+        when(cipher.decrypt("ENC(rotated)")).thenReturn("rotated");
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(1L)).thenReturn(Optional.of(mailbox));
+
+        JavaMailSender before = provider.resolve(1L).sender();
+        mailbox.setPasswordEnc("ENC(rotated)");   // edited in place on /settings (Gate B15)
+        JavaMailSender after = provider.resolve(1L).sender();
+
+        assertThat(after).isNotSameAs(before);
+        assertThat(((JavaMailSenderImpl) after).getPassword()).isEqualTo("rotated");
+        // The old sender (and the stale plaintext password in it) is dropped, not kept alongside.
+        assertThat(provider.cachedSenderCount()).isEqualTo(1);
+    }
+
+    @Test
     void resolve_twoInboxesOfOneTenant_getDistinctSenders() {
         when(cipher.isConfigured()).thenReturn(true);
         when(cipher.decrypt(any())).thenReturn("pw");

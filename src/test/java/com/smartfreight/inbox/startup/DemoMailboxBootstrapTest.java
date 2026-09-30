@@ -172,8 +172,7 @@ class DemoMailboxBootstrapTest {
         TenantMailbox quotes = demoRow();
         quotes.setId(8L);
         quotes.setUsername(QUOTES_ADDRESS);
-        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenReturn(Optional.of(ops));
-        when(mailboxes.findFirstByUsernameOrderByIdAsc(QUOTES_ADDRESS)).thenReturn(Optional.of(quotes));
+        when(mailboxes.findByHost("greenmail")).thenReturn(List.of(ops, quotes));
 
         bootstrap.run(null);
 
@@ -184,7 +183,7 @@ class DemoMailboxBootstrapTest {
     @Test
     void disabled_removesPreviouslyCreatedDemoMailbox() {
         TenantMailbox existing = demoRow();
-        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenReturn(Optional.of(existing));
+        when(mailboxes.findByHost("greenmail")).thenReturn(List.of(existing));
 
         bootstrap.run(null);
 
@@ -195,8 +194,21 @@ class DemoMailboxBootstrapTest {
     }
 
     @Test
+    void disabled_demoInboxRenamedOnSettings_stillRemovedByHost() {
+        // Gate B15 lets an operator edit a demo inbox's username before it has received mail;
+        // matching by the configured address would miss it and leave it pointing at GreenMail.
+        TenantMailbox renamed = demoRow();
+        renamed.setUsername("renamed@felixstowe-freight.example.com");
+        when(mailboxes.findByHost("greenmail")).thenReturn(List.of(renamed));
+
+        bootstrap.run(null);
+
+        verify(mailboxes).delete(renamed);
+    }
+
+    @Test
     void disabled_noDemoMailbox_isNoOp() {
-        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenReturn(Optional.empty());
+        when(mailboxes.findByHost("greenmail")).thenReturn(List.of());
 
         bootstrap.run(null);
 
@@ -207,7 +219,7 @@ class DemoMailboxBootstrapTest {
 
     @Test
     void disabled_failure_doesNotAbortStartup() {
-        when(mailboxes.findFirstByUsernameOrderByIdAsc(ADDRESS)).thenThrow(new IllegalStateException("db down"));
+        when(mailboxes.findByHost("greenmail")).thenThrow(new IllegalStateException("db down"));
 
         assertThatCode(() -> bootstrap.run(null)).doesNotThrowAnyException();
         verify(mailboxes, never()).delete(any());

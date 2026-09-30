@@ -36,4 +36,7 @@ public interface TenantMailboxRepository extends JpaRepository<TenantMailbox, Lo
 
     /** The current tenant's mailbox for an account address — demo harness upsert key. */
     Optional<TenantMailbox> findFirstByUsernameOrderByIdAsc(String username);
+
+    /** The current tenant's mailboxes on an IMAP host — demo harness teardown (all rows on GreenMail). */
+    List<TenantMailbox> findByHost(String host);
 }
