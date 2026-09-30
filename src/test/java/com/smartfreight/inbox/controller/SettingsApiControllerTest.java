@@ -14,6 +14,9 @@ import com.smartfreight.inbox.service.TicketProcessingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -24,10 +27,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -187,7 +190,7 @@ class SettingsApiControllerTest {
     @Test
     void addMailboxMapsDuplicateToConflict() throws Exception {
         doThrow(new DataIntegrityViolationException("dup"))
-                .when(mailboxService).create(anyString(), anyInt(), anyString(), anyString(), any(), any(), any());
+                .when(mailboxService).create(anyString(), any(), anyString(), anyString(), any(), any(), any());
 
         mockMvc.perform(post("/api/settings/mailboxes")
                         .contentType("application/json")
@@ -218,65 +221,42 @@ class SettingsApiControllerTest {
                 "smtp.acme.co.uk", 465, "sales@acme.co.uk");
     }
 
-    @Test
-    void updateUnknownMailboxIsNotFound() throws Exception {
-        doThrow(new MailboxManagementService.MailboxNotFoundException(99L))
-                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
 
-        mockMvc.perform(put("/api/settings/mailboxes/99")
-                        .contentType("application/json")
-                        .content("{\"host\":\"imap.x.com\",\"username\":\"u\"}"))
-                .andExpect(status().isNotFound());
+    /** Every way update can fail → the status the SPA branches on (one table instead of a test each). */
+    static Stream<Arguments> updateFailures() {
+        return Stream.of(
+                Arguments.of(new MailboxManagementService.MailboxNotFoundException(99L), 404),
+                Arguments.of(new IllegalArgumentException("Port must be between 1 and 65535."), 400),
+                Arguments.of(new IllegalStateException("MAILBOX_ENCRYPTION_KEY is not set"), 400),
+                Arguments.of(new DataIntegrityViolationException("dup"), 409),
+                Arguments.of(new MailboxManagementService.MailboxInUseException(), 409));
     }
 
-    @Test
-    void updateInvalidInputIsBadRequest() throws Exception {
-        doThrow(new IllegalArgumentException("Port must be between 1 and 65535."))
-                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
+    @ParameterizedTest
+    @MethodSource("updateFailures")
+    void updateMapsEachFailureToItsStatus(RuntimeException failure, int expectedStatus) throws Exception {
+        doThrow(failure).when(mailboxService).update(anyLong(), any(), any(), any(), any(), any(), any(), any());
 
         mockMvc.perform(put("/api/settings/mailboxes/7")
                         .contentType("application/json")
-                        .content("{\"host\":\"imap.x.com\",\"port\":70000,\"username\":\"u\"}"))
-                .andExpect(status().isBadRequest());
+                        .content("{\"host\":\"imap.x.com\",\"username\":\"u\",\"password\":\"p\"}"))
+                .andExpect(status().is(expectedStatus));
     }
 
     @Test
-    void updateMailboxMapsDuplicateToConflict() throws Exception {
-        doThrow(new DataIntegrityViolationException("dup"))
-                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
-
-        mockMvc.perform(put("/api/settings/mailboxes/7")
-                        .contentType("application/json")
-                        .content("{\"host\":\"imap.x.com\",\"username\":\"taken\"}"))
-                .andExpect(status().isConflict());
-    }
-
-    @Test
-    void updateRenamingAMailboxInUseIsConflictWithTheReason() throws Exception {
+    void updateRenamingAMailboxInUseExplainsWhatToDoInstead() throws Exception {
         doThrow(new MailboxManagementService.MailboxInUseException())
-                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
+                .when(mailboxService).update(anyLong(), any(), any(), any(), any(), any(), any(), any());
 
         mockMvc.perform(put("/api/settings/mailboxes/7")
                         .contentType("application/json")
                         .content("{\"host\":\"imap.x.com\",\"username\":\"sales@other.co.uk\",\"password\":\"p\"}"))
-                .andExpect(status().isConflict())
                 .andExpect(status().reason(org.hamcrest.Matchers.containsString("separate mailbox")));
     }
 
     @Test
-    void updateWithoutEncryptionKeyIsBadRequestNotServerError() throws Exception {
-        doThrow(new IllegalStateException("MAILBOX_ENCRYPTION_KEY is not set"))
-                .when(mailboxService).update(anyLong(), any(), anyInt(), any(), any(), any(), any(), any());
-
-        mockMvc.perform(put("/api/settings/mailboxes/7")
-                        .contentType("application/json")
-                        .content("{\"host\":\"imap.x.com\",\"username\":\"u\",\"password\":\"new\"}"))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
     void deleteUnknownMailboxIsNotFound() throws Exception {
-        doThrow(new IllegalArgumentException("Mailbox not found: 99"))
+        doThrow(new MailboxManagementService.MailboxNotFoundException(99L))
                 .when(mailboxService).delete(anyLong());
 
         mockMvc.perform(delete("/api/settings/mailboxes/99"))

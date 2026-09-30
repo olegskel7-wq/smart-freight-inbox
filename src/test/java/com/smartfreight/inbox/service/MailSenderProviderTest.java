@@ -182,7 +182,7 @@ class MailSenderProviderTest {
     }
 
     @Test
-    void resolve_rotatedPassword_rebuildsAndReplacesTheCachedSender() throws Exception {
+    void resolve_rotatedPassword_rebuildsAndReplacesTheCachedSender() {
         TenantMailbox mailbox = smtpMailbox("sales@acme.co.uk");
         when(cipher.isConfigured()).thenReturn(true);
         when(cipher.decrypt("ENC(pw)")).thenReturn("pw");
@@ -196,9 +196,7 @@ class MailSenderProviderTest {
         assertThat(after).isNotSameAs(before);
         assertThat(((JavaMailSenderImpl) after).getPassword()).isEqualTo("rotated");
         // The old sender (and the stale plaintext password in it) is dropped, not kept alongside.
-        java.lang.reflect.Field field = MailSenderProvider.class.getDeclaredField("senders");
-        field.setAccessible(true);
-        assertThat((java.util.Map<?, ?>) field.get(provider)).hasSize(1);
+        assertThat(provider.cachedSenderCount()).isEqualTo(1);
     }
 
     @Test

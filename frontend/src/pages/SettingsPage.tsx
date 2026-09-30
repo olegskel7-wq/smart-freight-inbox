@@ -6,8 +6,8 @@ import type { MailboxRow, Settings } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger' | 'warning'; text: string } | null
 
-type MailboxEdit = {
-  id: number
+// The add and edit mailbox forms share one shape; ports are strings while typed.
+type MailboxForm = {
   host: string
   port: string
   username: string
@@ -15,6 +15,11 @@ type MailboxEdit = {
   smtpHost: string
   smtpPort: string
   fromAddress: string
+}
+type MailboxEdit = MailboxForm & { id: number }
+
+const EMPTY_MAILBOX: MailboxForm = {
+  host: '', port: '993', username: '', password: '', smtpHost: '', smtpPort: '', fromAddress: '',
 }
 
 const toEdit = (m: MailboxRow): MailboxEdit => ({
@@ -28,15 +33,77 @@ const toEdit = (m: MailboxRow): MailboxEdit => ({
   fromAddress: m.fromAddress ?? '',
 })
 
-// Mirrors MailboxManagementService: re-pointing IMAP, or pointing SMTP at a new host/port, sends the
-// password somewhere new, so the server demands it re-entered. Here it only makes the field required.
-// Host names and addresses are case-insensitive, like on the server.
-const repoints = (e: MailboxEdit, m: MailboxRow): boolean => {
-  const same = (a: string, b: string | null) => a.trim().toLowerCase() === (b ?? '').toLowerCase()
-  const imap = !same(e.host, m.host) || Number(e.port) !== m.port || !same(e.username, m.username)
-  const smtp = e.smtpHost.trim() !== ''
-    && (!same(e.smtpHost, m.smtpHost) || Number(e.smtpPort || 587) !== m.smtpPort)
-  return imap || smtp
+// Blank optionals go as null so the server applies its defaults (993 / 587, inbound-only, from = username).
+const toRequest = (f: MailboxForm) => ({
+  host: f.host,
+  port: f.port ? Number(f.port) : null,
+  username: f.username,
+  password: f.password,
+  smtpHost: f.smtpHost || null,
+  smtpPort: f.smtpPort ? Number(f.smtpPort) : null,
+  fromAddress: f.fromAddress || null,
+})
+
+// Inputs shared by the add and edit forms. On edit a blank password keeps the stored one; the server
+// (not this form) decides when a change re-points the mailbox and asks for the password again.
+function MailboxFields({ value, onChange, editing }: {
+  value: MailboxForm
+  onChange: (patch: Partial<MailboxForm>) => void
+  editing: boolean
+}) {
+  return (
+    <>
+      <div className="col-sm-4">
+        <label className="form-label small mb-0">IMAP host</label>
+        <input type="text" className="form-control form-control-sm" placeholder="imap.gmail.com"
+               value={value.host} onChange={(e) => onChange({ host: e.target.value })} required />
+      </div>
+      <div className="col-sm-2">
+        <label className="form-label small mb-0">Port</label>
+        <input type="number" className="form-control form-control-sm" min={1} max={65535}
+               value={value.port} onChange={(e) => onChange({ port: e.target.value })} required />
+      </div>
+      <div className="col-sm-3">
+        <label className="form-label small mb-0">Username</label>
+        <input type="text" className="form-control form-control-sm" autoComplete="off"
+               value={value.username} onChange={(e) => onChange({ username: e.target.value })} required />
+        {editing && (
+          <div className="form-text small">Can only be changed until the first email arrives — a new address is a new mailbox.</div>
+        )}
+      </div>
+      <div className="col-sm-3">
+        <label className="form-label small mb-0">{editing ? 'New password' : 'Password'}</label>
+        <input type="password" className="form-control form-control-sm" autoComplete="new-password"
+               placeholder={editing ? 'Leave blank to keep' : undefined} required={!editing}
+               value={value.password} onChange={(e) => onChange({ password: e.target.value })} />
+        {editing && (
+          <div className="form-text small">Required when you change the server, port, username or SMTP.</div>
+        )}
+      </div>
+
+      <div className="col-12">
+        <p className="form-text mb-1 mt-1">
+          Outgoing mail (optional). Leave blank to send replies through the platform account. When set,
+          replies are sent from this SMTP account, reusing the password above.
+        </p>
+      </div>
+      <div className="col-sm-4">
+        <label className="form-label small mb-0">SMTP host</label>
+        <input type="text" className="form-control form-control-sm" placeholder="smtp.gmail.com"
+               value={value.smtpHost} onChange={(e) => onChange({ smtpHost: e.target.value })} />
+      </div>
+      <div className="col-sm-2">
+        <label className="form-label small mb-0">SMTP port</label>
+        <input type="number" className="form-control form-control-sm" placeholder="587" min={1} max={65535}
+               value={value.smtpPort} onChange={(e) => onChange({ smtpPort: e.target.value })} />
+      </div>
+      <div className="col-sm-6">
+        <label className="form-label small mb-0">From address</label>
+        <input type="text" className="form-control form-control-sm" placeholder="Defaults to username" autoComplete="off"
+               value={value.fromAddress} onChange={(e) => onChange({ fromAddress: e.target.value })} />
+      </div>
+    </>
+  )
 }
 
 // React port of settings.html (Phase 3.2). Each card saves its own section through /api/settings/*;
@@ -67,17 +134,8 @@ export default function SettingsPage() {
   const [extractionPrompt, setExtractionPrompt] = useState('')
   const [draftingPrompt, setDraftingPrompt] = useState('')
 
-  // New-mailbox form.
-  const [nbHost, setNbHost] = useState('')
-  const [nbPort, setNbPort] = useState('993')
-  const [nbUsername, setNbUsername] = useState('')
-  const [nbPassword, setNbPassword] = useState('')
-  const [nbSmtpHost, setNbSmtpHost] = useState('')
-  const [nbSmtpPort, setNbSmtpPort] = useState('')
-  const [nbFromAddress, setNbFromAddress] = useState('')
-
-  // Edit-in-place form (Gate B15) for one mailbox at a time; null = closed. Ports are strings like
-  // the add form; a blank password keeps the stored one.
+  // New-mailbox form, and the edit-in-place form (Gate B15) for one mailbox at a time (null = closed).
+  const [newMailbox, setNewMailbox] = useState<MailboxForm>(EMPTY_MAILBOX)
   const [editing, setEditing] = useState<MailboxEdit | null>(null)
 
   const applyData = useCallback((s: Settings) => {
@@ -111,15 +169,18 @@ export default function SettingsPage() {
   }, [load])
 
   // Runs a save call, re-seeds from its refreshed snapshot and reports the outcome. `after` lets a
-  // section add its own follow-up message (e.g. the auto-send "no types" warning).
+  // section add its own follow-up message (e.g. the auto-send "no types" warning). Resolves to whether
+  // the save succeeded, so a form can reset or close only then.
   const save = async (call: () => Promise<Settings>, ok: string, after?: (s: Settings) => Msg) => {
     setMsg(null)
     try {
       const s = await call()
       applyData(s)
       setMsg(after?.(s) ?? { kind: 'success', text: ok })
+      return true
     } catch (e) {
       setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Save failed' })
+      return false
     }
   }
 
@@ -128,41 +189,18 @@ export default function SettingsPage() {
 
   const addMailbox = async (e: React.FormEvent) => {
     e.preventDefault()
-    await save(
-      () =>
-        api.post<Settings>('/api/settings/mailboxes', {
-          host: nbHost,
-          port: nbPort ? Number(nbPort) : null,
-          username: nbUsername,
-          password: nbPassword,
-          smtpHost: nbSmtpHost || null,
-          smtpPort: nbSmtpPort ? Number(nbSmtpPort) : null,
-          fromAddress: nbFromAddress || null,
-        }),
+    const added = await save(
+      () => api.post<Settings>('/api/settings/mailboxes', toRequest(newMailbox)),
       'Mailbox added — its IMAP adapter starts within ~30 seconds.',
     )
-    setNbHost(''); setNbPort('993'); setNbUsername(''); setNbPassword('')
-    setNbSmtpHost(''); setNbSmtpPort(''); setNbFromAddress('')
+    if (added) setNewMailbox(EMPTY_MAILBOX)
   }
 
   const updateMailbox = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editing) return
-    let saved = false
-    await save(
-      async () => {
-        const s = await api.put<Settings>(`/api/settings/mailboxes/${editing.id}`, {
-          host: editing.host,
-          port: editing.port ? Number(editing.port) : null,
-          username: editing.username,
-          password: editing.password,
-          smtpHost: editing.smtpHost || null,
-          smtpPort: editing.smtpPort ? Number(editing.smtpPort) : null,
-          fromAddress: editing.fromAddress || null,
-        })
-        saved = true
-        return s
-      },
+    const saved = await save(
+      () => api.put<Settings>(`/api/settings/mailboxes/${editing.id}`, toRequest(editing)),
       'Mailbox updated — changes apply within ~30 seconds.',
     )
     // Keep the form open on an error so the operator can fix the input.
@@ -238,9 +276,7 @@ export default function SettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.mailboxes.map((m) => {
-                  const needsPassword = editing?.id === m.id && repoints(editing, m)
-                  return (
+                {data.mailboxes.map((m) => (
                   <Fragment key={m.id}>
                   <tr>
                     <td><code>{m.host}</code></td>
@@ -297,48 +333,7 @@ export default function SettingsPage() {
                     <tr>
                       <td colSpan={6} className="bg-body-tertiary">
                         <form onSubmit={updateMailbox} className="row g-2 py-1">
-                          <div className="col-sm-4">
-                            <label className="form-label small mb-0">IMAP host</label>
-                            <input type="text" className="form-control form-control-sm"
-                                   value={editing.host} onChange={(e) => setEdit({ host: e.target.value })} required />
-                          </div>
-                          <div className="col-sm-2">
-                            <label className="form-label small mb-0">Port</label>
-                            <input type="number" className="form-control form-control-sm" min={1} max={65535}
-                                   value={editing.port} onChange={(e) => setEdit({ port: e.target.value })} required />
-                          </div>
-                          <div className="col-sm-3">
-                            <label className="form-label small mb-0">Username</label>
-                            <input type="text" className="form-control form-control-sm" autoComplete="off"
-                                   value={editing.username} onChange={(e) => setEdit({ username: e.target.value })} required />
-                            <div className="form-text small">
-                              Can only be changed until the first email arrives — a new address is a new mailbox.
-                            </div>
-                          </div>
-                          <div className="col-sm-3">
-                            <label className="form-label small mb-0">
-                              {needsPassword ? 'Password (required for new server)' : 'New password'}
-                            </label>
-                            <input type="password" className="form-control form-control-sm" autoComplete="new-password"
-                                   placeholder={needsPassword ? 'Re-enter password' : 'Leave blank to keep'}
-                                   required={needsPassword}
-                                   value={editing.password} onChange={(e) => setEdit({ password: e.target.value })} />
-                          </div>
-                          <div className="col-sm-4">
-                            <label className="form-label small mb-0">SMTP host</label>
-                            <input type="text" className="form-control form-control-sm" placeholder="Blank = platform account"
-                                   value={editing.smtpHost} onChange={(e) => setEdit({ smtpHost: e.target.value })} />
-                          </div>
-                          <div className="col-sm-2">
-                            <label className="form-label small mb-0">SMTP port</label>
-                            <input type="number" className="form-control form-control-sm" placeholder="587" min={1} max={65535}
-                                   value={editing.smtpPort} onChange={(e) => setEdit({ smtpPort: e.target.value })} />
-                          </div>
-                          <div className="col-sm-6">
-                            <label className="form-label small mb-0">From address</label>
-                            <input type="text" className="form-control form-control-sm" placeholder="Defaults to username" autoComplete="off"
-                                   value={editing.fromAddress} onChange={(e) => setEdit({ fromAddress: e.target.value })} />
-                          </div>
+                          <MailboxFields value={editing} onChange={setEdit} editing />
                           <div className="col-12">
                             <button type="submit" className="btn btn-primary btn-sm"
                                     disabled={!data.cipherConfigured && editing.password !== ''}>
@@ -356,8 +351,7 @@ export default function SettingsPage() {
                     </tr>
                   )}
                   </Fragment>
-                  )
-                })}
+                ))}
               </tbody>
             </table>
           ) : (
@@ -367,42 +361,8 @@ export default function SettingsPage() {
           <hr />
           <p className="fw-semibold small mb-2">Add mailbox</p>
           <form onSubmit={addMailbox} className="row g-2">
-            <div className="col-sm-4">
-              <input type="text" className="form-control form-control-sm" placeholder="IMAP host (imap.gmail.com)"
-                     value={nbHost} onChange={(e) => setNbHost(e.target.value)} required />
-            </div>
-            <div className="col-sm-2">
-              <input type="number" className="form-control form-control-sm" min={1} max={65535}
-                     value={nbPort} onChange={(e) => setNbPort(e.target.value)} required />
-            </div>
-            <div className="col-sm-3">
-              <input type="text" className="form-control form-control-sm" placeholder="Username" autoComplete="off"
-                     value={nbUsername} onChange={(e) => setNbUsername(e.target.value)} required />
-            </div>
-            <div className="col-sm-3">
-              <input type="password" className="form-control form-control-sm" placeholder="Password" autoComplete="new-password"
-                     value={nbPassword} onChange={(e) => setNbPassword(e.target.value)} required />
-            </div>
-
-            <div className="col-12">
-              <p className="form-text mb-1 mt-1">
-                Outgoing mail (optional). Leave blank to send replies through the platform account. When set,
-                replies for this tenant are sent from this SMTP account, reusing the password above.
-              </p>
-            </div>
-            <div className="col-sm-4">
-              <input type="text" className="form-control form-control-sm" placeholder="SMTP host (smtp.gmail.com)"
-                     value={nbSmtpHost} onChange={(e) => setNbSmtpHost(e.target.value)} />
-            </div>
-            <div className="col-sm-2">
-              <input type="number" className="form-control form-control-sm" placeholder="587" min={1} max={65535}
-                     value={nbSmtpPort} onChange={(e) => setNbSmtpPort(e.target.value)} />
-            </div>
-            <div className="col-sm-6">
-              <input type="text" className="form-control form-control-sm" placeholder="From address (defaults to username)" autoComplete="off"
-                     value={nbFromAddress} onChange={(e) => setNbFromAddress(e.target.value)} />
-            </div>
-
+            <MailboxFields value={newMailbox}
+                           onChange={(patch) => setNewMailbox((prev) => ({ ...prev, ...patch }))} editing={false} />
             <div className="col-12">
               <button type="submit" className="btn btn-primary btn-sm" disabled={!data.cipherConfigured}>
                 Add mailbox

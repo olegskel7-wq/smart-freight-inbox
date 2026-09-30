@@ -55,7 +55,7 @@ public class MailboxManagementService {
      * @throws IllegalStateException    when MAILBOX_ENCRYPTION_KEY is missing
      */
     @Transactional
-    public void create(String host, int port, String username, String rawPassword,
+    public void create(String host, Integer port, String username, String rawPassword,
                        String smtpHost, Integer smtpPort, String fromAddress) {
         if (rawPassword == null || rawPassword.isBlank()) {
             throw new IllegalArgumentException("Host, username and password are all required.");
@@ -79,8 +79,8 @@ public class MailboxManagementService {
      * server they control and the adapter would log in there with the decrypted stored one (security
      * review of B15). Dropping SMTP or changing only the from-address stays password-free. A blank
      * {@code smtpHost} makes the mailbox inbound-only again. The enabled flag is untouched — pausing
-     * is {@link #setEnabled}. The IMAP adapter and the cached SMTP sender are keyed by a config
-     * fingerprint, so both rebuild on their own.
+     * is {@link #setEnabled}. The IMAP adapter and the cached SMTP sender each remember the config
+     * fingerprint they were built from, so both rebuild on their own.
      *
      * <p>The username IS the account: once mail has arrived on the mailbox (a ticket or a status
      * watch points at it) it can no longer be renamed — otherwise customers who wrote to the old
@@ -93,7 +93,7 @@ public class MailboxManagementService {
      * @throws IllegalStateException    when a new password is given but MAILBOX_ENCRYPTION_KEY is missing
      */
     @Transactional
-    public void update(Long id, String host, int port, String username, String rawPassword,
+    public void update(Long id, String host, Integer port, String username, String rawPassword,
                        String smtpHost, Integer smtpPort, String fromAddress) {
         TenantMailbox mailbox = findInCurrentTenant(id);
         Destination before = Destination.of(mailbox);
@@ -117,7 +117,7 @@ public class MailboxManagementService {
     /**
      * Pauses or resumes a mailbox without touching its credentials.
      *
-     * @throws IllegalArgumentException if the id is not one of the caller's mailboxes
+     * @throws MailboxNotFoundException if the id is not one of the caller's mailboxes
      */
     @Transactional
     public void setEnabled(Long id, boolean enabled) {
@@ -129,7 +129,7 @@ public class MailboxManagementService {
     /**
      * Deletes a mailbox; the reconciler stops its adapter on the next pass.
      *
-     * @throws IllegalArgumentException if the id is not one of the caller's mailboxes
+     * @throws MailboxNotFoundException if the id is not one of the caller's mailboxes
      */
     @Transactional
     public void delete(Long id) {
@@ -137,16 +137,17 @@ public class MailboxManagementService {
     }
 
     /** Validates and copies the fields shared by {@link #create} and {@link #update}. */
-    private static void applyConfig(TenantMailbox mailbox, String host, int port, String username,
+    private static void applyConfig(TenantMailbox mailbox, String host, Integer port, String username,
                                     String smtpHost, Integer smtpPort, String fromAddress) {
         if (host == null || host.isBlank() || username == null || username.isBlank()) {
             throw new IllegalArgumentException("Host, username and password are all required.");
         }
-        if (port < 1 || port > 65535) {
+        int resolvedPort = port != null ? port : 993;
+        if (resolvedPort < 1 || resolvedPort > 65535) {
             throw new IllegalArgumentException("Port must be between 1 and 65535.");
         }
         mailbox.setHost(host.trim());
-        mailbox.setPort(port);
+        mailbox.setPort(resolvedPort);
         mailbox.setUsername(username.trim());
 
         if (smtpHost != null && !smtpHost.isBlank()) {
@@ -192,12 +193,8 @@ public class MailboxManagementService {
                 .orElseThrow(() -> new MailboxNotFoundException(id));
     }
 
-    /**
-     * The id is not one of the caller's mailboxes. Extends {@link IllegalArgumentException} so the
-     * toggle/delete handlers keep mapping it to 404; the update handler catches it first to tell it
-     * apart from a validation error (400).
-     */
-    public static class MailboxNotFoundException extends IllegalArgumentException {
+    /** The id is not one of the caller's mailboxes (a foreign tenant's id included) — 404. */
+    public static class MailboxNotFoundException extends RuntimeException {
         public MailboxNotFoundException(Long id) {
             super("Mailbox not found: " + id);
         }

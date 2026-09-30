@@ -198,8 +198,7 @@ public class SettingsApiController {
     @PostMapping("/mailboxes")
     public SettingsResponse addMailbox(@RequestBody MailboxRequest request) {
         try {
-            int port = request.port() != null ? request.port() : 993;
-            mailboxService.create(request.host(), port, request.username(), request.password(),
+            mailboxService.create(request.host(), request.port(), request.username(), request.password(),
                     request.smtpHost(), request.smtpPort(), request.fromAddress());
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -220,8 +219,7 @@ public class SettingsApiController {
     @PutMapping("/mailboxes/{id}")
     public SettingsResponse updateMailbox(@PathVariable Long id, @RequestBody MailboxRequest request) {
         try {
-            int port = request.port() != null ? request.port() : 993;
-            mailboxService.update(id, request.host(), port, request.username(), request.password(),
+            mailboxService.update(id, request.host(), request.port(), request.username(), request.password(),
                     request.smtpHost(), request.smtpPort(), request.fromAddress());
         } catch (MailboxManagementService.MailboxNotFoundException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
@@ -241,7 +239,7 @@ public class SettingsApiController {
     public SettingsResponse toggleMailbox(@PathVariable Long id, @RequestBody ToggleRequest request) {
         try {
             mailboxService.setEnabled(id, request.enabled());
-        } catch (IllegalArgumentException e) {
+        } catch (MailboxManagementService.MailboxNotFoundException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
         return buildResponse();
@@ -252,7 +250,7 @@ public class SettingsApiController {
     public ResponseEntity<Void> deleteMailbox(@PathVariable Long id) {
         try {
             mailboxService.delete(id);
-        } catch (IllegalArgumentException e) {
+        } catch (MailboxManagementService.MailboxNotFoundException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
         return ResponseEntity.noContent().build();

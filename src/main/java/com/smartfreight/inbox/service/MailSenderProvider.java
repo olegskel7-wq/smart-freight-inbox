@@ -80,16 +80,30 @@ public class MailSenderProvider {
                     .or(mailboxes::findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc);
             if (mailbox.isPresent()) {
                 TenantMailbox m = mailbox.get();
-                String fingerprint = fingerprint(m);
-                JavaMailSender sender = senders.compute(m.getId(), (id, cached) ->
-                        cached != null && cached.fingerprint().equals(fingerprint)
-                                ? cached : new CachedSender(fingerprint, buildSender(m))).sender();
+                JavaMailSender sender = senderFor(m);
                 String from = (m.getFromAddress() != null && !m.getFromAddress().isBlank())
                         ? m.getFromAddress() : m.getUsername();
                 return new ResolvedSender(sender, from);
             }
         }
         return new ResolvedSender(platformSender, platformFrom);
+    }
+
+    /** Lock-free on a hit (every send); compute() only when the mailbox is new or was edited. */
+    private JavaMailSender senderFor(TenantMailbox m) {
+        String fingerprint = fingerprint(m);
+        CachedSender cached = senders.get(m.getId());
+        if (cached != null && cached.fingerprint().equals(fingerprint)) {
+            return cached.sender();
+        }
+        return senders.compute(m.getId(), (id, current) ->
+                current != null && current.fingerprint().equals(fingerprint)
+                        ? current : new CachedSender(fingerprint, buildSender(m))).sender();
+    }
+
+    /** How many mailbox senders are cached — lets tests check a rotation replaces rather than adds. */
+    int cachedSenderCount() {
+        return senders.size();
     }
 
     private JavaMailSender buildSender(TenantMailbox m) {

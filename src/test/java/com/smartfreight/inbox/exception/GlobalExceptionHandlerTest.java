@@ -82,7 +82,7 @@ class GlobalExceptionHandlerTest {
     void responseStatusException_keepsItsStatusAndReason() throws Exception {
         mockMvc.perform(get("/test/conflict"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error").value("409"))
+                .andExpect(jsonPath("$.error").value("CONFLICT"))
                 .andExpect(jsonPath("$.message").value("This mailbox is already configured."));
     }
 

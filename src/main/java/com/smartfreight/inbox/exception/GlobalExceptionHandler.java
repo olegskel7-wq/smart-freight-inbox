@@ -51,18 +51,21 @@ public class GlobalExceptionHandler {
      * The client receives a generic message — internal details are not exposed.
      *
      * <p>Exceptions that already carry an intended HTTP status — {@code ResponseStatusException}
-     * (thrown by every {@code /api} controller for its 400/404/409s) and Spring MVC's own
-     * {@link ErrorResponse} types (bad JSON, wrong method, …) — keep that status and their
-     * deliberately client-facing reason. Without this, the catch-all turned all of them into a
-     * 500 "An unexpected error occurred" and the SPA never saw why a save was rejected.
+     * (thrown by every {@code /api} controller for its 400/404/409s) and the Spring MVC exceptions
+     * implementing {@link ErrorResponse} (wrong method, unsupported media type, …) — keep that status
+     * and their deliberately client-facing reason. Without this, the catch-all turned all of them
+     * into a 500 "An unexpected error occurred" and the SPA never saw why a save was rejected.
+     * (Unreadable JSON / type mismatches don't implement {@code ErrorResponse} and still land here.)
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleGenericException(Exception ex) {
         if (ex instanceof ErrorResponse errorResponse) {
             HttpStatusCode status = errorResponse.getStatusCode();
+            HttpStatus known = HttpStatus.resolve(status.value());
             String detail = errorResponse.getBody().getDetail();
             Map<String, String> response = new HashMap<>();
-            response.put("error", String.valueOf(status.value()));
+            // Same shape as the handlers above: an upper-case code, e.g. CONFLICT / NOT_FOUND.
+            response.put("error", known != null ? known.name() : String.valueOf(status.value()));
             response.put("message", detail != null ? detail : "Request failed");
             return ResponseEntity.status(status).headers(errorResponse.getHeaders()).body(response);
         }
