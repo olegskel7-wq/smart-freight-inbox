@@ -7,8 +7,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 
-import java.util.Properties;
-
 /**
  * SMTP outbound mail configuration.
  *
@@ -43,15 +41,7 @@ public class SmtpConfig {
         sender.setPort(port);
         sender.setUsername(username);
         sender.setPassword(password);
-
-        Properties props = sender.getJavaMailProperties();
-        props.put("mail.transport.protocol", "smtp");
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.connectiontimeout", "10000");
-        props.put("mail.smtp.timeout", "10000");
-        props.put("mail.smtp.writetimeout", "10000");
-        mailTlsPolicy.applySmtp(props, host, port);
-
+        mailTlsPolicy.applySmtp(sender.getJavaMailProperties(), host, port);
         return sender;
     }
 }

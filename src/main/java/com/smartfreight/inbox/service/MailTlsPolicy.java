@@ -36,14 +36,24 @@ public class MailTlsPolicy {
 
     /** TLS properties for an {@code imaps} store on {@code host}. */
     public void applyImaps(Properties props, String host) {
+        props.put("mail.imaps.ssl.enable", "true");
         props.put("mail.imaps.ssl.checkserveridentity", "true");
         if (isDemo(host, demo.getImapHost())) {
             props.put("mail.imaps.ssl.trust", host);
         }
     }
 
-    /** TLS properties for the {@code smtp} transport to {@code host:port}. */
+    /**
+     * The whole SMTP session profile for {@code host:port} — transport, AUTH, timeouts and TLS —
+     * shared by the platform sender ({@code SmtpConfig}) and every tenant sender
+     * ({@link MailSenderProvider}), so the two can never drift apart.
+     */
     public void applySmtp(Properties props, String host, int port) {
+        props.put("mail.transport.protocol", "smtp");
+        props.put("mail.smtp.auth", "true");
+        props.put("mail.smtp.connectiontimeout", "10000");
+        props.put("mail.smtp.timeout", "10000");
+        props.put("mail.smtp.writetimeout", "10000");
         props.put("mail.smtp.ssl.checkserveridentity", "true");
         if (isDemo(host, demo.getSmtpHost())) {
             // Mailpit speaks plain SMTP: STARTTLS stays opportunistic, never required.

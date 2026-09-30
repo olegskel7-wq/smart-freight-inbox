@@ -43,6 +43,7 @@ class MailTlsPolicyTest {
 
         policy.applyImaps(p, "imap.gmail.com");
 
+        assertThat(p.getProperty("mail.imaps.ssl.enable")).isEqualTo("true");
         assertThat(p.getProperty("mail.imaps.ssl.checkserveridentity")).isEqualTo("true");
         // ssl.trust would accept ANY certificate imap.gmail.com's address presents (MITM).
         assertThat(p).doesNotContainKey("mail.imaps.ssl.trust");
@@ -85,6 +86,8 @@ class MailTlsPolicyTest {
 
         policy.applySmtp(p, "smtp.gmail.com", 587);
 
+        assertThat(p.getProperty("mail.smtp.auth")).isEqualTo("true");
+        assertThat(p.getProperty("mail.smtp.timeout")).isEqualTo("10000");
         assertThat(p.getProperty("mail.smtp.starttls.enable")).isEqualTo("true");
         assertThat(p.getProperty("mail.smtp.starttls.required")).isEqualTo("true");
         assertThat(p.getProperty("mail.smtp.ssl.checkserveridentity")).isEqualTo("true");
@@ -156,11 +159,7 @@ class MailTlsPolicyTest {
         sender.setPort(port);
         sender.setUsername("user@acme.co.uk");
         sender.setPassword("secret");
-        Properties props = sender.getJavaMailProperties();
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.connectiontimeout", "5000");
-        props.put("mail.smtp.timeout", "5000");
-        policy.applySmtp(props, "localhost", port);
+        policy.applySmtp(sender.getJavaMailProperties(), "localhost", port);
         return sender;
     }
 

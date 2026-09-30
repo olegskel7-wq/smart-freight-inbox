@@ -171,7 +171,6 @@ public class MailboxImapAdapterManager {
         p.put("mail.imaps.connectiontimeout", "10000");
         p.put("mail.imaps.timeout", "60000");
         p.put("mail.imaps.keepalive.interval", "60000");
-        p.put("mail.imaps.ssl.enable", "true");
         p.put("mail.imaps.partialfetch", "false");
         p.put("mail.imaps.fetchsize", "1048576");
         mailTlsPolicy.applyImaps(p, mailbox.getHost());

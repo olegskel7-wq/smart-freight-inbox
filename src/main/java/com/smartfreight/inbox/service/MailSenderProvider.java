@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -117,13 +116,7 @@ public class MailSenderProvider {
         sender.setPassword(secretCipher.decrypt(m.getPasswordEnc()));
 
         // Same TLS/timeout profile as the platform SmtpConfig bean.
-        Properties props = sender.getJavaMailProperties();
-        props.put("mail.transport.protocol", "smtp");
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.connectiontimeout", "10000");
-        props.put("mail.smtp.timeout", "10000");
-        props.put("mail.smtp.writetimeout", "10000");
-        mailTlsPolicy.applySmtp(props, sender.getHost(), sender.getPort());
+        mailTlsPolicy.applySmtp(sender.getJavaMailProperties(), sender.getHost(), sender.getPort());
 
         log.info("Built per-tenant SMTP sender for {}:{} (user {})",
                 m.getSmtpHost(), sender.getPort(), m.getUsername());
