@@ -46,16 +46,20 @@ const toRequest = (f: MailboxForm) => ({
 
 // Inputs shared by the add and edit forms. On edit a blank password keeps the stored one; the server
 // (not this form) decides when a change re-points the mailbox and asks for the password again.
-function MailboxFields({ value, onChange, editing }: {
+// Placeholders read as hints ("e.g. …", "default …") so an empty field never looks filled in.
+// `error` is the last save failure, shown inside the form: when a table row is being edited the
+// page-level alert is scrolled out of view, and the form would just silently stay open.
+function MailboxFields({ value, onChange, editing, error }: {
   value: MailboxForm
   onChange: (patch: Partial<MailboxForm>) => void
   editing: boolean
+  error: string | null
 }) {
   return (
     <>
       <div className="col-sm-4">
         <label className="form-label small mb-0">IMAP host</label>
-        <input type="text" className="form-control form-control-sm" placeholder="imap.gmail.com"
+        <input type="text" className="form-control form-control-sm" placeholder="e.g. imap.gmail.com"
                value={value.host} onChange={(e) => onChange({ host: e.target.value })} required />
       </div>
       <div className="col-sm-2">
@@ -89,12 +93,13 @@ function MailboxFields({ value, onChange, editing }: {
       </div>
       <div className="col-sm-4">
         <label className="form-label small mb-0">SMTP host</label>
-        <input type="text" className="form-control form-control-sm" placeholder="smtp.gmail.com"
+        <input type="text" className="form-control form-control-sm"
+               placeholder={editing ? 'Blank = platform account' : 'e.g. smtp.gmail.com'}
                value={value.smtpHost} onChange={(e) => onChange({ smtpHost: e.target.value })} />
       </div>
       <div className="col-sm-2">
         <label className="form-label small mb-0">SMTP port</label>
-        <input type="number" className="form-control form-control-sm" placeholder="587" min={1} max={65535}
+        <input type="number" className="form-control form-control-sm" placeholder="default 587" min={1} max={65535}
                value={value.smtpPort} onChange={(e) => onChange({ smtpPort: e.target.value })} />
       </div>
       <div className="col-sm-6">
@@ -102,6 +107,11 @@ function MailboxFields({ value, onChange, editing }: {
         <input type="text" className="form-control form-control-sm" placeholder="Defaults to username" autoComplete="off"
                value={value.fromAddress} onChange={(e) => onChange({ fromAddress: e.target.value })} />
       </div>
+      {error && (
+        <div className="col-12">
+          <div className="alert alert-danger py-1 px-2 small mb-0" role="alert">{error}</div>
+        </div>
+      )}
     </>
   )
 }
@@ -137,6 +147,8 @@ export default function SettingsPage() {
   // New-mailbox form, and the edit-in-place form (Gate B15) for one mailbox at a time (null = closed).
   const [newMailbox, setNewMailbox] = useState<MailboxForm>(EMPTY_MAILBOX)
   const [editing, setEditing] = useState<MailboxEdit | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
 
   const applyData = useCallback((s: Settings) => {
     setData(s)
@@ -187,11 +199,28 @@ export default function SettingsPage() {
   const toggleType = (t: string) =>
     setAutoSendTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))
 
+  // Like save(), but a failure is reported next to the mailbox form (via setError) instead of in the
+  // page-level alert, which is off-screen while a table row is being edited.
+  const saveMailbox = async (call: () => Promise<Settings>, ok: string,
+                             setError: (text: string | null) => void) => {
+    setMsg(null)
+    setError(null)
+    try {
+      applyData(await call())
+      setMsg({ kind: 'success', text: ok })
+      return true
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+      return false
+    }
+  }
+
   const addMailbox = async (e: React.FormEvent) => {
     e.preventDefault()
-    const added = await save(
+    const added = await saveMailbox(
       () => api.post<Settings>('/api/settings/mailboxes', toRequest(newMailbox)),
       'Mailbox added — its IMAP adapter starts within ~30 seconds.',
+      setAddError,
     )
     if (added) setNewMailbox(EMPTY_MAILBOX)
   }
@@ -199,12 +228,18 @@ export default function SettingsPage() {
   const updateMailbox = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editing) return
-    const saved = await save(
+    const saved = await saveMailbox(
       () => api.put<Settings>(`/api/settings/mailboxes/${editing.id}`, toRequest(editing)),
       'Mailbox updated — changes apply within ~30 seconds.',
+      setEditError,
     )
     // Keep the form open on an error so the operator can fix the input.
     if (saved) setEditing(null)
+  }
+
+  const openEdit = (m: MailboxRow | null) => {
+    setEditError(null)
+    setEditing(m ? toEdit(m) : null)
   }
 
   const setEdit = (patch: Partial<MailboxEdit>) =>
@@ -307,7 +342,7 @@ export default function SettingsPage() {
                         type="button"
                         className="btn btn-outline-primary btn-sm d-block mb-1 ms-auto"
                         style={{ width: 90 }}
-                        onClick={() => setEditing(editing?.id === m.id ? null : toEdit(m))}
+                        onClick={() => openEdit(editing?.id === m.id ? null : m)}
                       >
                         {editing?.id === m.id ? 'Cancel' : 'Edit'}
                       </button>
@@ -333,13 +368,13 @@ export default function SettingsPage() {
                     <tr>
                       <td colSpan={6} className="bg-body-tertiary">
                         <form onSubmit={updateMailbox} className="row g-2 py-1">
-                          <MailboxFields value={editing} onChange={setEdit} editing />
+                          <MailboxFields value={editing} onChange={setEdit} editing error={editError} />
                           <div className="col-12">
                             <button type="submit" className="btn btn-primary btn-sm"
                                     disabled={!data.cipherConfigured && editing.password !== ''}>
                               Save changes
                             </button>
-                            <button type="button" className="btn btn-link btn-sm" onClick={() => setEditing(null)}>
+                            <button type="button" className="btn btn-link btn-sm" onClick={() => openEdit(null)}>
                               Cancel
                             </button>
                             <span className="form-text ms-2">
@@ -362,7 +397,8 @@ export default function SettingsPage() {
           <p className="fw-semibold small mb-2">Add mailbox</p>
           <form onSubmit={addMailbox} className="row g-2">
             <MailboxFields value={newMailbox}
-                           onChange={(patch) => setNewMailbox((prev) => ({ ...prev, ...patch }))} editing={false} />
+                           onChange={(patch) => setNewMailbox((prev) => ({ ...prev, ...patch }))}
+                           editing={false} error={addError} />
             <div className="col-12">
               <button type="submit" className="btn btn-primary btn-sm" disabled={!data.cipherConfigured}>
                 Add mailbox
