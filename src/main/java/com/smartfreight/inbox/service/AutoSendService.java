@@ -221,8 +221,7 @@ public class AutoSendService {
         if (ticket.getTicketType() == TicketType.RFQ) {
             webhookEventPublisher.publish(WebhookEventType.QUOTE_SENT, ticket.getTenantId(), webhookData);
         }
-        log.info("Ticket {} auto-sent to {} (confidence {})",
-                ticketId, ticket.getSenderEmail(), ticket.getAiConfidence());
+        log.info("Ticket {} auto-sent (confidence {})", ticketId, ticket.getAiConfidence());
     }
 
     /** Threshold from settings, defaulting and clamping malformed values to a sane [0,1]. */

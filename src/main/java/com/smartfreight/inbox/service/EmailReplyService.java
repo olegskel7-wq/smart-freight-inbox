@@ -109,7 +109,7 @@ public class EmailReplyService {
 
             mailSender.send(message);
             replySentCounter.increment();
-            log.info("Reply sent for ticket {} to {}", ticket.getId(), to);
+            log.info("Reply sent for ticket {}", ticket.getId());
 
         } catch (Exception e) {
             replyFailedCounter.increment();

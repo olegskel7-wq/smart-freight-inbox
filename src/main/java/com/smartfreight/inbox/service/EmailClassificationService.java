@@ -224,7 +224,9 @@ public class EmailClassificationService {
         }
         if (!typed) {
             if (!typeField.startsWith("RELEVANT")) {
-                log.warn("Unexpected classification answer '{}' - treating as relevant (fail-open)", answer);
+                // Raw model output can echo the email — content at DEBUG only (B3).
+                log.warn("Unexpected classification answer ({} chars) - treating as relevant (fail-open)", answer.length());
+                log.debug("Unexpected classification answer: '{}'", answer);
             }
             return new ClassificationResult(true, null);
         }
@@ -232,7 +234,8 @@ public class EmailClassificationService {
         TicketType type = firstStartingWith(typeField, TicketType.values(), null);
         if (type == null) {
             if (!typeField.startsWith("RELEVANT")) {
-                log.warn("Unexpected classification answer '{}' - treating as relevant/GENERAL (fail-open)", answer);
+                log.warn("Unexpected classification answer ({} chars) - treating as relevant/GENERAL (fail-open)", answer.length());
+                log.debug("Unexpected classification answer: '{}'", answer);
             }
             type = TicketType.GENERAL;
         }
