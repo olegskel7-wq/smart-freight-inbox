@@ -54,6 +54,17 @@ do
     fi
 done
 
+# Gate B1: backups must leave the host, encrypted. Bucket credentials have no dev default, so only
+# presence is checked; the passphrase is a secret like any other (and must also live OUTSIDE the server).
+for name in OFFSITE_S3_BUCKET OFFSITE_S3_ACCESS_KEY_ID OFFSITE_S3_SECRET_ACCESS_KEY BACKUP_HEALTHCHECKS_PING_URL; do
+    [ -z "$(value_of "$name")" ] && problem "$name is not set (no offsite backup — docs/ops/backup-restore.md)"
+done
+passphrase="$(value_of BACKUP_ENCRYPTION_PASSPHRASE)"
+if [ "${#passphrase}" -lt 16 ]; then
+    problem "BACKUP_ENCRYPTION_PASSPHRASE is missing or shorter than 16 characters"
+fi
+[ -n "$(value_of OFFSITE_LOCAL_DIR)" ] && problem "OFFSITE_LOCAL_DIR is set (drill-only: backups would stay on this host)"
+
 # Gate B4: a server without an alert channel fails silently — both must be configured.
 for name in TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID HEALTHCHECKS_PING_URL; do
     [ -z "$(value_of "$name")" ] && problem "$name is not set (alerts would reach nobody — docs/ops/alerting.md)"
