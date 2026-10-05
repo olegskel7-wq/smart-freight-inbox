@@ -19,9 +19,10 @@
 ENV_FILE="${1:-.env}"
 [ -f "$ENV_FILE" ] || { echo "check-prod-env: $ENV_FILE not found" >&2; exit 1; }
 
-# Last assignment wins, as in docker compose. Strips one pair of surrounding quotes.
+# Last assignment wins, as in docker compose. Drops a CR (a .env prepared on Windows) and one
+# pair of surrounding quotes.
 value_of() {
-    grep -E "^[[:space:]]*$1=" "$ENV_FILE" | tail -n 1 | sed -E "s/^[^=]*=//; s/^[\"'](.*)[\"']\$/\\1/"
+    grep -E "^[[:space:]]*$1=" "$ENV_FILE" | tail -n 1 | tr -d '\r' | sed -E "s/^[^=]*=//; s/^[\"'](.*)[\"']\$/\1/"
 }
 
 fail=0
