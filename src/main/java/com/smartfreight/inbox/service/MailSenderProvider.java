@@ -82,10 +82,7 @@ public class MailSenderProvider {
                     .or(mailboxes::findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc);
             if (mailbox.isPresent()) {
                 TenantMailbox m = mailbox.get();
-                JavaMailSender sender = senderFor(m);
-                String from = (m.getFromAddress() != null && !m.getFromAddress().isBlank())
-                        ? m.getFromAddress() : m.getUsername();
-                return new ResolvedSender(sender, from);
+                return new ResolvedSender(senderFor(m), m.effectiveFromAddress());
             }
         }
         return new ResolvedSender(platformSender, platformFrom);

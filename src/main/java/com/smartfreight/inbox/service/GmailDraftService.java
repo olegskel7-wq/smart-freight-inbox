@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.TenantMailbox;
+import com.smartfreight.inbox.repository.TenantMailboxRepository;
 import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -12,9 +14,9 @@ import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
 import java.util.Properties;
 
 /**
@@ -27,38 +29,37 @@ import java.util.Properties;
  *  - Body: AI-generated text (editable before sending)
  *  - Threading: In-Reply-To / References → message is grouped into the original conversation
  *
- * Uses the same IMAP credentials as ImapConfig (spring.mail.*).
- * The connection is opened only to save the draft and immediately closed.
- * Errors are only logged — the ticket remains DRAFT_READY regardless.
+ * The draft goes ONLY into the mailbox the enquiry arrived on ({@code email_ticket.mailbox_id},
+ * V37), with that mailbox's own credentials. Until Oct 2026 it went into the single platform
+ * account from {@code spring.mail.*} for EVERY tenant — one tenant's customer mail landing in
+ * another account (cross-tenant leak). A ticket without a usable mailbox (pre-V37, seeded, the
+ * mailbox deleted/disabled) gets no draft; there is deliberately no platform fallback.
+ *
+ * The lookup is tenant-filtered ({@code @TenantId} + RLS), so it must run inside the ticket's
+ * tenant context — the pipeline consumer does. The connection is opened only to save the draft
+ * and immediately closed. Errors are only logged — the ticket remains DRAFT_READY regardless.
  */
 @Service
 public class GmailDraftService {
 
     private static final Logger log = LoggerFactory.getLogger(GmailDraftService.class);
 
-    private final String host;
-    private final int port;
-    private final String username;
-    private final String password;
-
     private final SettingsService settingsService;
+    private final TenantMailboxRepository mailboxes;
+    private final SecretCipher secretCipher;
     private final MailTlsPolicy mailTlsPolicy;
     private final Counter draftSavedCounter;
     private final Counter draftFailedCounter;
 
     public GmailDraftService(SettingsService settingsService,
+                             TenantMailboxRepository mailboxes,
+                             SecretCipher secretCipher,
                              MailTlsPolicy mailTlsPolicy,
-                             MeterRegistry meterRegistry,
-                             @Value("${spring.mail.host}") String host,
-                             @Value("${spring.mail.port:993}") int port,
-                             @Value("${spring.mail.username}") String username,
-                             @Value("${spring.mail.password}") String password) {
+                             MeterRegistry meterRegistry) {
         this.settingsService = settingsService;
+        this.mailboxes = mailboxes;
+        this.secretCipher = secretCipher;
         this.mailTlsPolicy = mailTlsPolicy;
-        this.host = host;
-        this.port = port;
-        this.username = username;
-        this.password = password;
         this.draftSavedCounter = Counter.builder("smartfreight_gmail_draft_total")
                 .description("Gmail draft save results")
                 .tag("result", "saved")
@@ -70,7 +71,7 @@ public class GmailDraftService {
     }
 
     /**
-     * Saves a draft to the Gmail Drafts folder via IMAP APPEND.
+     * Saves a draft to the Drafts folder of the ticket's own mailbox via IMAP APPEND.
      *
      * @param ticket ticket with the generated draft and sender address
      */
@@ -79,13 +80,22 @@ public class GmailDraftService {
             log.debug("Gmail draft saving disabled (notification.draft-enabled=false)");
             return;
         }
+        Optional<TenantMailbox> found = secretCipher.isConfigured()
+                ? Optional.ofNullable(ticket.getMailboxId()).flatMap(mailboxes::findByIdAndEnabledTrue)
+                : Optional.empty();
+        if (found.isEmpty()) {
+            log.debug("Ticket {} has no usable ingesting mailbox — no draft saved", ticket.getId());
+            return;
+        }
+        TenantMailbox mailbox = found.get();
 
         Store store = null;
         Folder draftsFolder = null;
         try {
-            Session session = Session.getInstance(buildImapProperties());
+            Session session = Session.getInstance(buildImapProperties(mailbox.getHost(), mailbox.getPort()));
             store = session.getStore("imaps");
-            store.connect(host, port, username, password);
+            store.connect(mailbox.getHost(), mailbox.getPort(), mailbox.getUsername(),
+                    secretCipher.decrypt(mailbox.getPasswordEnc()));
 
             draftsFolder = findDraftsFolder(store);
             if (draftsFolder == null) {
@@ -97,9 +107,9 @@ public class GmailDraftService {
                 draftsFolder.open(Folder.READ_WRITE);
             }
 
-            draftsFolder.appendMessages(new Message[]{buildDraftMessage(session, ticket)});
+            draftsFolder.appendMessages(new Message[]{buildDraftMessage(session, ticket, mailbox.effectiveFromAddress())});
             draftSavedCounter.increment();
-            log.info("Draft saved to Gmail Drafts for ticket {}", ticket.getId());
+            log.info("Draft saved to Drafts of mailbox {} for ticket {}", mailbox.getId(), ticket.getId());
 
         } catch (Exception e) {
             draftFailedCounter.increment();
@@ -112,7 +122,7 @@ public class GmailDraftService {
         }
     }
 
-    Properties buildImapProperties() {
+    Properties buildImapProperties(String host, int port) {
         Properties props = new Properties();
         props.put("mail.store.protocol",         "imaps");
         props.put("mail.imaps.host",              host);
@@ -156,9 +166,9 @@ public class GmailDraftService {
     /**
      * Builds a MimeMessage for the draft with the appropriate headers and body.
      */
-    private MimeMessage buildDraftMessage(Session session, EmailTicket ticket) throws Exception {
+    private MimeMessage buildDraftMessage(Session session, EmailTicket ticket, String from) throws Exception {
         MimeMessage message = new MimeMessage(session);
-        message.setFrom(new InternetAddress(username));
+        message.setFrom(new InternetAddress(from));
 
         String customerEmail = EmailAddressUtils.extract(ticket.getSenderEmail());
         if (!customerEmail.isBlank()) {

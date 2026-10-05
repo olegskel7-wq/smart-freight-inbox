@@ -78,4 +78,9 @@ public class TenantMailbox {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    /** The address mail from this account goes out FROM: {@link #fromAddress}, else {@link #username}. */
+    public String effectiveFromAddress() {
+        return fromAddress != null && !fromAddress.isBlank() ? fromAddress : username;
+    }
 }
