@@ -3,8 +3,18 @@
 # on a server) but never from the network. On Linux this matters doubly: Docker-published ports
 # bypass UFW, so a firewall rule alone would NOT close them. Containers talk over llm_internal.
 # Secrets: the `:-` defaults below are DEV values; scripts/check-prod-env.sh refuses them on a server.
+# Gate B8: bounded container logs (Docker's json-file default grows forever). Logs carry ticket/tenant
+# ids by design (B3), and nginx access logs carry client IPs — personal data that must age out:
+# 5 × 20 MB per container, oldest dropped. data-flow.md states this as the log retention.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   backend:
+    logging: *default-logging
     # Gate B5: room for the graceful stop (45 s phase budget) before Docker sends SIGKILL (default 10 s).
     stop_grace_period: 60s
     build: .
@@ -93,6 +103,7 @@ services:
       - llm_internal
 
   postgres:
+    logging: *default-logging
     # Phase 3.1: pgvector image (PG16 + the `vector` extension) for the AI feedback loop's
     # embedding similarity search. Drop-in for postgres:16 — same data, V28 enables the extension.
     image: pgvector/pgvector:pg16
@@ -114,6 +125,7 @@ services:
       - llm_internal
 
   ollama:
+    logging: *default-logging
     image: ollama/ollama:0.3.14
     container_name: ollama
     entrypoint: ["/bin/bash", "/scripts/entrypoint.sh"]
@@ -152,6 +164,7 @@ services:
       - llm_internal
 
   rabbitmq:
+    logging: *default-logging
     # Async AI pipeline broker (Phase 1.3). The -management image ships the web UI
     # on :15672 (login = RABBITMQ_USER/RABBITMQ_PASSWORD) — queue depths, DLQ, rates.
     image: rabbitmq:3.13-management-alpine
@@ -180,6 +193,7 @@ services:
       - llm_internal
 
   redis:
+    logging: *default-logging
     # Phase 2.6: HTTP session store (sessions survive a backend restart and are shared
     # across instances), rate-sheet cache, and login rate-limit counters. AOF persistence
     # so cached/session state survives a redis restart too. Always password-protected (Gate C1;
@@ -202,6 +216,7 @@ services:
       - llm_internal
 
   keycloak:
+    logging: *default-logging
     # Phase 2.3 / 3.2 https login: sole identity provider (OIDC). Realm `smartfreight` is
     # imported on first start from ./keycloak. Fronted by nginx on the SAME TLS origin as the
     # SPA: the FRONT channel is https://localhost/realms/... (KC_HOSTNAME=https://localhost +
@@ -243,6 +258,7 @@ services:
       - llm_internal
 
   keycloak-db:
+    logging: *default-logging
     # Dedicated Postgres for Keycloak (mirrors port-db) — keeps IdP state isolated and
     # restoreable, separate from the application DB.
     image: postgres:16
@@ -261,6 +277,7 @@ services:
       - llm_internal
 
   prometheus:
+    logging: *default-logging
     image: prom/prometheus:v2.53.0
     # Gate B7: keep 90d (default 15d) — a 30+ day pilot must still be on the graphs at the S4
     # conversion talk. `command` replaces the image defaults, so config/storage paths are restated.
@@ -278,6 +295,7 @@ services:
       - llm_internal
 
   alertmanager:
+    logging: *default-logging
     # Gate B4: delivers Prometheus alerts OUT of the box (Telegram) + a dead man's switch heartbeat.
     # Config is rendered from env by the entrypoint (secrets stay out of git); see docs/ops/alerting.md.
     image: prom/alertmanager:v0.27.0
@@ -296,6 +314,7 @@ services:
       - llm_internal
 
   grafana:
+    logging: *default-logging
     image: grafana/grafana:11.1.0
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
@@ -311,6 +330,7 @@ services:
       - llm_internal
 
   port-db:
+    logging: *default-logging
     image: postgres:16
     environment:
       - POSTGRES_DB=port_system
@@ -329,6 +349,7 @@ services:
       - llm_internal
 
   postgres-backup:
+    logging: *default-logging
     # Daily compressed pg_dump → /backups, with weekly + monthly retention.
     # Restore example: gunzip < /backups/last/smartfreight-latest.sql.gz | psql -U postgres smartfreight
     image: prodrigestivill/postgres-backup-local:16
@@ -352,6 +373,7 @@ services:
       - llm_internal
 
   keycloak-backup:
+    logging: *default-logging
     # Gate B1: operators (users, roles, tenant_id attribute) live in keycloak-db — without this dump a
     # restored smartfreight DB has tenants but nobody who can log in to them. Same image and retention.
     image: prodrigestivill/postgres-backup-local:16
@@ -375,6 +397,7 @@ services:
       - llm_internal
 
   backup-offsite:
+    logging: *default-logging
     # Gate B1: encrypted offsite copy of every dump in postgres_backups (rclone crypt → S3, UK region).
     # Configured from env (monitoring/backup/offsite-env.sh); unset → idles with a warning.
     image: rclone/rclone:1.68
@@ -399,6 +422,7 @@ services:
       - llm_internal
 
   nginx:
+    logging: *default-logging
     # HTTPS termination in front of the backend. Self-signed cert is generated on first run.
     # For production, replace /etc/nginx/certs/server.crt and server.key with a real certificate.
     image: nginx:1.27-alpine
@@ -421,6 +445,7 @@ services:
       - llm_internal
 
   port-service:
+    logging: *default-logging
     build:
       context: ./port-service
       dockerfile: Dockerfile
@@ -446,6 +471,7 @@ services:
       - llm_internal
 
   greenmail:
+    logging: *default-logging
     # Phase 4.8 S2 demo mail harness: fake mail server holding the demo tenants' inboxes.
     # scripts/demo-mail.ps1 drops scenario emails in over SMTP :3025; the backend's IMAP IDLE
     # adapters read them over IMAPS :3993 (self-signed cert — MailTlsPolicy trusts THIS host, and
@@ -477,6 +503,7 @@ services:
       - llm_internal
 
   mailpit:
+    logging: *default-logging
     # Phase 4.8 S2: catches every reply the demo tenants send — http://localhost:8025 is the
     # customer's view of the conversation during a demo. Accepts any SMTP credentials.
     image: axllent/mailpit:v1.21
