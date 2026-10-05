@@ -99,9 +99,9 @@ spring:
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://keycloak:8081/realms/smartfreight/protocol/openid-connect/certs}
 
   # Legacy single-mailbox config (pre-S3). Used ONLY by MailboxBootstrap to import the
-  # mailbox into tenant_mailbox on first start (and by GmailDraftService for the Gmail
-  # drafts feature). Adapters themselves are built from tenant_mailbox rows — manage
-  # mailboxes on /settings. Placeholder values = nothing to import.
+  # mailbox into tenant_mailbox on first start. Adapters (and Gmail drafts, which go into
+  # the ticket's own mailbox) are built from tenant_mailbox rows — manage mailboxes on
+  # /settings. Placeholder values = nothing to import.
   mail:
     host: ${IMAP_HOST:imap.example.com}
     port: ${IMAP_PORT:993}

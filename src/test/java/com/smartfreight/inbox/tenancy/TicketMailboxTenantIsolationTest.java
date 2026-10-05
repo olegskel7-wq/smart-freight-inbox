@@ -169,6 +169,18 @@ class TicketMailboxTenantIsolationTest {
     }
 
     @Test
+    void draftMailboxLookup_neverResolvesAnotherTenantsOrADisabledMailbox() {
+        // GmailDraftService APPENDs with whatever this returns — a foreign row would mean writing
+        // tenant A's customer mail into tenant B's account (the pre-Oct-2026 platform-Gmail leak).
+        Long foreign = mailbox(tenantB, "sales@b.test", true, false);
+        Long disabled = mailbox(tenantA, "old@a.test", false, false);
+
+        assertThat(TenantContext.callAs(tenantA, () -> mailboxes.findByIdAndEnabledTrue(foreign))).isEmpty();
+        assertThat(TenantContext.callAs(tenantA, () -> mailboxes.findByIdAndEnabledTrue(disabled))).isEmpty();
+        assertThat(TenantContext.callAs(tenantB, () -> mailboxes.findByIdAndEnabledTrue(foreign))).isPresent();
+    }
+
+    @Test
     void ticketCannotPointAtAnotherTenantsMailbox_compositeForeignKey() {
         Long foreign = mailbox(tenantB, "sales@b.test", true, true);
 

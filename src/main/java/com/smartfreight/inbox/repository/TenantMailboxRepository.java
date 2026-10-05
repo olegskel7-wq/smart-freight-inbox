@@ -27,6 +27,12 @@ public interface TenantMailboxRepository extends JpaRepository<TenantMailbox, Lo
     Optional<TenantMailbox> findByIdAndEnabledTrueAndSmtpHostIsNotNull(Long id);
 
     /**
+     * A ticket's own mailbox for its Drafts APPEND — enabled, SMTP not required. Derived (not
+     * {@code findById}) for the same reason as above: another tenant's id resolves to empty.
+     */
+    Optional<TenantMailbox> findByIdAndEnabledTrue(Long id);
+
+    /**
      * The current tenant's default outbound sender: the first enabled mailbox that has SMTP
      * configured (deterministic oldest-first) — used when a ticket's own mailbox is unknown
      * or unusable. Tenant-filtered by {@code @TenantId}, so it must be called inside a tenant
