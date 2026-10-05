@@ -104,7 +104,7 @@ GitHub → repo → Settings → Secrets and variables → Actions:
 cd /home/ubuntu/smartfreight
 docker compose up -d --build
 # Wait ~2 min, then check:
-curl http://localhost:8080/actuator/health
+curl http://localhost:9091/actuator/health   # management port (Gate C2), localhost-only
 # Expected: {"status":"UP"}
 ```
 

@@ -58,7 +58,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      # Dev default matches docker-compose's redis (Gate C1: never empty); a server sets its own.
+      password: ${REDIS_PASSWORD:smartfreight-dev-redis}
       # We use Redis only as a session/cache/counter store, not for Spring Data Redis
       # repositories — disabling the scan stops it from probing every JPA repository.
       repositories:
@@ -214,6 +215,11 @@ keycloak:
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:smartfreight-admin-secret}
 
 management:
+  # Gate C2: actuator on its own port, host-bound to 127.0.0.1 by compose and not proxied by nginx
+  # (except an explicit /actuator/health location for the external uptime ping). Prometheus
+  # scrapes backend:9091 over llm_internal; /actuator/** on 8080 no longer exists.
+  server:
+    port: 9091
   endpoints:
     web:
       exposure:

@@ -5,23 +5,26 @@ global:
 rule_files:
   - /etc/prometheus/alerts.yml
 
+# Every target is scraped by compose service name over llm_internal (Gate C1/C2): host ports are
+# bound to 127.0.0.1 and host.docker.internal does not resolve on a Linux server. Running the
+# backend from IntelliJ instead? Point its target at host.docker.internal:9091 for that session.
 scrape_configs:
+  # Gate C2: backend actuator is on the management port 9091 (host-bound to 127.0.0.1 only) — nginx
+  # proxies just /actuator/health; metrics are reachable only from this machine and llm_internal.
   - job_name: 'smart-freight-backend'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets: ['backend:9091']
 
   # port-service secures /api/v1/** and most of /actuator/** with an X-API-Key header.
   # Prometheus cannot send custom request headers in scrape_configs, so /actuator/prometheus
-  # is intentionally left open at the application level and must be protected by network
-  # isolation in production (private network / internal management port / firewall).
+  # is intentionally left open at the application level and is protected by network isolation:
+  # its host port is bound to 127.0.0.1 and nginx does not route to it.
   - job_name: 'smart-freight-port-service'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:9000']
+      - targets: ['port-service:9000']
 
-  # RabbitMQ always runs inside compose (unlike backend, which may run from
-  # IntelliJ on the host), so it is scraped by service name, not host.docker.internal.
   - job_name: 'rabbitmq'
     static_configs:
       - targets: ['rabbitmq:15692']

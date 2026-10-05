@@ -1,3 +1,8 @@
+# Gate C1: only nginx (443 + the 8443 → https redirect) listens on all interfaces. Every other
+# host port is bound to 127.0.0.1 — reachable from this machine (IntelliJ dev runs, an SSH tunnel
+# on a server) but never from the network. On Linux this matters doubly: Docker-published ports
+# bypass UFW, so a firewall rule alone would NOT close them. Containers talk over llm_internal.
+# Secrets: the `:-` defaults below are DEV values; scripts/check-prod-env.sh refuses them on a server.
 services:
   backend:
     build: .
@@ -31,7 +36,7 @@ services:
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-smartfreight}
       # Phase 2.6: Redis backs HTTP sessions, the rate-sheet cache and login throttling.
       - REDIS_HOST=redis
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-smartfreight-dev-redis}
       # Phase 2.3 / 3.2 https login: Keycloak is the sole IdP, fronted by nginx on the SAME TLS
       # origin as the SPA (https://localhost/realms/...), so token `iss` is https://localhost —
       # no mixed content for the browser. The backend can't reach https://localhost (that's
@@ -70,10 +75,13 @@ services:
       keycloak:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+      # Management port (actuator) — localhost only; nginx proxies just /actuator/health.
+      - "127.0.0.1:9091:9091"
     healthcheck:
       # eclipse-temurin alpine has busybox wget but no curl (same as port-service)
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      # Gate C2: actuator lives on the management port 9091 (localhost-only), never on 8080.
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/actuator/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -92,7 +100,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
     # Host port 5433 matches application.yaml (avoids conflict with a local PostgreSQL on 5432).
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -130,7 +138,7 @@ services:
         limits:
           memory: 24G
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     healthcheck:
       # curl is not present in the ollama image; `ollama ls` hits the local API
       test: ["CMD", "ollama", "ls"]
@@ -149,11 +157,11 @@ services:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-smartfreight}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-smartfreight}
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
       # Prometheus scrape endpoint (rabbitmq_prometheus plugin) — exposed to the
       # host only for debugging; Prometheus scrapes it over the compose network.
-      - "15692:15692"
+      - "127.0.0.1:15692:15692"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       # Declarative plugin list (adds rabbitmq_prometheus to what the -management
@@ -172,15 +180,19 @@ services:
   redis:
     # Phase 2.6: HTTP session store (sessions survive a backend restart and are shared
     # across instances), rate-sheet cache, and login rate-limit counters. AOF persistence
-    # so cached/session state survives a redis restart too. Optional password via env.
+    # so cached/session state survives a redis restart too. Always password-protected (Gate C1;
+    # was empty) — the dev default must match the backend's, a server sets its own.
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-smartfreight-dev-redis}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-smartfreight-dev-redis}"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # A bare `redis-cli ping` exits 0 even on NOAUTH, so it was green regardless — require PONG.
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -214,7 +226,7 @@ services:
     volumes:
       - ./keycloak/realm-smartfreight.json:/opt/keycloak/data/import/realm-smartfreight.json:ro
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     depends_on:
       keycloak-db:
         condition: service_healthy
@@ -259,7 +271,7 @@ services:
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     networks:
       - llm_internal
 
@@ -272,7 +284,7 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
     networks:
@@ -285,7 +297,7 @@ services:
       - POSTGRES_USER=${PORT_DB_USER:-postgres}
       - POSTGRES_PASSWORD=${PORT_DB_PASSWORD:-postgres}
     ports:
-      - "5435:5432"
+      - "127.0.0.1:5435:5432"
     volumes:
       - port_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -356,7 +368,7 @@ services:
       port-db:
         condition: service_healthy
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9000/actuator/health"]
       interval: 15s

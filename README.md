@@ -49,7 +49,7 @@ Once the stack is up, you can access the services here:
 | **Web UI** | [http://localhost:8080/login](http://localhost:8080/login) | `operator@smartfreight.com` / `Operator1Pass` (via Keycloak) |
 | **Grafana** | [http://localhost:3000](http://localhost:3000) | `admin` / `admin` (skip password change) |
 | **Prometheus** | [http://localhost:9090](http://localhost:9090) | *(No auth)* |
-| **Actuator Health** | [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health) | *(No auth)* |
+| **Actuator Health** | [http://localhost:9091/actuator/health](http://localhost:9091/actuator/health) (management port, localhost-only; also `https://localhost/actuator/health`) | *(No auth)* |
 | **Port Service API** | `http://localhost:9000/api/v1/containers/MSCU1234567` | `X-API-Key` header required |
 
 *Note: Grafana is pre-provisioned with the "Smart Freight Inbox" dashboard out of the box.*
