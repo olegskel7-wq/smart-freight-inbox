@@ -63,7 +63,6 @@ public class ShipmentWatchService {
         watch.setActive(true);
         watch.setUpdatedAt(LocalDateTime.now());
         watchRepository.save(watch);
-        log.info("Shipment watch upserted: identifier={}, email={}, seededStatus={}",
-                identifier, email, item.getStatus());
+        log.info("Shipment watch upserted: identifier={}, seededStatus={}", identifier, item.getStatus());
     }
 }

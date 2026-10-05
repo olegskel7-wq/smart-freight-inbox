@@ -99,12 +99,11 @@ public class GmailDraftService {
 
             draftsFolder.appendMessages(new Message[]{buildDraftMessage(session, ticket)});
             draftSavedCounter.increment();
-            log.info("Draft saved to Gmail Drafts for ticket {}, addressed to {}",
-                    ticket.getId(), EmailAddressUtils.extract(ticket.getSenderEmail()));
+            log.info("Draft saved to Gmail Drafts for ticket {}", ticket.getId());
 
         } catch (Exception e) {
             draftFailedCounter.increment();
-            log.warn("Failed to save draft to Gmail Drafts for ticket {}: {}", ticket.getId(), e.getMessage());
+            log.warn("Failed to save draft to Gmail Drafts for ticket {}: {}", ticket.getId(), EmailAddressUtils.maskAddresses(e.getMessage()));
         } finally {
             try { if (draftsFolder != null && draftsFolder.isOpen()) draftsFolder.close(false); }
             catch (Exception e) { log.debug("Failed to close drafts folder: {}", e.getMessage()); }

@@ -162,6 +162,7 @@ public class EmailClassificationService {
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block(CLASSIFICATION_TIMEOUT));
+            ollamaClients.recordUsage("classification", model, response);
 
             if (response == null) {
                 log.warn("Ollama returned null for classification - treating as relevant (fail-open)");
@@ -223,7 +224,7 @@ public class EmailClassificationService {
         }
         if (!typed) {
             if (!typeField.startsWith("RELEVANT")) {
-                log.warn("Unexpected classification answer '{}' - treating as relevant (fail-open)", answer);
+                logUnexpected(answer, "relevant");
             }
             return new ClassificationResult(true, null);
         }
@@ -231,7 +232,7 @@ public class EmailClassificationService {
         TicketType type = firstStartingWith(typeField, TicketType.values(), null);
         if (type == null) {
             if (!typeField.startsWith("RELEVANT")) {
-                log.warn("Unexpected classification answer '{}' - treating as relevant/GENERAL (fail-open)", answer);
+                logUnexpected(answer, "relevant/GENERAL");
             }
             type = TicketType.GENERAL;
         }
@@ -255,6 +256,12 @@ public class EmailClassificationService {
             }
         }
         return fallback;
+    }
+
+    /** Raw model output can echo the email, so its content goes to DEBUG only (Gate B3). */
+    private static void logUnexpected(String answer, String fallback) {
+        log.warn("Unexpected classification answer ({} chars) - treating as {} (fail-open)", answer.length(), fallback);
+        log.debug("Unexpected classification answer: '{}'", answer);
     }
 
     private static ClassificationResult failOpen(boolean typed) {

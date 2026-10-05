@@ -10,6 +10,7 @@ import com.smartfreight.inbox.service.AiDraftingService;
 import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.SettingsService;
 import com.smartfreight.inbox.tenancy.TenantContext;
+import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -141,7 +142,7 @@ public class QuoteFollowUpScheduler {
                 // rolled back (no ticket, follow-up not advanced). Retry next poll.
                 log.warn("Ollama breaker open — skipping quote follow-up {} this run", followUpId);
             } catch (Exception e) {
-                log.error("Failed to process quote follow-up {}: {}", followUpId, e.getMessage());
+                log.error("Failed to process quote follow-up {}: {}", followUpId, EmailAddressUtils.maskAddresses(e.getMessage()));
             }
         }
     }

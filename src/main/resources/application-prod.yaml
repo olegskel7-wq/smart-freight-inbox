@@ -1,0 +1,24 @@
+# Prod profile configuration (Gate B3).
+# Activated by docker-compose (SPRING_PROFILES_ACTIVE=prod) — before this file existed the stack
+# silently ran the base application.yaml, whose DEBUG level writes customer email content into
+# the container logs. Overrides only what must differ in production; everything else is inherited.
+#
+# Rule for new code: customer PII (addresses, subjects, bodies, LLM output) is logged at DEBUG
+# only — INFO and above carry ids, never content. That is what makes this file sufficient.
+
+spring:
+  datasource:
+    # Explicit pool instead of Hikari's implicit defaults. Sized for 2 pipeline consumers +
+    # schedulers + the operator UI on one host; Postgres allows 100.
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 5
+      # Fail a request fast when the pool is exhausted instead of hanging 30 s.
+      connection-timeout: 10000
+      # A connection held over a multi-second LLM call starves the pool — warn with a stack trace.
+      leak-detection-threshold: 60000
+
+logging:
+  level:
+    com.smartfreight: INFO
+    org.springframework.integration: WARN

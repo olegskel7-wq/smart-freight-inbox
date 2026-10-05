@@ -20,6 +20,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -89,6 +90,7 @@ class AiDraftingServiceTest {
         String result = service.generateDraft("Any updates on MSCU1234567?", buildItem("MSCU1234567"));
 
         assertEquals(aiDraft, result);
+        verify(ollamaClients).recordUsage(eq("drafting"), anyString(), any());
     }
 
     // Сценарий 2: Ollama недоступен — fallback-черновик содержит данные контейнера из БД

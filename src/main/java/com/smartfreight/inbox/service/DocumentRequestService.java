@@ -106,6 +106,7 @@ public class DocumentRequestService {
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block(DETECT_TIMEOUT));
+            ollamaClients.recordUsage("document-detect", model, response);
 
             if (response == null) {
                 log.warn("Ollama returned null for document detection — defaulting to OTHER");

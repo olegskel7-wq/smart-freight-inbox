@@ -12,6 +12,7 @@ import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.ItemLookupService;
 import com.smartfreight.inbox.service.SettingsService;
 import com.smartfreight.inbox.tenancy.TenantContext;
+import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -156,7 +157,7 @@ public class StatusWatchScheduler {
                 // transaction rolled back (no ticket, watch not advanced). Retry next poll.
                 log.warn("Ollama breaker open — skipping watch {} this run", watchId);
             } catch (Exception e) {
-                log.error("Failed to process shipment watch {}: {}", watchId, e.getMessage());
+                log.error("Failed to process shipment watch {}: {}", watchId, EmailAddressUtils.maskAddresses(e.getMessage()));
             }
         }
     }

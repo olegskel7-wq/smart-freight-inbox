@@ -109,11 +109,11 @@ public class EmailReplyService {
 
             mailSender.send(message);
             replySentCounter.increment();
-            log.info("Reply sent for ticket {} to {}", ticket.getId(), to);
+            log.info("Reply sent for ticket {}", ticket.getId());
 
         } catch (Exception e) {
             replyFailedCounter.increment();
-            log.error("Failed to send reply for ticket {}: {}", ticket.getId(), e.getMessage());
+            log.error("Failed to send reply for ticket {}: {}", ticket.getId(), EmailAddressUtils.maskAddresses(e.getMessage()));
             throw new RuntimeException("Failed to send email reply: " + e.getMessage(), e);
         }
     }

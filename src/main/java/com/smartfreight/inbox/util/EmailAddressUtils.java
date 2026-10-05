@@ -2,6 +2,8 @@ package com.smartfreight.inbox.util;
 
 import jakarta.mail.internet.InternetAddress;
 
+import java.util.regex.Pattern;
+
 /**
  * Utilities for parsing email address strings.
  *
@@ -9,6 +11,8 @@ import jakarta.mail.internet.InternetAddress;
  * that was previously duplicated across reply / draft / notification services.
  */
 public final class EmailAddressUtils {
+
+    private static final Pattern ADDRESS_LOCAL_PART = Pattern.compile("[\\w.+%'-]+@(?=[\\w-]+\\.)");
 
     private EmailAddressUtils() {}
 
@@ -33,5 +37,14 @@ public final class EmailAddressUtils {
         } catch (Exception e) {
             return raw;
         }
+    }
+
+    /**
+     * Masks the local part of every email address in free text: {@code "550 <sue@acme.com>"} →
+     * {@code "550 <***@acme.com>"}. For logging mail errors (Gate B3): SMTP/JavaMail exception
+     * messages carry the recipient address, which is customer PII. {@code null} passes through.
+     */
+    public static String maskAddresses(String text) {
+        return text == null ? null : ADDRESS_LOCAL_PART.matcher(text).replaceAll("***@");
     }
 }

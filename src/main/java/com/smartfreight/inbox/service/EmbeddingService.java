@@ -68,6 +68,7 @@ public class EmbeddingService {
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block(OLLAMA_TIMEOUT));
+            ollamaClients.recordUsage("embedding", embeddingModel, response);
 
             if (response == null || !(response.get("embedding") instanceof List<?> raw) || raw.isEmpty()) {
                 log.warn("Ollama returned no embedding for model {}", embeddingModel);

@@ -234,7 +234,7 @@ public class TicketApiController {
             try {
                 emailReplyService.sendReply(ticket);
                 ticket.setStatus(TicketStatus.CLOSED);
-                log.info("Ticket {} draft sent to {} and closed (API)", id, ticket.getSenderEmail());
+                log.info("Ticket {} draft sent and closed (API)", id);
                 auditService.record(id, TicketAuditService.ACTION_SEND, "to=" + ticket.getSenderEmail());
                 quoteFollowUpService.armFromTicket(ticket);
                 feedbackLoopService.captureIfEdited(ticket);

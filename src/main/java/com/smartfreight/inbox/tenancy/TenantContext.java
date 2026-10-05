@@ -149,6 +149,15 @@ public final class TenantContext {
         return CURRENT.get() == null;
     }
 
+    /**
+     * Value for a per-tenant metric label: the tenant id, else the state name
+     * ({@code system}/{@code anonymous}/{@code unset}) — same vocabulary as {@link #describeState()}.
+     */
+    public static String metricTag() {
+        Long tenantId = tenantIdOrNull();
+        return tenantId != null ? tenantId.toString() : describeState();
+    }
+
     static String describeState() {
         Long value = CURRENT.get();
         if (value == null) {

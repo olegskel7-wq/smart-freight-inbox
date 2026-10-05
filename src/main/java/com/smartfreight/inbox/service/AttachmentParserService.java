@@ -114,7 +114,7 @@ public class AttachmentParserService {
         String lower = filename.toLowerCase();
         try {
             if (part.getSize() > MAX_ATTACHMENT_BYTES) {
-                log.info("Attachment '{}' too large ({} bytes), skipping", filename, part.getSize());
+                log.info("Attachment too large ({} bytes), skipping", part.getSize());
                 skippedCounter.increment();
                 return null;
             }
@@ -136,7 +136,7 @@ public class AttachmentParserService {
             return null;
 
         } catch (Exception e) {
-            log.warn("Failed to parse attachment '{}': {}", filename, e.getMessage());
+            log.warn("Failed to parse attachment: {}", e.getMessage());
             skippedCounter.increment();
             return null;
         }
