@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -52,6 +53,17 @@ class MailboxImapAdapterManagerTest {
         manager.ingest(90001L, 7L, message);
 
         assertThat(tenantDuringIngestion.get()).isEqualTo(90001L);
+    }
+
+    @Test
+    void ingest_failure_neverEscapesIntoTheIdleAdapter() {
+        // Gate B5: a non-MessagingException escaping the handler ends the IDLE loop for good.
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("Connection is not available"))
+                .when(ingestion).processIncomingEmail(any(), eq(7L));
+
+        boolean processed = manager.ingest(90001L, 7L, mock(MimeMessage.class));
+
+        assertThat(processed).isFalse();
     }
 
     @Test

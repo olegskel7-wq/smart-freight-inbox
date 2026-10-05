@@ -96,6 +96,10 @@ public class RabbitConfig {
         // previous one — fair dispatch for jobs that run tens of seconds each.
         factory.setPrefetchCount(1);
         factory.setDefaultRequeueRejected(false);
+        // Gate B5: on shutdown let an in-flight pipeline run (tens of seconds of LLM calls) finish
+        // instead of the 5 s default. One that still overruns stays unacked and is redelivered
+        // after the restart — the consumer is idempotent (status guard), so nothing is lost or doubled.
+        factory.setContainerCustomizer(container -> container.setShutdownTimeout(40_000));
         factory.setAdviceChain(RetryInterceptorBuilder.stateless()
                 // 1 delivery + 2 retries = 3 attempts total, with exponential backoff
                 .maxRetries(2)

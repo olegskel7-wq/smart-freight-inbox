@@ -34,6 +34,15 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     Optional<EmailTicket> findByMessageId(String messageId);
 
     /**
+     * Which of these Message-IDs already have a ticket — mailbox catch-up (Gate B5) ingests only
+     * the rest. Native on purpose: it must see soft-deleted tickets too (the JPQL path's
+     * {@code @SQLRestriction} hides them), or an email whose ticket an operator deleted would be
+     * re-ingested on every pass. RLS still scopes it to the current tenant — call inside one.
+     */
+    @Query(nativeQuery = true, value = "SELECT message_id FROM email_ticket WHERE message_id IN (:messageIds)")
+    List<String> findExistingMessageIds(@Param("messageIds") Collection<String> messageIds);
+
+    /**
      * Paginated ticket list with optional status filter.
      * Used by the operator UI — avoids loading all tickets into memory.
      *

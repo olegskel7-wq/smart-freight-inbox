@@ -1,10 +1,17 @@
 server:
   forward-headers-strategy: framework
+  # Gate B5: finish in-flight requests on SIGTERM (redeploy) instead of cutting them. Pairs with the
+  # listener's 40 s shutdown timeout (RabbitConfig) and compose's stop_grace_period: 60s for backend.
+  shutdown: graceful
   servlet:
     session:
       timeout: 8h
 
 spring:
+  # Gate B5: per-phase budget for the graceful stop (web requests, then the 40 s listener drain).
+  lifecycle:
+    timeout-per-shutdown-phase: 45s
+
   application:
     name: smart-freight-inbox
 

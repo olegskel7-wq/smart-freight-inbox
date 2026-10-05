@@ -58,6 +58,7 @@ public class MailboxHealthMonitor {
     private final TenantMailboxRepository mailboxes;
     private final SecretCipher secretCipher;
     private final MailboxImapAdapterManager adapterManager;
+    private final MailboxCatchUp catchUp;
     private final MultiGauge upGauge;
     private final MultiGauge lastSuccessGauge;
 
@@ -81,11 +82,13 @@ public class MailboxHealthMonitor {
     public MailboxHealthMonitor(TenantMailboxRepository mailboxes,
                                 SecretCipher secretCipher,
                                 MailboxImapAdapterManager adapterManager,
+                                MailboxCatchUp catchUp,
                                 MeterRegistry meterRegistry,
                                 @Value("${mailbox.health-check-interval-ms:300000}") long intervalMs) {
         this.mailboxes = mailboxes;
         this.secretCipher = secretCipher;
         this.adapterManager = adapterManager;
+        this.catchUp = catchUp;
         this.intervalMs = intervalMs;
         this.upGauge = MultiGauge.builder("smartfreight_mailbox_up")
                 .description("1 if the last IMAP login probe of the mailbox succeeded, else 0")
@@ -147,7 +150,11 @@ public class MailboxHealthMonitor {
         }
     }
 
-    /** One IMAP login + logout with the adapter's own config. Overridden in tests. */
+    /**
+     * One IMAP login with the adapter's own config, then catch-up (Gate B5) on the same connection.
+     * Only the login decides the verdict — a catch-up failure is logged, the mailbox stays "up".
+     * Overridden in tests.
+     */
     void login(TenantMailbox mailbox) throws Exception {
         String password = secretCipher.decrypt(mailbox.getPasswordEnc());
         Properties props = adapterManager.javaMailProperties(mailbox, password);
@@ -155,6 +162,12 @@ public class MailboxHealthMonitor {
         Session session = Session.getInstance(props);
         try (Store store = session.getStore("imaps")) {
             store.connect(mailbox.getHost(), mailbox.getPort(), mailbox.getUsername(), password);
+            try {
+                catchUp.run(mailbox, store);
+            } catch (Exception e) {
+                log.warn("Mailbox {} (tenant {}): catch-up pass failed: {}", mailbox.getId(), mailbox.getTenantId(),
+                        EmailAddressUtils.maskAddresses(String.valueOf(e.getMessage())));
+            }
         }
     }
 
