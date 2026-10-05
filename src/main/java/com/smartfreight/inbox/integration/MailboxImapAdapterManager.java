@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.service.MailTlsPolicy;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.tenancy.TenantContext;
+import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.internet.MimeMessage;
@@ -177,9 +178,26 @@ public class MailboxImapAdapterManager {
         return p;
     }
 
-    /** One arrived message → ticket, inside the mailbox's tenant and attributed to the mailbox. */
-    void ingest(Long tenantId, Long mailboxId, MimeMessage mimeMessage) {
-        TenantContext.runAs(tenantId, () -> emailIngestionService.processIncomingEmail(mimeMessage, mailboxId));
+    /**
+     * One arrived message → ticket, inside the mailbox's tenant and attributed to the mailbox.
+     *
+     * <p>Never throws (Gate B5). An exception escaping into the IDLE adapter that is not a
+     * {@code MessagingException} (e.g. the DB is briefly down) makes Spring Integration end the
+     * IDLE loop for good — the mailbox stayed "running" and passed its login probe while it
+     * ingested nothing until a restart. The message the library already flagged is not lost:
+     * {@link MailboxCatchUp} re-finds it by Message-ID on the next health pass.
+     *
+     * @return whether the message was processed (persisted, or deliberately skipped as a duplicate)
+     */
+    boolean ingest(Long tenantId, Long mailboxId, MimeMessage mimeMessage) {
+        try {
+            TenantContext.runAs(tenantId, () -> emailIngestionService.processIncomingEmail(mimeMessage, mailboxId));
+            return true;
+        } catch (RuntimeException e) {
+            log.error("Mailbox {} (tenant {}): ingestion failed, catch-up will retry the message: {}",
+                    mailboxId, tenantId, EmailAddressUtils.maskAddresses(String.valueOf(e.getMessage())));
+            return false;
+        }
     }
 
     private static String fingerprint(TenantMailbox mailbox) {

@@ -37,7 +37,8 @@ class MailboxHealthMonitorTest {
         cipher = mock(SecretCipher.class);
         when(cipher.isConfigured()).thenReturn(true);
         meters = new SimpleMeterRegistry();
-        monitor = new MailboxHealthMonitor(mailboxes, cipher, mock(MailboxImapAdapterManager.class), meters, 300_000) {
+        monitor = new MailboxHealthMonitor(mailboxes, cipher, mock(MailboxImapAdapterManager.class),
+                mock(MailboxCatchUp.class), meters, 300_000) {
             @Override
             void login(TenantMailbox mailbox) throws Exception {
                 if (failing.contains(mailbox.getId())) {

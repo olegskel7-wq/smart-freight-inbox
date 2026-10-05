@@ -41,3 +41,25 @@ tests:
               severity: none
             exp_annotations:
               summary: "Alerting pipeline heartbeat — always firing, by design"
+
+  # One recovery after a restart is noise; recoveries every pass for 30+ min mean IDLE is dead.
+  - interval: 5m
+    input_series:
+      - series: 'smartfreight_mailbox_catchup_ingested_total{tenant="90001", mailbox="6"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15'
+      - series: 'smartfreight_mailbox_catchup_ingested_total{tenant="1", mailbox="5"}'
+        values: '0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: MailboxCatchUpRecovering
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              tenant: "90001"
+              mailbox: "6"
+            exp_annotations:
+              summary: "Tenant 90001: mailbox 6 — IDLE keeps missing emails"
+              description: >-
+                For 30+ minutes emails reach this mailbox only through the 5-minute catch-up, not live
+                IDLE — replies are delayed up to 5 min. Check the backend log for this mailbox's IMAP
+                adapter; a restart of the backend re-creates it.

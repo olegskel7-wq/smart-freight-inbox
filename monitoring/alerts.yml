@@ -156,6 +156,21 @@ groups:
             changed account password, expired/changed certificate. The error is on /settings
             (badge "Login failed"); fix the credentials there with Edit.
 
+
+      # Gate B5: catch-up only finds emails the IDLE adapter missed. A few after a restart are
+      # expected; recoveries that keep coming mean IDLE for this mailbox is not delivering.
+      - alert: MailboxCatchUpRecovering
+        expr: increase(smartfreight_mailbox_catchup_ingested_total[30m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tenant {{ $labels.tenant }}: mailbox {{ $labels.mailbox }} — IDLE keeps missing emails"
+          description: >-
+            For 30+ minutes emails reach this mailbox only through the 5-minute catch-up, not live
+            IDLE — replies are delayed up to 5 min. Check the backend log for this mailbox's IMAP
+            adapter; a restart of the backend re-creates it.
+
   # Dead man's switch (Gate B4): always firing. Alertmanager forwards it to an external heartbeat
   # (HEALTHCHECKS_PING_URL); when the host, Prometheus or Alertmanager dies, the pings stop and the
   # external service raises the alarm that this stack no longer can.

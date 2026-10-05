@@ -58,7 +58,7 @@ public class EmailIngestionService {
     private static final Logger log = LoggerFactory.getLogger(EmailIngestionService.class);
 
     /** Hard cap on email size — protects heap from runaway IMAP messages. */
-    private static final int MAX_EMAIL_BYTES = 10 * 1024 * 1024;
+    static final int MAX_EMAIL_BYTES = 10 * 1024 * 1024;
 
     /**
      * Feature flag for attachment parsing (Phase 1.1). Plan-based gating seam: today a global

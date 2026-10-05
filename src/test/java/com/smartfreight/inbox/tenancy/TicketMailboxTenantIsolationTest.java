@@ -25,6 +25,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -166,6 +167,30 @@ class TicketMailboxTenantIsolationTest {
 
         // Same id seen from its owner resolves normally — the lookup is tenant-scoped, not broken.
         assertThat(fromFor(tenantB, foreign)).isEqualTo("sales@b.test");
+    }
+
+    @Test
+    void catchUpDedup_seesSoftDeletedTickets_butNeverAnotherTenants() {
+        // Gate B5: mailbox catch-up ingests only Message-IDs this query does NOT return.
+        Long mine = ticket(tenantA, null);
+        Long deleted = ticket(tenantA, null);
+        Long foreign = ticket(tenantB, null);
+        String mineId = storedMessageId(mine);
+        String deletedId = storedMessageId(deleted);
+        String foreignId = storedMessageId(foreign);
+        TenantContext.runAsSystem(() -> jdbc.update("UPDATE email_ticket SET deleted = true WHERE id = ?", deleted));
+
+        List<String> existing = TenantContext.callAs(tenantA,
+                () -> tickets.findExistingMessageIds(List.of(mineId, deletedId, foreignId, "<never-seen@test>")));
+
+        // A deleted ticket still counts — else its email would be re-ingested on every pass. Tenant B's
+        // ticket does not — its Message-ID says nothing about tenant A's mailbox (dedup is per tenant).
+        assertThat(existing).containsExactlyInAnyOrder(mineId, deletedId);
+    }
+
+    private String storedMessageId(Long ticketId) {
+        return TenantContext.callAsSystem(() -> jdbc.queryForObject(
+                "SELECT message_id FROM email_ticket WHERE id = ?", String.class, ticketId));
     }
 
     @Test
