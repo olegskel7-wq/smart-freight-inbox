@@ -8,19 +8,25 @@ import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.MultiGauge;
 import io.micrometer.core.instrument.Tags;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -58,13 +64,29 @@ public class MailboxHealthMonitor {
     /** mailbox id → outcome of its last probe. Bounded by the enabled-mailbox count. */
     private final Map<Long, MailboxHealth> health = new ConcurrentHashMap<>();
 
+    private final long intervalMs;
+
+    /**
+     * Own thread, NOT {@code @Scheduled}: Spring's scheduler is single-threaded here, and a mailbox
+     * host that hangs would hold it for a minute per probe — delaying the outbox relay, SLA sweep and
+     * every other job. (A TaskScheduler bean would be worse: Boot then drops its default one and ALL
+     * {@code @Scheduled} jobs move onto it.)
+     */
+    private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "mailbox-health");
+        t.setDaemon(true);
+        return t;
+    });
+
     public MailboxHealthMonitor(TenantMailboxRepository mailboxes,
                                 SecretCipher secretCipher,
                                 MailboxImapAdapterManager adapterManager,
-                                MeterRegistry meterRegistry) {
+                                MeterRegistry meterRegistry,
+                                @Value("${mailbox.health-check-interval-ms:300000}") long intervalMs) {
         this.mailboxes = mailboxes;
         this.secretCipher = secretCipher;
         this.adapterManager = adapterManager;
+        this.intervalMs = intervalMs;
         this.upGauge = MultiGauge.builder("smartfreight_mailbox_up")
                 .description("1 if the last IMAP login probe of the mailbox succeeded, else 0")
                 .register(meterRegistry);
@@ -83,7 +105,23 @@ public class MailboxHealthMonitor {
     }
 
     /** Default 5 min; the first pass waits for the reconciler to start the adapters. */
-    @Scheduled(fixedDelayString = "${mailbox.health-check-interval-ms:300000}", initialDelay = 60_000)
+    @PostConstruct
+    void start() {
+        executor.scheduleWithFixedDelay(() -> {
+            try {
+                probeAll();
+            } catch (Exception e) {
+                // An escaped exception would cancel the schedule for good — log and keep probing.
+                log.error("Mailbox health probe pass failed", e);
+            }
+        }, 60_000, intervalMs, TimeUnit.MILLISECONDS);
+    }
+
+    @PreDestroy
+    void stop() {
+        executor.shutdownNow();
+    }
+
     public void probeAll() {
         if (!secretCipher.isConfigured()) {
             return; // no adapters run either — nothing to probe
@@ -112,7 +150,9 @@ public class MailboxHealthMonitor {
     /** One IMAP login + logout with the adapter's own config. Overridden in tests. */
     void login(TenantMailbox mailbox) throws Exception {
         String password = secretCipher.decrypt(mailbox.getPasswordEnc());
-        Session session = Session.getInstance(adapterManager.javaMailProperties(mailbox, password));
+        Properties props = adapterManager.javaMailProperties(mailbox, password);
+        props.put("mail.imaps.timeout", "15000"); // a login answers in seconds; the adapter's 60 s is for IDLE
+        Session session = Session.getInstance(props);
         try (Store store = session.getStore("imaps")) {
             store.connect(mailbox.getHost(), mailbox.getPort(), mailbox.getUsername(), password);
         }

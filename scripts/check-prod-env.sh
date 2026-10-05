@@ -54,6 +54,11 @@ do
     fi
 done
 
+# Gate B4: a server without an alert channel fails silently — both must be configured.
+for name in TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID HEALTHCHECKS_PING_URL; do
+    [ -z "$(value_of "$name")" ] && problem "$name is not set (alerts would reach nobody — docs/ops/alerting.md)"
+done
+
 # Dev-only switches that must be off on a server.
 [ -n "$(value_of USE_SYSTEM_CA_CERTS)" ] && problem "USE_SYSTEM_CA_CERTS is set (dev-only Norton CA trust)"
 [ "$(value_of DEMO_MAIL_ENABLED)" = "true" ] && problem "DEMO_MAIL_ENABLED=true (replies would go to Mailpit — Gate B14)"

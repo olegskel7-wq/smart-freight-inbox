@@ -5,6 +5,12 @@ global:
 rule_files:
   - /etc/prometheus/alerts.yml
 
+# Gate B4: until Oct 2026 there was no Alertmanager — every rule in alerts.yml fired into the void.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
 # Every target is scraped by compose service name over llm_internal (Gate C1/C2): host ports are
 # bound to 127.0.0.1 and host.docker.internal does not resolve on a Linux server. Running the
 # backend from IntelliJ instead? Point its target at host.docker.internal:9091 for that session.
