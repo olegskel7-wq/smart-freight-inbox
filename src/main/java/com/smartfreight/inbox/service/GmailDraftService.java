@@ -80,13 +80,11 @@ public class GmailDraftService {
             log.debug("Gmail draft saving disabled (notification.draft-enabled=false)");
             return;
         }
-        if (ticket.getMailboxId() == null || !secretCipher.isConfigured()) {
-            log.debug("Ticket {} has no ingesting mailbox — no draft saved", ticket.getId());
-            return;
-        }
-        Optional<TenantMailbox> found = mailboxes.findByIdAndEnabledTrue(ticket.getMailboxId());
+        Optional<TenantMailbox> found = secretCipher.isConfigured()
+                ? Optional.ofNullable(ticket.getMailboxId()).flatMap(mailboxes::findByIdAndEnabledTrue)
+                : Optional.empty();
         if (found.isEmpty()) {
-            log.debug("Mailbox of ticket {} is gone or disabled — no draft saved", ticket.getId());
+            log.debug("Ticket {} has no usable ingesting mailbox — no draft saved", ticket.getId());
             return;
         }
         TenantMailbox mailbox = found.get();

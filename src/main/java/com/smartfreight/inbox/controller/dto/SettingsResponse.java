@@ -51,9 +51,7 @@ public record SettingsResponse(
             String fromAddress) {
 
         public static MailboxDto from(TenantMailbox m, boolean running) {
-            String sendsAs = m.getSmtpHost() == null
-                    ? null
-                    : (m.getFromAddress() != null ? m.getFromAddress() : m.getUsername());
+            String sendsAs = m.getSmtpHost() == null ? null : m.effectiveFromAddress();
             return new MailboxDto(
                     m.getId(), m.getHost(), m.getPort(), m.getUsername(),
                     sendsAs, m.isEnabled(), running,
