@@ -139,3 +139,31 @@ groups:
             The broker (or its prometheus plugin) is down. Ingestion still works —
             events accumulate in the outbox — but no AI processing happens until
             the broker returns.
+
+      # Gate B4/B13: a mailbox we cannot log in to receives nothing — the pilot goes silent without
+      # an error anywhere the operator looks. Probed every ~5 min by MailboxHealthMonitor; the tenant
+      # label says WHOSE mailbox (client A's incident is not a platform outage). Ids, not addresses:
+      # /settings shows the address and the masked error.
+      - alert: MailboxDown
+        expr: smartfreight_mailbox_up == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tenant {{ $labels.tenant }}: mailbox {{ $labels.mailbox }} — IMAP login failing"
+          description: >-
+            No new email is ingested from this mailbox. Usual causes: revoked app password,
+            changed account password, expired/changed certificate. The error is on /settings
+            (badge "Login failed"); fix the credentials there with Edit.
+
+  # Dead man's switch (Gate B4): always firing. Alertmanager forwards it to an external heartbeat
+  # (HEALTHCHECKS_PING_URL); when the host, Prometheus or Alertmanager dies, the pings stop and the
+  # external service raises the alarm that this stack no longer can.
+  - name: meta
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Alerting pipeline heartbeat — always firing, by design"

@@ -3,6 +3,7 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.controller.dto.SettingsResponse;
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import com.smartfreight.inbox.integration.MailboxHealthMonitor;
 import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler;
 import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
@@ -61,15 +62,18 @@ public class SettingsApiController {
     private final SettingsService settingsService;
     private final MailboxManagementService mailboxService;
     private final MailboxImapAdapterManager adapterManager;
+    private final MailboxHealthMonitor mailboxHealth;
     private final SecretCipher secretCipher;
 
     public SettingsApiController(SettingsService settingsService,
                                  MailboxManagementService mailboxService,
                                  MailboxImapAdapterManager adapterManager,
+                                 MailboxHealthMonitor mailboxHealth,
                                  SecretCipher secretCipher) {
         this.settingsService = settingsService;
         this.mailboxService = mailboxService;
         this.adapterManager = adapterManager;
+        this.mailboxHealth = mailboxHealth;
         this.secretCipher = secretCipher;
     }
 
@@ -304,7 +308,8 @@ public class SettingsApiController {
     /** Snapshots the current tenant's settings into the response DTO (mirrors the Thymeleaf model). */
     private SettingsResponse buildResponse() {
         List<SettingsResponse.MailboxDto> mailboxes = mailboxService.findAll().stream()
-                .map(m -> SettingsResponse.MailboxDto.from(m, adapterManager.isRunning(m.getId())))
+                .map(m -> SettingsResponse.MailboxDto.from(m, adapterManager.isRunning(m.getId()),
+                        mailboxHealth.health(m.getId()).orElse(null)))
                 .toList();
 
         String autoSendTypesCsv = settingsService.getString(AutoSendService.KEY_TYPES, "STATUS_UPDATE");

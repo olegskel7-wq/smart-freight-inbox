@@ -275,6 +275,24 @@ services:
     networks:
       - llm_internal
 
+  alertmanager:
+    # Gate B4: delivers Prometheus alerts OUT of the box (Telegram) + a dead man's switch heartbeat.
+    # Config is rendered from env by the entrypoint (secrets stay out of git); see docs/ops/alerting.md.
+    image: prom/alertmanager:v0.27.0
+    entrypoint: ["/bin/sh", "/etc/alertmanager-src/entrypoint.sh"]
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - HEALTHCHECKS_PING_URL=${HEALTHCHECKS_PING_URL:-}
+    volumes:
+      - ./monitoring/alertmanager:/etc/alertmanager-src:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    restart: unless-stopped
+    networks:
+      - llm_internal
+
   grafana:
     image: grafana/grafana:11.1.0
     environment:
@@ -431,6 +449,7 @@ volumes:
   postgres_backups:
   ollama:
   prometheus_data:
+  alertmanager_data:
   grafana_data:
   port_db_data:
   nginx_certs:

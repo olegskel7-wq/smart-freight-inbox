@@ -1,0 +1,43 @@
+# promtool unit tests for alerts.yml (Gate B4). Run:
+#   docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool prom/prometheus:v2.53.0 test rules /m/alerts.test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # Tenant 90001's mailbox fails its login probe; tenant 1's stays up. Only 90001's alert fires,
+  # and only after the 10 min `for` — a single failed probe (Gmail hiccup) does not page anyone.
+  - interval: 1m
+    input_series:
+      - series: 'smartfreight_mailbox_up{tenant="90001", mailbox="6"}'
+        values: '1 0x15'
+      - series: 'smartfreight_mailbox_up{tenant="1", mailbox="5"}'
+        values: '1x16'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MailboxDown
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: MailboxDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              tenant: "90001"
+              mailbox: "6"
+            exp_annotations:
+              summary: "Tenant 90001: mailbox 6 — IMAP login failing"
+              description: >-
+                No new email is ingested from this mailbox. Usual causes: revoked app password,
+                changed account password, expired/changed certificate. The error is on /settings
+                (badge "Login failed"); fix the credentials there with Edit.
+
+  - interval: 1m
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels:
+              severity: none
+            exp_annotations:
+              summary: "Alerting pipeline heartbeat — always firing, by design"

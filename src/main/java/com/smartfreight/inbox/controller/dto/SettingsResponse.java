@@ -1,7 +1,9 @@
 package com.smartfreight.inbox.controller.dto;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
+import com.smartfreight.inbox.integration.MailboxHealthMonitor.MailboxHealth;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -35,8 +37,10 @@ public record SettingsResponse(
     /**
      * Row view of a tenant mailbox. {@code sendsAs} is the address replies go out from when this mailbox
      * has its own SMTP (else null → the SPA shows the platform fallback); {@code running} reflects whether
-     * the IMAP adapter is registered yet (the reconciler starts it within ~30 s). The raw SMTP fields
-     * seed the edit form (Gate B15); the password is never returned.
+     * the IMAP adapter is registered yet (the reconciler starts it within ~30 s). {@code loginOk} is the
+     * last login probe's verdict (Gate B4; null = not probed yet), with the time of the last good login
+     * and the masked failure reason. The raw SMTP fields seed the edit form (Gate B15); the password is
+     * never returned.
      */
     public record MailboxDto(
             long id,
@@ -46,15 +50,21 @@ public record SettingsResponse(
             String sendsAs,
             boolean enabled,
             boolean running,
+            Boolean loginOk,
+            Instant lastLoginOkAt,
+            String loginError,
             String smtpHost,
             Integer smtpPort,
             String fromAddress) {
 
-        public static MailboxDto from(TenantMailbox m, boolean running) {
+        public static MailboxDto from(TenantMailbox m, boolean running, MailboxHealth health) {
             String sendsAs = m.getSmtpHost() == null ? null : m.effectiveFromAddress();
             return new MailboxDto(
                     m.getId(), m.getHost(), m.getPort(), m.getUsername(),
                     sendsAs, m.isEnabled(), running,
+                    health == null ? null : health.up(),
+                    health == null ? null : health.lastSuccessAt(),
+                    health == null ? null : health.lastError(),
                     m.getSmtpHost(), m.getSmtpPort(), m.getFromAddress());
         }
     }
