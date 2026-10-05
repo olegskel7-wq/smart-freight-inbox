@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.util.EmailAddressUtils;
 import com.smartfreight.inbox.webhook.WebhookEventPublisher;
 import com.smartfreight.inbox.webhook.WebhookEventType;
 import com.smartfreight.inbox.webhook.WebhookPayloads;
@@ -199,7 +200,7 @@ public class AutoSendService {
         } catch (Exception e) {
             autoFailedCounter.increment();
             log.error("Auto-send failed for ticket {} — left DRAFT_READY for the operator: {}",
-                    ticketId, e.getMessage());
+                    ticketId, EmailAddressUtils.maskAddresses(e.getMessage()));
             auditService.record(ticketId, TicketAuditService.ACTION_AUTO_SEND,
                     "FAILED: " + e.getMessage());
             return;

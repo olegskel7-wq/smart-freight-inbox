@@ -19,6 +19,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -115,6 +116,7 @@ class AiExtractionServiceTest {
         String result = service.extractIdentifier("Please check container MSCU1234567");
 
         assertEquals("MSCU1234567", result);
+        verify(ollamaClients).recordUsage(eq("extraction"), anyString(), any());
     }
 
     /**

@@ -103,7 +103,7 @@ public class GmailDraftService {
 
         } catch (Exception e) {
             draftFailedCounter.increment();
-            log.warn("Failed to save draft to Gmail Drafts for ticket {}: {}", ticket.getId(), e.getMessage());
+            log.warn("Failed to save draft to Gmail Drafts for ticket {}: {}", ticket.getId(), EmailAddressUtils.maskAddresses(e.getMessage()));
         } finally {
             try { if (draftsFolder != null && draftsFolder.isOpen()) draftsFolder.close(false); }
             catch (Exception e) { log.debug("Failed to close drafts folder: {}", e.getMessage()); }

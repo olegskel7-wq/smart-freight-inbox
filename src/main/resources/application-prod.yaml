@@ -7,11 +7,6 @@
 # only — INFO and above carry ids, never content. That is what makes this file sufficient.
 
 spring:
-  jpa:
-    properties:
-      hibernate:
-        format_sql: false
-
   datasource:
     # Explicit pool instead of Hikari's implicit defaults. Sized for 2 pipeline consumers +
     # schedulers + the operator UI on one host; Postgres allows 100.
@@ -25,6 +20,5 @@ spring:
 
 logging:
   level:
-    root: INFO
     com.smartfreight: INFO
     org.springframework.integration: WARN

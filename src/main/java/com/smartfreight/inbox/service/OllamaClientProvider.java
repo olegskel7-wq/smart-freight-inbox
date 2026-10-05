@@ -6,6 +6,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
@@ -95,36 +96,27 @@ public class OllamaClientProvider {
      * {@code /api/embeddings} reports none). Failed/timed-out calls are not counted.
      */
     public void recordUsage(String operation, String model, Map<String, ?> response) {
-        String tenant = tenantTag();
+        Tags tags = Tags.of("tenant", TenantContext.metricTag(), "model", model, "operation", operation);
         Counter.builder("smartfreight_llm_calls_total")
                 .description("Completed Ollama calls per tenant, model and operation")
-                .tag("tenant", tenant).tag("model", model).tag("operation", operation)
+                .tags(tags)
                 .register(meterRegistry)
                 .increment();
         if (response == null) {
             return;
         }
-        addTokens(tenant, model, operation, "prompt", response.get("prompt_eval_count"));
-        addTokens(tenant, model, operation, "completion", response.get("eval_count"));
+        addTokens(tags.and("type", "prompt"), response.get("prompt_eval_count"));
+        addTokens(tags.and("type", "completion"), response.get("eval_count"));
     }
 
-    private void addTokens(String tenant, String model, String operation, String type, Object count) {
+    private void addTokens(Tags tags, Object count) {
         if (count instanceof Number n && n.longValue() > 0) {
             Counter.builder("smartfreight_llm_tokens_total")
                     .description("Ollama tokens per tenant, model, operation and type (prompt/completion)")
-                    .tag("tenant", tenant).tag("model", model).tag("operation", operation).tag("type", type)
+                    .tags(tags)
                     .register(meterRegistry)
                     .increment(n.doubleValue());
         }
-    }
-
-    /** Tenant id, or {@code system} for cross-tenant work (schedulers) — never blank. */
-    private static String tenantTag() {
-        Long tenantId = TenantContext.tenantIdOrNull();
-        if (tenantId != null) {
-            return tenantId.toString();
-        }
-        return TenantContext.isSystem() ? "system" : "none";
     }
 
     private String currentBaseUrl() {

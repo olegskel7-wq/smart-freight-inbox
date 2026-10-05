@@ -11,7 +11,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -22,6 +25,7 @@ import static org.mockito.Mockito.when;
 class EmbeddingServiceTest {
 
     private MockWebServer server;
+    private OllamaClientProvider provider;
     private EmbeddingService service;
 
     @BeforeEach
@@ -30,7 +34,7 @@ class EmbeddingServiceTest {
         server.start();
         String baseUrl = server.url("/").toString().replaceAll("/$", "");
 
-        OllamaClientProvider provider = mock(OllamaClientProvider.class);
+        provider = mock(OllamaClientProvider.class);
         when(provider.client()).thenReturn(WebClient.builder().baseUrl(baseUrl).build());
         when(provider.circuitBreaker()).thenReturn(CircuitBreaker.ofDefaults("test-embed"));
 
@@ -57,6 +61,7 @@ class EmbeddingServiceTest {
 
         assertThat(result).isPresent();
         assertThat(result.get()).containsExactly(0.1f, 0.2f, 0.3f);
+        verify(provider).recordUsage(eq("embedding"), eq("nomic-embed-text"), any());
     }
 
     @Test

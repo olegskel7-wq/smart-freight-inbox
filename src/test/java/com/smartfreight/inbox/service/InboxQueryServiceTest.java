@@ -23,7 +23,10 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -113,6 +116,7 @@ class InboxQueryServiceTest {
         assertThat(answer.periodDays()).isEqualTo(30);
         assertThat(answer.answer()).isEqualTo("You received 5 RFQ enquiries in the last 30 days.");
         assertThat(answer.matched()).isTrue();
+        verify(ollamaClients, times(2)).recordUsage(eq("inbox-query"), anyString(), any());
     }
 
     @Test
