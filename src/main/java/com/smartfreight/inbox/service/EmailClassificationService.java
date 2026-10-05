@@ -162,6 +162,7 @@ public class EmailClassificationService {
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block(CLASSIFICATION_TIMEOUT));
+            ollamaClients.recordUsage("classification", model, response);
 
             if (response == null) {
                 log.warn("Ollama returned null for classification - treating as relevant (fail-open)");

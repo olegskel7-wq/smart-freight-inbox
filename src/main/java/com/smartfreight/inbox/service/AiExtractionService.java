@@ -141,6 +141,7 @@ public class AiExtractionService {
                     .bodyToMono(Map.class)
                     .block(OLLAMA_TIMEOUT));
             ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
+            ollamaClients.recordUsage("extraction", extractionModel, response);
 
             if (response == null) {
                 log.warn("Ollama returned null response during extraction");
@@ -148,7 +149,7 @@ public class AiExtractionService {
             }
 
             String rawResponse = String.valueOf(response.getOrDefault("response", "")).trim();
-            log.info("Qwen raw response: '{}'", rawResponse);
+            log.debug("Qwen raw response: '{}'", rawResponse);
 
             if (identifierPattern.matcher(rawResponse).matches()) {
                 log.info("Identifier extracted by LLM: {}", rawResponse);

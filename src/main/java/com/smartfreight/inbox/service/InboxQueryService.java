@@ -336,6 +336,7 @@ public class InboxQueryService {
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block(OLLAMA_TIMEOUT));
+            ollamaClients.recordUsage("inbox-query", model, response);
 
             if (response == null) {
                 return Optional.empty();

@@ -248,6 +248,12 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.53.0
+    # Gate B7: keep 90d (default 15d) — a 30+ day pilot must still be on the graphs at the S4
+    # conversion talk. `command` replaces the image defaults, so config/storage paths are restated.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro

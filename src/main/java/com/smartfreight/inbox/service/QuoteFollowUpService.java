@@ -64,6 +64,6 @@ public class QuoteFollowUpService {
         followUp.setActive(true);
         followUp.setUpdatedAt(LocalDateTime.now());
         followUpRepository.save(followUp);
-        log.info("Quote follow-up armed: ticket={}, email={}", ticket.getId(), email);
+        log.info("Quote follow-up armed: ticket={}", ticket.getId());
     }
 }

@@ -99,8 +99,7 @@ public class GmailDraftService {
 
             draftsFolder.appendMessages(new Message[]{buildDraftMessage(session, ticket)});
             draftSavedCounter.increment();
-            log.info("Draft saved to Gmail Drafts for ticket {}, addressed to {}",
-                    ticket.getId(), EmailAddressUtils.extract(ticket.getSenderEmail()));
+            log.info("Draft saved to Gmail Drafts for ticket {}", ticket.getId());
 
         } catch (Exception e) {
             draftFailedCounter.increment();

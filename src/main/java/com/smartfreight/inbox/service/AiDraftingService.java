@@ -445,6 +445,7 @@ public class AiDraftingService {
                     .bodyToMono(Map.class)
                     .block(OLLAMA_TIMEOUT));
             ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
+            ollamaClients.recordUsage("drafting", draftingModel, response);
 
             if (response == null) {
                 log.warn("Ollama returned null response during drafting");

@@ -4,9 +4,12 @@ import com.smartfreight.inbox.config.ResilienceConfig;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
+
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -15,7 +18,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link OllamaClientProvider} — per-tenant endpoint resolution, client
- * caching and per-endpoint circuit-breaker naming (Phase 2.2 S3).
+ * caching, per-endpoint circuit-breaker naming (Phase 2.2 S3) and LLM usage metering (Gate B7).
  */
 class OllamaClientProviderTest {
 
@@ -23,6 +26,7 @@ class OllamaClientProviderTest {
 
     private SettingsService settings;
     private CircuitBreakerRegistry registry;
+    private SimpleMeterRegistry meters;
     private OllamaClientProvider provider;
 
     @BeforeEach
@@ -31,7 +35,8 @@ class OllamaClientProviderTest {
         // Mirror ResilienceConfig: a named "ollama" config the provider resolves breakers against.
         registry = CircuitBreakerRegistry.ofDefaults();
         registry.addConfiguration(ResilienceConfig.OLLAMA_BREAKER, CircuitBreakerConfig.ofDefaults());
-        provider = new OllamaClientProvider(settings, registry, PLATFORM);
+        meters = new SimpleMeterRegistry();
+        provider = new OllamaClientProvider(settings, registry, meters, PLATFORM);
     }
 
     @Test
@@ -72,5 +77,40 @@ class OllamaClientProviderTest {
 
         String name = TenantContext.callAs(1L, () -> provider.circuitBreaker().getName());
         assertThat(name).isEqualTo(ResilienceConfig.OLLAMA_BREAKER);
+    }
+
+    @Test
+    void recordUsage_countsCallsAndTokensPerTenantModelAndOperation() {
+        // Gate B7: the only per-tenant record of LLM usage — calls and tokens, never retroactive.
+        Map<String, Object> response = Map.of("response", "RFQ|NORMAL|CALM",
+                "prompt_eval_count", 412, "eval_count", 9);
+
+        TenantContext.runAs(1L, () -> provider.recordUsage("classification", "qwen2.5:7b", response));
+        TenantContext.runAs(1L, () -> provider.recordUsage("classification", "qwen2.5:7b", response));
+        TenantContext.runAs(2L, () -> provider.recordUsage("drafting", "llama3.1:8b", response));
+
+        assertThat(meters.get("smartfreight_llm_calls_total")
+                .tags("tenant", "1", "model", "qwen2.5:7b", "operation", "classification")
+                .counter().count()).isEqualTo(2.0);
+        assertThat(meters.get("smartfreight_llm_calls_total")
+                .tags("tenant", "2", "model", "llama3.1:8b", "operation", "drafting")
+                .counter().count()).isEqualTo(1.0);
+        assertThat(meters.get("smartfreight_llm_tokens_total")
+                .tags("tenant", "1", "operation", "classification", "type", "prompt")
+                .counter().count()).isEqualTo(824.0);
+        assertThat(meters.get("smartfreight_llm_tokens_total")
+                .tags("tenant", "1", "operation", "classification", "type", "completion")
+                .counter().count()).isEqualTo(18.0);
+    }
+
+    @Test
+    void recordUsage_nullResponseAndSystemContext_countCallWithoutTokens() {
+        // A null body still cost a GPU pass; schedulers run as SYSTEM, not as a tenant.
+        TenantContext.runAsSystem(() -> provider.recordUsage("embedding", "nomic-embed-text", null));
+
+        assertThat(meters.get("smartfreight_llm_calls_total")
+                .tags("tenant", "system", "operation", "embedding")
+                .counter().count()).isEqualTo(1.0);
+        assertThat(meters.find("smartfreight_llm_tokens_total").counters()).isEmpty();
     }
 }

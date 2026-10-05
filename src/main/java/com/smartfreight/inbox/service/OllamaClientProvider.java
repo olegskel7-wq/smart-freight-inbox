@@ -1,8 +1,11 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.config.ResilienceConfig;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
@@ -37,6 +40,11 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>System context (RetryScheduler's open-breaker check, the health indicator) resolves
  * to the platform URL by construction — SettingsService skips tenant overrides there.
+ *
+ * <p>Gate B7: {@link #recordUsage} meters every completed call per tenant/model/operation
+ * ({@code smartfreight_llm_calls_total}, {@code smartfreight_llm_tokens_total}). LLM calls are
+ * not stored anywhere else, so these counters are the only source for per-tenant GPU cost and
+ * W3 usage metering — unlike the DB analytics, they cannot be rebuilt after the fact.
  */
 @Service
 public class OllamaClientProvider {
@@ -46,6 +54,7 @@ public class OllamaClientProvider {
 
     private final SettingsService settingsService;
     private final CircuitBreakerRegistry breakerRegistry;
+    private final MeterRegistry meterRegistry;
     private final String platformBaseUrl;
 
     /** base URL → client. Bounded in practice by the number of distinct tenant endpoints. */
@@ -53,9 +62,11 @@ public class OllamaClientProvider {
 
     public OllamaClientProvider(SettingsService settingsService,
                                 CircuitBreakerRegistry breakerRegistry,
+                                MeterRegistry meterRegistry,
                                 @Value("${ollama.base-url:http://localhost:11434}") String platformBaseUrl) {
         this.settingsService = settingsService;
         this.breakerRegistry = breakerRegistry;
+        this.meterRegistry = meterRegistry;
         this.platformBaseUrl = normalize(platformBaseUrl);
     }
 
@@ -75,6 +86,45 @@ public class OllamaClientProvider {
                 : ResilienceConfig.OLLAMA_BREAKER + ":" + url;
         // Named instance, "ollama" config: dynamic endpoints inherit the tuned thresholds.
         return breakerRegistry.circuitBreaker(name, ResilienceConfig.OLLAMA_BREAKER);
+    }
+
+    /**
+     * Meters one completed Ollama call for the CURRENT tenant (Gate B7). Call it right after
+     * the request returns — a null response still cost a GPU pass. Token counts come from
+     * Ollama's {@code prompt_eval_count}/{@code eval_count} ({@code /api/generate} only;
+     * {@code /api/embeddings} reports none). Failed/timed-out calls are not counted.
+     */
+    public void recordUsage(String operation, String model, Map<String, ?> response) {
+        String tenant = tenantTag();
+        Counter.builder("smartfreight_llm_calls_total")
+                .description("Completed Ollama calls per tenant, model and operation")
+                .tag("tenant", tenant).tag("model", model).tag("operation", operation)
+                .register(meterRegistry)
+                .increment();
+        if (response == null) {
+            return;
+        }
+        addTokens(tenant, model, operation, "prompt", response.get("prompt_eval_count"));
+        addTokens(tenant, model, operation, "completion", response.get("eval_count"));
+    }
+
+    private void addTokens(String tenant, String model, String operation, String type, Object count) {
+        if (count instanceof Number n && n.longValue() > 0) {
+            Counter.builder("smartfreight_llm_tokens_total")
+                    .description("Ollama tokens per tenant, model, operation and type (prompt/completion)")
+                    .tag("tenant", tenant).tag("model", model).tag("operation", operation).tag("type", type)
+                    .register(meterRegistry)
+                    .increment(n.doubleValue());
+        }
+    }
+
+    /** Tenant id, or {@code system} for cross-tenant work (schedulers) — never blank. */
+    private static String tenantTag() {
+        Long tenantId = TenantContext.tenantIdOrNull();
+        if (tenantId != null) {
+            return tenantId.toString();
+        }
+        return TenantContext.isSystem() ? "system" : "none";
     }
 
     private String currentBaseUrl() {

@@ -183,7 +183,7 @@ public class EmailIngestionService {
                 EmailTicket saved = emailTicketRepository.save(ticket);
                 receivedCounter.increment();
                 MDC.put("ticketId", String.valueOf(saved.getId()));
-                log.info("Email ingested: ticket ID={}, subject='{}'", saved.getId(), saved.getSubject());
+                log.info("Email ingested: ticket ID={}", saved.getId());
 
                 // Same transaction as the ticket insert: either both become durable or neither.
                 // Tenant: the adapter bound the mailbox's tenant before this transaction
