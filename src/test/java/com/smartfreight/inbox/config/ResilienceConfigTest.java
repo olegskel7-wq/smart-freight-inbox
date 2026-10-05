@@ -84,6 +84,24 @@ class ResilienceConfigTest {
     }
 
     @Test
+    void ollamaBreaker_movesToHalfOpenOnItsOwn_withoutACallAttempt() throws InterruptedException {
+        // RetryScheduler skips while getState() is OPEN, so nothing else would ever attempt the
+        // probe call: the breaker must reach HALF_OPEN after the wait by itself.
+        ResilienceConfig config = new ResilienceConfig();
+        ReflectionTestUtils.setField(config, "ollamaWaitOpenSeconds", 1);
+        ReflectionTestUtils.setField(config, "portServiceWaitOpenSeconds", 1);
+        CircuitBreaker breaker = config.ollamaCircuitBreaker(config.circuitBreakerRegistry(new SimpleMeterRegistry()));
+        breaker.transitionToOpenState();
+
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (breaker.getState() == CircuitBreaker.State.OPEN && System.currentTimeMillis() < deadline) {
+            Thread.sleep(100);
+        }
+
+        assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
+    }
+
+    @Test
     void ollamaBreaker_successfulCalls_keepItClosed() {
         for (int i = 0; i < 10; i++) {
             ollama.executeSupplier(() -> "ok");

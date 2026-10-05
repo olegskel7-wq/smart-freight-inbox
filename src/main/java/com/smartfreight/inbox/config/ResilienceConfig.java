@@ -75,6 +75,10 @@ public class ResilienceConfig {
                 .failureRateThreshold(FAILURE_RATE_THRESHOLD)
                 .waitDurationInOpenState(Duration.ofSeconds(ollamaWaitOpenSeconds))
                 .permittedNumberOfCallsInHalfOpenState(PERMITTED_CALLS_IN_HALF_OPEN)
+                // Without this the breaker leaves OPEN only on the next call attempt — but
+                // RetryScheduler skips its run while getState() is OPEN, so parked tickets waited
+                // for the next NEW email to make that attempt (hours, at pilot volume).
+                .automaticTransitionFromOpenToHalfOpenEnabled(true)
                 .build();
 
         CircuitBreakerConfig portServiceConfig = CircuitBreakerConfig.custom()
@@ -84,6 +88,7 @@ public class ResilienceConfig {
                 .failureRateThreshold(FAILURE_RATE_THRESHOLD)
                 .waitDurationInOpenState(Duration.ofSeconds(portServiceWaitOpenSeconds))
                 .permittedNumberOfCallsInHalfOpenState(PERMITTED_CALLS_IN_HALF_OPEN)
+                .automaticTransitionFromOpenToHalfOpenEnabled(true)
                 // "Item not found" (4xx) must not open the breaker — only transport
                 // errors, timeouts and 5xx indicate that port-service itself is unwell.
                 .ignoreException(t -> t instanceof WebClientResponseException wcre
