@@ -328,7 +328,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "http://localhost:8080/actuator/health",
+              "raw": "http://localhost:9091/actuator/health",
               "protocol": "http",
               "host": ["localhost"],
               "port": "8080",
@@ -342,7 +342,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "http://localhost:8080/actuator/prometheus",
+              "raw": "http://localhost:9091/actuator/prometheus",
               "protocol": "http",
               "host": ["localhost"],
               "port": "8080",

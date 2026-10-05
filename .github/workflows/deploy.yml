@@ -55,6 +55,9 @@ jobs:
             printf '%s' "${{ secrets.DEPLOY_ENV_B64 }}" | base64 -d > .env
             chmod 600 .env
 
+            echo "=== Checking .env (no dev credentials / dev-only switches) ==="
+            sh scripts/check-prod-env.sh .env
+
             echo "=== Rebuilding app containers ==="
             docker compose up --build -d backend port-service
 
@@ -63,7 +66,8 @@ jobs:
 
             echo "=== Checking health ==="
             sleep 20
-            curl -f http://localhost:8080/actuator/health || exit 1
+            # Actuator is on the management port 9091 (Gate C2), localhost-only — probe from inside.
+            docker compose exec -T backend wget -qO- http://localhost:9091/actuator/health || exit 1
 
             echo "=== Deploy successful ==="
 
