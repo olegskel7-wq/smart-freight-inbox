@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
+import com.smartfreight.inbox.integration.MailboxHealthMonitor;
 import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler;
 import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
@@ -25,6 +26,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -58,6 +60,7 @@ class SettingsApiControllerTest {
     @Mock private SettingsService settingsService;
     @Mock private MailboxManagementService mailboxService;
     @Mock private MailboxImapAdapterManager adapterManager;
+    @Mock private MailboxHealthMonitor mailboxHealth;
     @Mock private SecretCipher secretCipher;
 
     private MockMvc mockMvc;
@@ -91,10 +94,12 @@ class SettingsApiControllerTest {
         m.setEnabled(true);
         when(mailboxService.findAll()).thenReturn(List.of(m));
         when(adapterManager.isRunning(7L)).thenReturn(true);
+        when(mailboxHealth.health(7L)).thenReturn(Optional.of(new MailboxHealthMonitor.MailboxHealth(
+                1L, false, Instant.now(), null, "AUTHENTICATIONFAILED Invalid credentials")));
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new SettingsApiController(
-                        settingsService, mailboxService, adapterManager, secretCipher))
+                        settingsService, mailboxService, adapterManager, mailboxHealth, secretCipher))
                 .build();
     }
 
@@ -110,7 +115,10 @@ class SettingsApiControllerTest {
                 .andExpect(jsonPath("$.statusUpdateMilestones").value("AT_PORT,RELEASED,DELIVERED"))
                 .andExpect(jsonPath("$.mailboxes[0].id").value(7))
                 .andExpect(jsonPath("$.mailboxes[0].sendsAs").value("sales@acme.co.uk"))
-                .andExpect(jsonPath("$.mailboxes[0].running").value(true));
+                .andExpect(jsonPath("$.mailboxes[0].running").value(true))
+                // Gate B4: registered is not connected — the login probe verdict is shown separately.
+                .andExpect(jsonPath("$.mailboxes[0].loginOk").value(false))
+                .andExpect(jsonPath("$.mailboxes[0].loginError").value("AUTHENTICATIONFAILED Invalid credentials"));
     }
 
     @Test

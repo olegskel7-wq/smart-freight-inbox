@@ -163,6 +163,11 @@ export interface MailboxRow {
   sendsAs: string | null
   enabled: boolean
   running: boolean
+  // Gate B4: last IMAP login probe — null until the first probe (every ~5 min). "Running" only
+  // means the adapter is registered; this says whether we can actually log in.
+  loginOk: boolean | null
+  lastLoginOkAt: string | null
+  loginError: string | null
   // Raw SMTP config — seeds the edit form (Gate B15). The password is never returned.
   smtpHost: string | null
   smtpPort: number | null

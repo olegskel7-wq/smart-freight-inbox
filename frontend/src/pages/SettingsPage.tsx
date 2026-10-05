@@ -3,6 +3,7 @@ import { useApi } from '../api/useApi.ts'
 import { useOperators } from '../api/useOperators.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { MailboxRow, Settings } from '../types.ts'
+import { formatDateTime } from '../util/format.ts'
 
 type Msg = { kind: 'success' | 'danger' | 'warning'; text: string } | null
 
@@ -329,8 +330,22 @@ export default function SettingsPage() {
                     <td>
                       {!m.enabled ? (
                         <span className="badge bg-secondary">Disabled</span>
+                      ) : m.loginOk === false ? (
+                        <span
+                          className="badge bg-danger"
+                          title={`${m.loginError ?? 'Login failed'} — last good login: ${
+                            m.lastLoginOkAt ? formatDateTime(m.lastLoginOkAt) : 'never'}. No new emails arrive from this mailbox.`}
+                        >
+                          Login failed
+                        </span>
+                      ) : m.running && m.loginOk ? (
+                        <span className="badge bg-success" title={`Last login check OK: ${formatDateTime(m.lastLoginOkAt)}`}>
+                          Connected
+                        </span>
                       ) : m.running ? (
-                        <span className="badge bg-success">Running</span>
+                        <span className="badge bg-success" title="Adapter registered — the first login check runs within ~5 min">
+                          Running
+                        </span>
                       ) : (
                         <span className="badge bg-warning text-dark" title="Adapter not registered yet — starts on the next reconcile pass">
                           Starting…
