@@ -18,6 +18,14 @@ services:
     # Gate B5: room for the graceful stop (45 s phase budget) before Docker sends SIGKILL (default 10 s).
     stop_grace_period: 60s
     build: .
+    # Gate C6: the JVM exits on OutOfMemoryError (Dockerfile) — Docker brings it straight back.
+    restart: unless-stopped
+    # Gate C6: a leak or a huge attachment must not starve Postgres/Ollama/Keycloak on the same host.
+    # Heap = 75% of this (MaxRAMPercentage); ~600 MB in steady state, the rest is parsing headroom.
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartfreight
@@ -432,6 +440,8 @@ services:
       - "8443:8443"
     volumes:
       - ./monitoring/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Gate C6: security headers, included by the app locations of nginx.conf.
+      - ./monitoring/nginx/security-headers.conf:/etc/nginx/snippets/security-headers.conf:ro
       - ./monitoring/nginx/entrypoint.sh:/docker-entrypoint.d/00-generate-cert.sh:ro
       # Dev TLS cert. If monitoring/nginx/certs/ holds a server.crt/key (e.g. an mkcert-issued,
       # locally-trusted pair → green padlock on https://localhost), nginx uses it; the entrypoint

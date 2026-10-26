@@ -28,7 +28,8 @@ value_of() {
 fail=0
 problem() { echo "  ✗ $1" >&2; fail=1; }
 
-# name:dev-default (the value docker-compose.yml falls back to)
+# name:dev-default (the value docker-compose.yml falls back to). The backend repeats this check at
+# startup for the secrets it resolves itself (DevCredentialsGuard, Gate C6) — keep the two in sync.
 for pair in \
     POSTGRES_PASSWORD:postgres \
     DB_APP_PASSWORD:smartfreight_app \
