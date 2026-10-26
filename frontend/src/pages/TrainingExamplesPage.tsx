@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
+import { typeLabel } from '../util/labels.ts'
 import type { TrainingExamplesResponse } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
@@ -91,7 +92,7 @@ export default function TrainingExamplesPage() {
                 {data.examples.map((e) => (
                   <tr key={e.id}>
                     <td className="ps-3">
-                      <span className="badge text-bg-secondary">{e.ticketType ?? 'Unclassified'}</span>
+                      <span className="badge text-bg-secondary">{typeLabel(e.ticketType)}</span>
                     </td>
                     <td className="small text-muted" style={{ maxWidth: 240 }}>{e.enquiryPreview}</td>
                     <td className="small" style={{ maxWidth: 260 }}>{e.aiDraftPreview}</td>

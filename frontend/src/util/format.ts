@@ -42,6 +42,48 @@ export function statusBadgeClass(status: string | null): string {
   }
 }
 
-export function formatConfidence(value: number | null): string {
-  return value == null ? '—' : value.toFixed(2)
+/** Compact duration for SLA text: "21d", "3h", "1h 20m", "45m" (minutes only below 10 h). */
+export function formatDuration(ms: number): string {
+  const minutes = Math.max(1, Math.round(Math.abs(ms) / 60_000))
+  if (minutes >= 24 * 60) return `${Math.floor(minutes / (24 * 60))}d`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h === 0) return `${m}m`
+  return h >= 10 || m === 0 ? `${h}h` : `${h}h ${m}m`
+}
+
+export type SlaBucket = 'overdue' | 'today' | 'later'
+
+export interface SlaInfo {
+  bucket: SlaBucket
+  /** "Overdue 21d", "Due in 1h 20m", "Due tomorrow", "No SLA". */
+  text: string
+  tone: 'red' | 'amber' | 'muted'
+}
+
+/**
+ * Relative SLA for an open ticket (variant C list grouping). Overdue = flagged breached by the
+ * SlaBreachScheduler OR already past its deadline (the scheduler runs once a minute). "Due today"
+ * ends at local midnight; anything later, or with no deadline, is "Later".
+ */
+export function slaInfo(deadline: string | null, breached: boolean, now: number): SlaInfo {
+  const due = deadline ? new Date(deadline).getTime() : NaN
+  if (Number.isNaN(due)) {
+    return breached
+      ? { bucket: 'overdue', text: 'Overdue', tone: 'red' }
+      : { bucket: 'later', text: 'No SLA', tone: 'muted' }
+  }
+  if (breached || due <= now) {
+    return { bucket: 'overdue', text: `Overdue ${formatDuration(now - due)}`, tone: 'red' }
+  }
+  const endOfToday = new Date(now)
+  endOfToday.setHours(24, 0, 0, 0)
+  if (due < endOfToday.getTime()) {
+    const soon = due - now < 2 * 60 * 60_000
+    return { bucket: 'today', text: `Due in ${formatDuration(due - now)}`, tone: soon ? 'amber' : 'muted' }
+  }
+  const endOfTomorrow = new Date(endOfToday)
+  endOfTomorrow.setDate(endOfTomorrow.getDate() + 1)
+  const text = due < endOfTomorrow.getTime() ? 'Due tomorrow' : `Due in ${formatDuration(due - now)}`
+  return { bucket: 'later', text, tone: 'muted' }
 }
