@@ -315,12 +315,32 @@ class TicketApiControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CLOSED"));
 
-        verify(emailReplyService).sendReply(t);
+        verify(emailReplyService).sendReply(t, null);
         verify(quoteFollowUpService).armFromTicket(t);
         verify(feedbackLoopService).captureIfEdited(t);
         // Phase 3.5 S2: reply.sent fires for any sent reply; quote.sent only for RFQ (this ticket is untyped).
         verify(webhookEventPublisher).publish(eq(WebhookEventType.REPLY_SENT), any(), any());
         verify(webhookEventPublisher, never()).publish(eq(WebhookEventType.QUOTE_SENT), any(), any());
+    }
+
+    // Drafts are unsigned; the send is signed with the sending operator's Keycloak name.
+    @Test
+    void draftSendSignsAsTheSendingOperator() throws Exception {
+        Jwt jwt = Jwt.withTokenValue("token").header("alg", "none")
+                .subject("op-1").claim("name", "Jane Doe").claim("tenant_id", 1L).build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
+        when(sendRateLimiter.tryAcquire(anyLong())).thenReturn(true);
+
+        mockMvc.perform(post("/api/tickets/1/draft")
+                        .contentType("application/json")
+                        .content("{\"action\":\"send\",\"draftReply\":\"Reply\"}"))
+                .andExpect(status().isOk());
+
+        verify(emailReplyService).sendReply(t, "Jane Doe");
+        // The stored text stays unsigned — the acceptance KPI compares it to the unsigned AI draft.
+        assertThat(t.getDraftReply()).isEqualTo("Reply");
     }
 
     @Test
@@ -354,7 +374,7 @@ class TicketApiControllerTest {
                         .content("{\"action\":\"send\",\"draftReply\":\"Reply\"}"))
                 .andExpect(status().isTooManyRequests());
 
-        verify(emailReplyService, never()).sendReply(any());
+        verify(emailReplyService, never()).sendReply(any(), any());
     }
 
     @Test
@@ -368,7 +388,7 @@ class TicketApiControllerTest {
                 .andExpect(status().isOk());
 
         verify(emailTicketRepository, never()).save(any());
-        verify(emailReplyService, never()).sendReply(any());
+        verify(emailReplyService, never()).sendReply(any(), any());
     }
 
     @Test

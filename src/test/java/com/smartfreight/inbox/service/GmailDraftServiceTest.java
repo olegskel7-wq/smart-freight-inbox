@@ -2,6 +2,7 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
+import com.smartfreight.inbox.repository.TenantRepository;
 import com.smartfreight.inbox.startup.DemoMailProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,7 +39,8 @@ class GmailDraftServiceTest {
         when(settings.isDraftEnabled()).thenReturn(true);
         when(cipher.isConfigured()).thenReturn(true);
         service = new GmailDraftService(settings, mailboxes, cipher,
-                new MailTlsPolicy(new DemoMailProperties()), new SimpleMeterRegistry());
+                new MailTlsPolicy(new DemoMailProperties()),
+                new ReplySignatureService(mock(TenantRepository.class)), new SimpleMeterRegistry());
     }
 
     private static EmailTicket ticket(Long mailboxId) {

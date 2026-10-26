@@ -14,6 +14,7 @@ import com.smartfreight.inbox.service.EmailReplyService;
 import com.smartfreight.inbox.service.FeedbackLoopService;
 import com.smartfreight.inbox.service.KeycloakAdminService;
 import com.smartfreight.inbox.service.QuoteFollowUpService;
+import com.smartfreight.inbox.service.ReplySignatureService;
 import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
 import com.smartfreight.inbox.tenancy.TenantClaims;
@@ -216,7 +217,8 @@ public class TicketApiController {
     @Transactional
     @PostMapping("/{id}/draft")
     public ResponseEntity<TicketDetailDto> updateDraft(@PathVariable Long id,
-                                                       @RequestBody DraftRequest request) {
+                                                       @RequestBody DraftRequest request,
+                                                       @AuthenticationPrincipal Jwt jwt) {
         EmailTicket ticket = requireTicket(id);
         if (isTerminal(ticket)) {
             return ResponseEntity.ok(buildDetail(ticket));
@@ -232,7 +234,8 @@ public class TicketApiController {
                 return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
             }
             try {
-                emailReplyService.sendReply(ticket);
+                // Signed as the sending operator (drafts are unsigned — see ReplySignatureService).
+                emailReplyService.sendReply(ticket, ReplySignatureService.displayName(jwt));
                 ticket.setStatus(TicketStatus.CLOSED);
                 log.info("Ticket {} draft sent and closed (API)", id);
                 auditService.record(id, TicketAuditService.ACTION_SEND, "to=" + ticket.getSenderEmail());
