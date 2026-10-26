@@ -121,7 +121,7 @@ public class MailSenderProvider {
 
     private static String fingerprint(TenantMailbox m) {
         return m.getTenantId() + "|" + m.getSmtpHost() + "|" + m.getSmtpPort()
-                + "|" + m.getUsername() + "|" + m.getPasswordEnc().hashCode();
+                + "|" + m.getUsername() + "|" + MailboxCredentials.fingerprint(m);
     }
 
     /** A built sender and the config fingerprint it was built from. */

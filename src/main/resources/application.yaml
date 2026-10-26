@@ -194,6 +194,16 @@ mailbox:
   reconcile-interval-ms: 30000
   encryption-key: ${MAILBOX_ENCRYPTION_KEY:}
 
+# V38: Microsoft 365 mailboxes sign in with XOAUTH2 — app-only tokens from OUR multi-tenant Entra
+# app, requested from each customer's directory (tenant_mailbox.ms_directory_id). Blank client id =
+# M365 sign-in disabled. Setup: docs/ops/m365-oauth2-setup.md
+ms365:
+  oauth:
+    client-id: ${MS365_CLIENT_ID:}
+    client-secret: ${MS365_CLIENT_SECRET:}
+    authority-url: ${MS365_AUTHORITY_URL:https://login.microsoftonline.com}
+    scope: https://outlook.office365.com/.default
+
 # Demo mail harness (Phase 4.8 S2): demo tenants read GreenMail, reply into Mailpit.
 # How to run it (compose or IDE): see the header of scripts/demo-mail.ps1.
 demo:

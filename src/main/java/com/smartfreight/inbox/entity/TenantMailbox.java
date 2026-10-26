@@ -2,6 +2,8 @@ package com.smartfreight.inbox.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -51,9 +53,24 @@ public class TenantMailbox {
     @Column(name = "username", nullable = false)
     private String username;
 
-    /** AES-GCM ciphertext (base64) — decrypt via {@code SecretCipher} only at adapter build time. */
-    @Column(name = "password_enc", nullable = false)
+    /** How the platform signs in — password (default, every pre-V38 row) or Microsoft 365 OAuth2. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auth_type", nullable = false)
+    private MailboxAuthType authType = MailboxAuthType.PASSWORD;
+
+    /**
+     * AES-GCM ciphertext (base64) — decrypt via {@code SecretCipher} only at adapter build time.
+     * Null for {@link MailboxAuthType#MS365_OAUTH} rows (V38 CHECK enforces it per auth type).
+     */
+    @Column(name = "password_enc")
     private String passwordEnc;
+
+    /**
+     * The customer's Microsoft Entra directory (tenant GUID or verified domain) our app requests
+     * tokens from. Set only for {@link MailboxAuthType#MS365_OAUTH}; not a secret.
+     */
+    @Column(name = "ms_directory_id")
+    private String msDirectoryId;
 
     /**
      * Outbound SMTP host for this account (e.g. {@code smtp.gmail.com}). Null = inbound-only

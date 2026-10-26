@@ -43,6 +43,10 @@ services:
       # Phase 2.2 S3: AES key for tenant_mailbox passwords (base64, 32 bytes;
       # openssl rand -base64 32). Without it no IMAP adapters start.
       - MAILBOX_ENCRYPTION_KEY=${MAILBOX_ENCRYPTION_KEY:-}
+      # V38: our Entra app for Microsoft 365 mailboxes (XOAUTH2). Blank = M365 sign-in off.
+      # Setup: docs/ops/m365-oauth2-setup.md
+      - MS365_CLIENT_ID=${MS365_CLIENT_ID:-}
+      - MS365_CLIENT_SECRET=${MS365_CLIENT_SECRET:-}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USER=${RABBITMQ_USER:-smartfreight}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-smartfreight}

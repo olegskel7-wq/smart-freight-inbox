@@ -2,6 +2,7 @@ package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.service.MailTlsPolicy;
+import com.smartfreight.inbox.service.MailboxCredentials;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import com.smartfreight.inbox.util.EmailAddressUtils;
@@ -202,7 +203,7 @@ public class MailboxImapAdapterManager {
 
     private static String fingerprint(TenantMailbox mailbox) {
         return mailbox.getTenantId() + "|" + mailbox.getHost() + "|" + mailbox.getPort()
-                + "|" + mailbox.getUsername() + "|" + mailbox.getPasswordEnc().hashCode();
+                + "|" + mailbox.getUsername() + "|" + MailboxCredentials.fingerprint(mailbox);
     }
 
     private static String encode(String value) {
