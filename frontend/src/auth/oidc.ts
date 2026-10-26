@@ -27,6 +27,7 @@ export const oidcConfig: AuthProviderProps = {
   automaticSilentRenew: true,
   // After the code exchange, strip ?code&state from the address bar.
   onSigninCallback: () => {
-    window.history.replaceState({}, document.title, window.location.pathname)
+    // Keep the router's own history state (key/idx/usr); only the one-time code/state params go.
+    window.history.replaceState(window.history.state, document.title, window.location.pathname)
   },
 }

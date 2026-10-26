@@ -19,7 +19,7 @@ export function queueFromState(state: unknown): TicketQueue | null {
   return q && Array.isArray(q.ids) && typeof q.back === 'string' ? q : null
 }
 
-export type GroupKey = SlaInfo['bucket'] | 'done'
+type GroupKey = SlaInfo['bucket'] | 'done'
 
 const GROUPS: { key: GroupKey; title: string }[] = [
   { key: 'overdue', title: 'Overdue' },
@@ -28,7 +28,7 @@ const GROUPS: { key: GroupKey; title: string }[] = [
   { key: 'done', title: 'Done' },
 ]
 
-export interface TicketRow {
+interface TicketRow {
   t: TicketSummary
   /** Null for finished tickets (no SLA to show). */
   sla: SlaInfo | null
@@ -39,11 +39,20 @@ export interface TicketRow {
  * inside each bucket; empty buckets are dropped. The concatenation is the Send-and-next order.
  */
 export function groupTickets(tickets: TicketSummary[], now: number) {
-  const rows: TicketRow[] = tickets.map((t) => ({
-    t,
-    sla: isDone(t.status) ? null : slaInfo(t.slaDeadlineAt, t.slaBreached, now),
-  }))
+  const rows: TicketRow[] = tickets.map((t) => ({ t, sla: ticketSla(t, now) }))
   return GROUPS
     .map((g) => ({ ...g, rows: rows.filter((r) => (r.sla?.bucket ?? 'done') === g.key) }))
     .filter((g) => g.rows.length > 0)
+}
+
+/** The Send-and-next order: every grouped row's id, group by group. */
+export function queueIds(groups: ReturnType<typeof groupTickets>): number[] {
+  return groups.flatMap((g) => g.rows.map((r) => r.t.id))
+}
+
+/** Relative SLA for a ticket, or null once it is done (nothing left to be late for). */
+export function ticketSla(
+  t: Pick<TicketSummary, 'status' | 'slaDeadlineAt' | 'slaBreached'>, now: number,
+): SlaInfo | null {
+  return isDone(t.status) ? null : slaInfo(t.slaDeadlineAt, t.slaBreached, now)
 }

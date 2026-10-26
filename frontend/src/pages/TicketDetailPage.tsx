@@ -6,27 +6,29 @@ import { useApi, ApiError } from '../api/useApi.ts'
 import { useOperators } from '../api/useOperators.ts'
 import { useRoles } from '../auth/roles.ts'
 import type { Page, TicketDetail, TicketSummary } from '../types.ts'
-import { formatDateTime, formatDateTimeShort, slaInfo, statusBadgeClass } from '../util/format.ts'
+import Icon from '../components/Icon.tsx'
+import { formatDateTime, formatDateTimeShort, statusBadgeClass } from '../util/format.ts'
 import {
-  confidenceLabel, docTypeLabel, initialsOf, isDone, senderParts, statusLabel, toneLabel, typeLabel,
+  confidenceLabel, docTypeLabel, initialsOf, isFinal, senderParts, statusLabel, toneLabel, typeLabel,
 } from '../util/labels.ts'
-import { groupTickets, queueFromState } from '../util/queue.ts'
+import { groupTickets, queueFromState, queueIds, ticketSla } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
 import type { TicketQueue } from '../util/queue.ts'
 
 // Variant C (Phase 3.2 UI): a conversation layout — the customer email and the reply composer in a
 // centred thread, ticket facts in a right-hand context rail. The composer's action bar is sticky so
 // Send is always reachable; "Send and next" (Ctrl+Enter) walks the queue the list handed over.
+// The route renders this page with key={id}, so prev/next remounts it and no per-ticket state
+// (draft, pickers, notices) can leak from one ticket to the next.
 
 const SPARK = 'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z'
 
-function Glyph({ d, size = 16 }: { d: string[]; size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor"
-      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {d.map((p) => <path key={p} d={p} />)}
-    </svg>
-  )
+const LOCK = ['M5 11h14v9H5z', 'M8 11V8a4 4 0 0 1 8 0v3']
+
+// Composer heading for a finished ticket; anything else is a draft to review or write.
+const FINAL_HEADINGS: Record<string, string> = {
+  AUTO_SENT: 'Sent automatically',
+  CLOSED: 'Closed',
 }
 
 export default function TicketDetailPage() {
@@ -57,7 +59,7 @@ export default function TicketDetailPage() {
     if (queue) return
     void api.get<Page<TicketSummary>>('/api/tickets?view=open')
       .then((p) => setQueue({
-        ids: groupTickets(p.content, Date.now()).flatMap((g) => g.rows.map((r) => r.t.id)),
+        ids: queueIds(groupTickets(p.content, Date.now())),
         back: '/tickets',
       }))
       .catch(() => setQueue({ ids: [], back: '/tickets' }))
@@ -78,19 +80,11 @@ export default function TicketDetailPage() {
   }, [navigate, backTo, queue])
 
   const load = useCallback(async () => {
-    // Drop the previous ticket first: after prev/next the URL id has already changed, and a stale
-    // draft must never be sendable against the new id (Ctrl+Enter) while the fetch is in flight.
-    setTicket(null)
-    setError(null)
-    setNotice(null)
     try {
       const t = await api.get<TicketDetail>(`/api/tickets/${id}`)
       setTicket(t)
       setDraft(t.draftReply ?? '')
-      setDocTarget('')
-      setAssignTarget('')
     } catch (e) {
-      setTicket(null)
       setError(e instanceof Error ? e.message : 'Failed to load ticket')
     }
   }, [api, id])
@@ -122,8 +116,7 @@ export default function TicketDetailPage() {
     act(() => api.post<TicketDetail>(`/api/tickets/${id}/attach-document`, { documentId }),
       documentId ? 'Document attached.' : 'Attachment removed.', 'Attach failed')
 
-  // CLOSED / AUTO_SENT are final; an IRRELEVANT ticket can still be answered by hand.
-  const terminal = ticket?.status === 'CLOSED' || ticket?.status === 'AUTO_SENT'
+  const terminal = isFinal(ticket?.status ?? null)
 
   // save | close | send. Send and close move on: to the next ticket in the queue when asked
   // ("Send and next"), else back to the list.
@@ -189,7 +182,7 @@ export default function TicketDetailPage() {
 
   const sender = senderParts(ticket.senderEmail)
   const tone = toneLabel(ticket.urgency, ticket.sentimentNegative)
-  const sla = isDone(ticket.status) ? null : slaInfo(ticket.slaDeadlineAt, ticket.slaBreached, now)
+  const sla = ticketSla(ticket, now)
   const assignedToMe = ticket.assigneeUserId != null && ticket.assigneeUserId === myId
   const aiDrafted = ticket.aiOriginalDraft != null
   const isDocRequest = ticket.ticketType === 'DOCUMENT_REQUEST'
@@ -268,11 +261,10 @@ export default function TicketDetailPage() {
 
           <section className="sf-composer" aria-label="Your reply">
             <div className="sf-composer-head">
-              <Glyph d={[SPARK]} />
-              {ticket.status === 'AUTO_SENT' ? 'Sent automatically'
-                : ticket.status === 'CLOSED' ? 'Closed'
-                : aiDrafted ? 'Draft written for you — check it, edit if needed, send'
-                  : 'Your reply'}
+              <Icon d={[SPARK]} size={16} />
+              {FINAL_HEADINGS[ticket.status ?? '']
+                ?? (aiDrafted ? 'Draft written for you — check it, edit if needed, send'
+                  : 'Your reply')}
             </div>
             <label htmlFor="reply-draft" className="visually-hidden">Reply</label>
             <textarea
@@ -375,7 +367,7 @@ export default function TicketDetailPage() {
           </div>
 
           <div className="sf-uk-note">
-            <Glyph d={['M5 11h14v9H5z', 'M8 11V8a4 4 0 0 1 8 0v3']} />
+            <Icon d={LOCK} size={16} />
             Drafted on your UK server
           </div>
         </aside>

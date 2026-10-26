@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import type { ReactElement } from 'react'
 import { useAuth } from 'react-oidc-context'
 import { useRoles } from './auth/roles.ts'
@@ -21,6 +21,13 @@ import WebhooksPage from './pages/WebhooksPage.tsx'
 function RequireAdmin({ children }: { children: ReactElement }) {
   const { isAdmin } = useRoles()
   return isAdmin ? children : <Navigate to="/tickets" replace />
+}
+
+// One ticket page instance per ticket: prev/next and Send-and-next remount it, so no per-ticket
+// state (draft, pickers, notices) carries over to the next ticket (Phase 3.2 UI, variant C).
+function TicketDetailKeyed() {
+  const { id } = useParams()
+  return <TicketDetailPage key={id} />
 }
 
 // Auth gate: while Keycloak is resolving, show a spinner; if not signed in, redirect to
@@ -49,7 +56,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/tickets" replace />} />
         <Route path="tickets" element={<TicketsListPage />} />
-        <Route path="tickets/:id" element={<TicketDetailPage />} />
+        <Route path="tickets/:id" element={<TicketDetailKeyed />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="rates" element={<RatesPage />} />
         <Route path="documents" element={<DocumentsPage />} />

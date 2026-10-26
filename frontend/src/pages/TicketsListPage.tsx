@@ -3,11 +3,12 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi } from '../api/useApi.ts'
 import { useTicketStream } from '../api/useTicketStream.ts'
+import Icon from '../components/Icon.tsx'
 import type { Page, TicketStats, TicketSummary } from '../types.ts'
 import { TICKET_STATUSES } from '../types.ts'
 import { formatDateTime, formatDateTimeShort } from '../util/format.ts'
 import { initialsOf, isDone, senderParts, statusLabel, toneLabel, typeLabel } from '../util/labels.ts'
-import { groupTickets } from '../util/queue.ts'
+import { groupTickets, queueIds } from '../util/queue.ts'
 import type { TicketQueue } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
 
@@ -47,15 +48,6 @@ const CHIP_ICONS = {
   sent: ['M22 2 11 13', 'M22 2 15 22l-4-9-9-4z'],
 }
 
-function ChipIcon({ d }: { d: string[] }) {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-      strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {d.map((p) => <path key={p} d={p} />)}
-    </svg>
-  )
-}
-
 // A summary chip — a link that drills the list down to the tickets it counts (?view=…).
 function StatChip(props: {
   view: string; active: boolean; tone: string; icon: string[]; value: number | null; label: string
@@ -67,7 +59,7 @@ function StatChip(props: {
         className={`sf-chip${props.active ? ' is-active' : ''}`}
         title={`Show ${props.label.toLowerCase()} tickets`}
       >
-        <span className={`sf-chip-ic ${props.tone}`}><ChipIcon d={props.icon} /></span>
+        <span className={`sf-chip-ic ${props.tone}`}><Icon d={props.icon} size={18} /></span>
         <span className="sf-chip-body">
           <span className="sf-chip-value">{props.value ?? '—'}</span>
           <span className="sf-chip-label">{props.label}</span>
@@ -79,7 +71,6 @@ function StatChip(props: {
 
 // Human label for an active drill-down view (page title when no queue tab matches).
 const VIEW_LABELS: Record<string, string> = {
-  open: 'Inbox',
   awaiting: 'Awaiting review',
   breached: 'SLA breached',
   autosent_today: 'Auto-sent today',
@@ -182,13 +173,9 @@ export default function TicketsListPage() {
   }
 
   // Buckets in display order; the concatenation is the queue the ticket page walks with Send and next.
-  const groups = useMemo(() => {
-    return groupTickets(data?.content ?? [], now)
-  }, [data, now])
-  const queue: TicketQueue = {
-    ids: groups.flatMap((g) => g.rows.map((r) => r.t.id)),
-    back: location.pathname + location.search,
-  }
+  const groups = useMemo(() => groupTickets(data?.content ?? [], now), [data, now])
+  const back = location.pathname + location.search
+  const queue: TicketQueue = useMemo(() => ({ ids: queueIds(groups), back }), [groups, back])
 
   // Re-queue stuck/failed tickets through the AI pipeline (POST /api/admin/reprocess, OPERATOR-
   // gated, tenant-scoped). The endpoint returns a plain-text summary; the live stream refreshes

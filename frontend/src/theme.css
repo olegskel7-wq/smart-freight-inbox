@@ -156,7 +156,8 @@ body {
 /* ---- Sidebar layout (Phase 3 UI refresh) -------------------------------- *
  * Replaces the old top navbar. Aside is a sticky full-height slate rail; the
  * main column flows and the page scrolls normally. Desktop-first (operators are
- * on laptops); a mobile collapse/hamburger is a deliberate follow-up. */
+ * on laptops); below 768px the aside turns into a wrapping top bar (see the
+ * breakpoint after .sf-main). */
 .sf-shell {
   display: flex;
   align-items: flex-start;
@@ -287,6 +288,35 @@ body {
   min-width: 0;
 }
 
+/* Phone width: the sidebar becomes a wrapping top bar instead of squeezing the page. */
+@media (max-width: 767.98px) {
+  .sf-shell {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sf-aside {
+    width: auto;
+    flex: none;
+    position: static;
+    height: auto;
+    padding: 10px 12px;
+  }
+  .sf-brand {
+    padding-bottom: 8px;
+  }
+  .sf-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .sf-group {
+    display: none;
+  }
+  .sf-user {
+    margin-top: 8px;
+  }
+}
+
 /* ---- Page header + summary strip (Phase 3 UI: elevated main panel) ------ */
 .sf-pagehead {
   display: flex;
@@ -320,18 +350,6 @@ body {
 .sf-chip.is-active {
   border: 1.5px solid #4f6ef0;
 }
-.sf-clear {
-  font-size: 0.72rem;
-  color: #5c6b7a;
-  background: #eef1f5;
-  padding: 1px 9px;
-  border-radius: 20px;
-  text-decoration: none;
-}
-.sf-clear:hover {
-  background: #e2e7ee;
-  color: #3142a8;
-}
 .sf-chip-ic {
   width: 32px;
   height: 32px;
@@ -361,32 +379,6 @@ body {
 .sf-ic-red   { background: #fbe7e7; color: #b3261e; }
 .sf-ic-teal  { background: #e2f4ee; color: #0f7a5a; }
 
-/* ---- Tickets table: no horizontal scroll ever --------------------------- *
- * table-layout: fixed caps the table at the card width — wide content (long
- * emails, subjects) truncates with an ellipsis (full text in the title
- * tooltip) instead of pushing a horizontal scrollbar under the main panel.
- * Column widths live on the <th>s (fixed layout reads the first row). */
-.sf-table-fixed {
-  table-layout: fixed;
-}
-.sf-table-fixed > thead > tr > th,
-.sf-table-fixed > tbody > tr > td {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Cells whose badges may stack (Type + Urgent/Angry, Status + Breached). */
-.sf-table-fixed .sf-cell-wrap {
-  white-space: normal;
-}
-/* Secondary columns (Identifier, Conf.) yield to Subject on narrow laptops;
- * both stay visible on the ticket detail page. */
-@media (max-width: 1299.98px) {
-  .sf-col-wide {
-    display: none;
-  }
-}
-
 /* ---- Table-in-card refinements ----------------------------------------- */
 .sf-count {
   font-size: 0.72rem;
@@ -403,29 +395,6 @@ body {
   background: #eef2f6;
   color: #5c6b7a;
   white-space: nowrap;
-}
-.sf-assignee {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  max-width: 100%;
-}
-.sf-avatar-sm {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  border-radius: 50%;
-  background: #eef1f5;
-  color: #8593a4;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.6rem;
-  font-weight: 600;
-}
-.sf-avatar-sm.is-me {
-  background: #e8edfc;
-  color: #3142a8;
 }
 
 /* ---- Operator workspace, variant C (Phase 3.2 UI) ----------------------- *
@@ -831,33 +800,4 @@ body {
   color: var(--sf-green);
   font-size: 0.75rem;
   padding: 0 4px;
-}
-
-/* Phone width: the sidebar becomes a wrapping top bar instead of squeezing the page. */
-@media (max-width: 767.98px) {
-  .sf-shell {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .sf-aside {
-    width: auto;
-    flex: none;
-    position: static;
-    height: auto;
-    padding: 10px 12px;
-  }
-  .sf-brand {
-    padding-bottom: 8px;
-  }
-  .sf-nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 2px;
-  }
-  .sf-group {
-    display: none;
-  }
-  .sf-user {
-    margin-top: 8px;
-  }
 }

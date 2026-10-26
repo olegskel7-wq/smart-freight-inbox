@@ -47,7 +47,7 @@ public record TicketSummaryDto(
                 t.getId(),
                 t.getSenderEmail(),
                 t.getSubject(),
-                snippet(t.getBody()),
+                DtoText.oneLine(t.getBody(), SNIPPET_MAX),
                 t.getTicketType() == null ? null : t.getTicketType().name(),
                 t.getUrgency() == null ? null : t.getUrgency().name(),
                 t.isSentimentNegative(),
@@ -62,16 +62,5 @@ public record TicketSummaryDto(
                 t.getCreatedAt(),
                 t.getUpdatedAt()
         );
-    }
-
-    /** Body as one line (whitespace runs collapsed), trimmed to {@code SNIPPET_MAX} with an ellipsis. */
-    static String snippet(String body) {
-        if (body == null || body.isBlank()) {
-            return null;
-        }
-        // Cut before collapsing: bodies can be megabytes and only the first line-worth is shown.
-        String head = body.length() > SNIPPET_MAX * 4 ? body.substring(0, SNIPPET_MAX * 4) : body;
-        String line = head.strip().replaceAll("\\s+", " ");
-        return line.length() <= SNIPPET_MAX ? line : line.substring(0, SNIPPET_MAX - 1) + "…";
     }
 }

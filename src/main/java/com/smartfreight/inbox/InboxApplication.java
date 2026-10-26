@@ -4,6 +4,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+import java.util.TimeZone;
+
 /**
  * Smart Freight Inbox — application entry point.
  *
@@ -20,8 +22,13 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 public class InboxApplication {
 
-    /** Application startup method. */
+    /**
+     * Application startup method. The JVM zone is pinned to UTC: the API emits zone-less
+     * {@code LocalDateTime}s (from {@code LocalDateTime.now()}) and the SPA reads them as UTC, so a run
+     * from a BST laptop must not stamp local wall-clock time. The backend container is UTC anyway.
+     */
     public static void main(String[] args) {
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         SpringApplication.run(InboxApplication.class, args);
     }
 }

@@ -55,9 +55,17 @@ export function docTypeLabel(docType: string | null): string {
   return DOC_TYPE_LABELS[docType] ?? humanise(docType)
 }
 
-/** Statuses after which the ticket needs no more work (no SLA, no reply). */
+/** A reply went out or the ticket was closed: the composer is read-only. */
+export function isFinal(status: string | null): boolean {
+  return status === 'CLOSED' || status === 'AUTO_SENT'
+}
+
+/**
+ * Needs no more work (no SLA, grouped as Done). IRRELEVANT counts as done but is not final: an
+ * operator can still answer junk-flagged mail by hand.
+ */
 export function isDone(status: string | null): boolean {
-  return status === 'CLOSED' || status === 'AUTO_SENT' || status === 'IRRELEVANT'
+  return isFinal(status) || status === 'IRRELEVANT'
 }
 
 /**

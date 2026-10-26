@@ -8,7 +8,7 @@ const HAS_ZONE = /(Z|[+-]\d{2}:?\d{2})$/
  * an hour early during BST, which made relative SLAs ("Overdue 30m") wrong. Zone-less values are
  * therefore read as UTC; values that already carry a zone are left alone.
  */
-export function parseServerTime(value: string): Date {
+function parseServerTime(value: string): Date {
   return new Date(value.includes('T') && !HAS_ZONE.test(value) ? `${value}Z` : value)
 }
 
@@ -55,7 +55,7 @@ export function statusBadgeClass(status: string | null): string {
 }
 
 /** Compact duration for SLA text: "21d", "3h", "1h 20m", "45m" (minutes only below 10 h). */
-export function formatDuration(ms: number): string {
+function formatDuration(ms: number): string {
   const minutes = Math.max(1, Math.round(Math.abs(ms) / 60_000))
   if (minutes >= 24 * 60) return `${Math.floor(minutes / (24 * 60))}d`
   const h = Math.floor(minutes / 60)
@@ -64,7 +64,7 @@ export function formatDuration(ms: number): string {
   return h >= 10 || m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
-export type SlaBucket = 'overdue' | 'today' | 'later'
+type SlaBucket = 'overdue' | 'today' | 'later'
 
 export interface SlaInfo {
   bucket: SlaBucket
