@@ -6,7 +6,6 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,7 +46,8 @@ public class DevCredentialsGuard {
             "port.service.api-key", Set.of("local-dev-api-key", "smartfreight-port-secret"),
             "mailbox.encryption-key", Set.of());
 
-    private static final Set<String> LOCAL_HOSTS = Set.of("localhost", "127.0.0.1", "::1", "[::1]");
+    /** As {@link URI#getHost()} returns them — an IPv6 literal keeps its brackets. */
+    private static final Set<String> LOCAL_HOSTS = Set.of("localhost", "127.0.0.1", "[::1]");
 
     public DevCredentialsGuard(Environment env) {
         List<String> weak = weakSecrets(env);
@@ -67,15 +67,14 @@ public class DevCredentialsGuard {
 
     /** Property names whose value is missing, a dev default or too short — sorted, values never exposed. */
     static List<String> weakSecrets(Environment env) {
-        List<String> weak = new ArrayList<>();
-        DEV_DEFAULTS.forEach((name, devValues) -> {
-            String v = env.getProperty(name, "");
-            if (v.isBlank() || devValues.contains(v) || v.length() < MIN_SECRET_LENGTH) {
-                weak.add(name);
-            }
-        });
-        weak.sort(null);
-        return weak;
+        return DEV_DEFAULTS.entrySet().stream()
+                .filter(e -> {
+                    String v = env.getProperty(e.getKey(), "");
+                    return e.getValue().contains(v) || v.strip().length() < MIN_SECRET_LENGTH;
+                })
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
     }
 
     static boolean isLocal(String issuer) {

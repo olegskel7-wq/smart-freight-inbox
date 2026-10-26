@@ -30,8 +30,8 @@ COPY --from=build /build/target/inbox-*.jar app.jar
 
 # Gate C6: run as an unprivileged user. A code-execution bug (e.g. in PDF/Excel attachment parsing)
 # then lands as a plain process with no write access to the app or the image, not as root.
-# Fixed uid/gid so volume permissions stay predictable. The app writes only to /tmp (Tomcat work
-# dir, multipart uploads), which is world-writable.
+# Fixed uid/gid so a volume added later can be chowned to a known id. The app writes only to /tmp
+# (Tomcat work dir, multipart uploads), which is world-writable.
 RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app -H -h /app app
 USER 10001:10001
 
@@ -43,5 +43,7 @@ EXPOSE 8080
 # editing the JDK's); unset (the default, and prod) it just execs java.
 # Gate C6: ExitOnOutOfMemoryError — an OOM kills the JVM so Docker restarts it and the
 # health/MailboxDown alerts fire, instead of a half-dead JVM that answers health checks but
-# ingests nothing. Heap is 75% of the container limit set in docker-compose.yml.
-ENTRYPOINT ["/__cacert_entrypoint.sh", "java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75", "-XX:+ExitOnOutOfMemoryError", "-jar", "app.jar"]
+# ingests nothing. Heap is 65% of the container limit set in docker-compose.yml: the rest
+# (metaspace, threads, direct buffers, PDFBox/POI) must fit too, or the kernel OOM-kills the
+# container first — SIGKILL, no graceful drain, no OutOfMemoryError in the log.
+ENTRYPOINT ["/__cacert_entrypoint.sh", "java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=65", "-XX:+ExitOnOutOfMemoryError", "-jar", "app.jar"]
