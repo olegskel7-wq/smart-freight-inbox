@@ -25,7 +25,9 @@ ContainerRepository   → Spring Data JPA
 Container (entity)    → JPA entity
 ContainerResponse     → DTO (record)
 ContainerStatus       → enum: IN_TRANSIT, AT_PORT, CUSTOMS, RELEASED, DELIVERED
-StatusUpdateScheduler → status update simulation (every 5 min, ShedLock)
+StatusUpdateScheduler → status update simulation (every 5 min, ShedLock) — OFF by default since
+                        26 Oct 2026 (diploma-demo only; it left status/location contradictions).
+                        Re-enable with PORT_SCHEDULER_ENABLED=true in .env
 ApiKeyFilter          → timing-safe API Key authentication
 SecurityConfig        → Spring Security stateless
 ShedLockConfig        → distributed lock config
@@ -39,6 +41,8 @@ V3 — data expansion
 V4 — CHECK constraint on status (DB-level validation)
 V5 — shedlock table
 V6 — drop redundant index idx_container_number
+V7 — demo road jobs (MID-2026-*)
+V8 — reset simulator-scrambled statuses back to their seed values
 ```
 
 ## Run Configuration (IntelliJ)
