@@ -79,7 +79,9 @@ export function confidenceLabel(value: number | null): string {
   return `${Math.round(value * 100)}% · ${band}`
 }
 
-const NAME_IN_ADDRESS = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/
+const GENERIC_HOST_LABELS = new Set(['mail', 'email', 'mx', 'smtp', 'eu', 'uk', 'us', 'www', 'ops'])
+
+const NAME_IN_ADDRESS =/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/
 
 function titleCase(words: string): string {
   return words
@@ -100,7 +102,10 @@ export function senderParts(sender: string | null): { name: string; org: string;
   const address = (m ? m[2] : sender).trim()
   const [local = '', domain = ''] = address.split('@')
   const name = (m && m[1].trim()) || titleCase(local.replace(/[._+-]+/g, ' ')) || address
-  const org = domain ? titleCase(domain.split('.')[0].replace(/[-_]+/g, ' ')) : ''
+  // Skip host-ish leading labels ("mail.acme.co.uk", "eu.dhl.com") so the org is the company.
+  const labels = domain.split('.')
+  const orgLabel = labels.find((l, i) => i < labels.length - 1 && !GENERIC_HOST_LABELS.has(l.toLowerCase())) ?? labels[0]
+  const org = orgLabel ? titleCase(orgLabel.replace(/[-_]+/g, ' ')) : ''
   return { name, org, address }
 }
 

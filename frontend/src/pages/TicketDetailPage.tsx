@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi, ApiError } from '../api/useApi.ts'
@@ -9,7 +10,7 @@ import { formatDateTime, formatDateTimeShort, slaInfo, statusBadgeClass } from '
 import {
   confidenceLabel, docTypeLabel, initialsOf, isDone, senderParts, statusLabel, toneLabel, typeLabel,
 } from '../util/labels.ts'
-import { queueFromState } from '../util/queue.ts'
+import { groupTickets, queueFromState } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
 import type { TicketQueue } from '../util/queue.ts'
 
@@ -55,7 +56,10 @@ export default function TicketDetailPage() {
   useEffect(() => {
     if (queue) return
     void api.get<Page<TicketSummary>>('/api/tickets?view=open')
-      .then((p) => setQueue({ ids: p.content.map((t) => t.id), back: '/tickets' }))
+      .then((p) => setQueue({
+        ids: groupTickets(p.content, Date.now()).flatMap((g) => g.rows.map((r) => r.t.id)),
+        back: '/tickets',
+      }))
       .catch(() => setQueue({ ids: [], back: '/tickets' }))
   }, [api, queue])
 
@@ -149,24 +153,14 @@ export default function TicketDetailPage() {
     }
   }
 
-  // Ctrl/Cmd+Enter anywhere on the page = Send and next (only while a reply can be sent).
-  // The listener is registered once; a ref hands it the latest closure.
-  const sendNextRef = useRef<() => void>(() => {})
-  useEffect(() => {
-    sendNextRef.current = () => {
-      if (ticket && !terminal && !busy && draft.trim()) void submitDraft('send', true)
+  // Ctrl/Cmd+Enter in the reply box = Send and next. Scoped to the textarea on purpose: the same
+  // keys in the assign/attach selects must never email the customer.
+  const onReplyKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault()
+      if (!busy && draft.trim()) void submitDraft('send', true)
     }
-  })
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault()
-        sendNextRef.current()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }
 
   const topBar = (
     <div className="sf-ticket-top">
@@ -288,6 +282,7 @@ export default function TicketDetailPage() {
               disabled={terminal || busy}
               placeholder={ticket.status === 'PROCESSING' || ticket.status === 'NEW' ? 'The AI draft is still being written…' : 'Write a reply…'}
               onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onReplyKeyDown}
             />
           </section>
           {!terminal && (

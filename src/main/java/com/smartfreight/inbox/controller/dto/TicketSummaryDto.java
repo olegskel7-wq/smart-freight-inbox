@@ -69,7 +69,9 @@ public record TicketSummaryDto(
         if (body == null || body.isBlank()) {
             return null;
         }
-        String line = body.strip().replaceAll("\\s+", " ");
+        // Cut before collapsing: bodies can be megabytes and only the first line-worth is shown.
+        String head = body.length() > SNIPPET_MAX * 4 ? body.substring(0, SNIPPET_MAX * 4) : body;
+        String line = head.strip().replaceAll("\\s+", " ");
         return line.length() <= SNIPPET_MAX ? line : line.substring(0, SNIPPET_MAX - 1) + "…";
     }
 }

@@ -5,9 +5,9 @@ import { useApi } from '../api/useApi.ts'
 import { useTicketStream } from '../api/useTicketStream.ts'
 import type { Page, TicketStats, TicketSummary } from '../types.ts'
 import { TICKET_STATUSES } from '../types.ts'
-import { formatDateTime, formatDateTimeShort, slaInfo } from '../util/format.ts'
-import type { SlaInfo } from '../util/format.ts'
+import { formatDateTime, formatDateTimeShort } from '../util/format.ts'
 import { initialsOf, isDone, senderParts, statusLabel, toneLabel, typeLabel } from '../util/labels.ts'
+import { groupTickets } from '../util/queue.ts'
 import type { TicketQueue } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
 
@@ -33,13 +33,10 @@ const SORTS: { value: string; label: string }[] = [
   { value: 'createdAt:desc', label: 'Newest first' },
   { value: 'createdAt:asc', label: 'Oldest first' },
   { value: 'slaDeadlineAt:asc', label: 'SLA deadline' },
-]
-
-const GROUPS: { key: SlaInfo['bucket'] | 'done'; title: string; cls: string }[] = [
-  { key: 'overdue', title: 'Overdue', cls: 'is-red' },
-  { key: 'today', title: 'Due today', cls: 'is-amber' },
-  { key: 'later', title: 'Later', cls: '' },
-  { key: 'done', title: 'Done', cls: '' },
+  { value: 'ticketType:asc', label: 'Type' },
+  { value: 'status:asc', label: 'Status' },
+  { value: 'senderEmail:asc', label: 'Sender' },
+  { value: 'aiConfidence:desc', label: 'Confidence' },
 ]
 
 // Inline SVG glyphs for the summary chips (no icon-font dependency, no CDN).
@@ -86,11 +83,6 @@ const VIEW_LABELS: Record<string, string> = {
   awaiting: 'Awaiting review',
   breached: 'SLA breached',
   autosent_today: 'Auto-sent today',
-}
-
-interface Row {
-  t: TicketSummary
-  sla: SlaInfo | null
 }
 
 export default function TicketsListPage() {
@@ -191,13 +183,7 @@ export default function TicketsListPage() {
 
   // Buckets in display order; the concatenation is the queue the ticket page walks with Send and next.
   const groups = useMemo(() => {
-    const rows: Row[] = (data?.content ?? []).map((t) => ({
-      t,
-      sla: isDone(t.status) ? null : slaInfo(t.slaDeadlineAt, t.slaBreached, now),
-    }))
-    return GROUPS
-      .map((g) => ({ ...g, rows: rows.filter((r) => (r.sla?.bucket ?? 'done') === g.key) }))
-      .filter((g) => g.rows.length > 0)
+    return groupTickets(data?.content ?? [], now)
   }, [data, now])
   const queue: TicketQueue = {
     ids: groups.flatMap((g) => g.rows.map((r) => r.t.id)),
@@ -343,7 +329,7 @@ export default function TicketsListPage() {
 
       {groups.map((g) => (
         <section key={g.key} className="sf-group-sec" aria-label={g.title}>
-          <h2 className={`sf-group-title ${g.cls}`}>{g.title} <span>{g.rows.length}</span></h2>
+          <h2 className={`sf-group-title is-${g.key}`}>{g.title} <span>{g.rows.length}</span></h2>
           <div className="sf-list">
             {g.rows.map(({ t, sla }) => {
               const sender = senderParts(t.senderEmail)

@@ -498,8 +498,8 @@ body {
   font-weight: 600;
   color: #5c6b7a;
 }
-.sf-group-title.is-red   { color: var(--sf-red); }
-.sf-group-title.is-amber { color: var(--sf-amber); }
+.sf-group-title.is-overdue { color: var(--sf-red); }
+.sf-group-title.is-today   { color: var(--sf-amber); }
 .sf-group-title span {
   color: var(--sf-faint);
   font-weight: 400;
