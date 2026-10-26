@@ -1,8 +1,20 @@
 // Small shared formatting helpers for the ticket pages.
 
+const HAS_ZONE = /(Z|[+-]\d{2}:?\d{2})$/
+
+/**
+ * Parses a backend timestamp. The DTOs carry `LocalDateTime` (no zone) written by a JVM running in
+ * UTC (the backend container), while `new Date("2026-06-10T10:00")` would read it as browser-local —
+ * an hour early during BST, which made relative SLAs ("Overdue 30m") wrong. Zone-less values are
+ * therefore read as UTC; values that already carry a zone are left alone.
+ */
+function parseServerTime(value: string): Date {
+  return new Date(value.includes('T') && !HAS_ZONE.test(value) ? `${value}Z` : value)
+}
+
 export function formatDateTime(value: string | null): string {
   if (!value) return '—'
-  const d = new Date(value)
+  const d = parseServerTime(value)
   if (Number.isNaN(d.getTime())) return value
   return d.toLocaleString()
 }
@@ -10,7 +22,7 @@ export function formatDateTime(value: string | null): string {
 /** Compact date-time for dense list columns ("6 Jul 14:30"); year shown only when not current. */
 export function formatDateTimeShort(value: string | null): string {
   if (!value) return '—'
-  const d = new Date(value)
+  const d = parseServerTime(value)
   if (Number.isNaN(d.getTime())) return value
   const sameYear = d.getFullYear() === new Date().getFullYear()
   const date = d.toLocaleDateString(undefined, {
@@ -42,6 +54,48 @@ export function statusBadgeClass(status: string | null): string {
   }
 }
 
-export function formatConfidence(value: number | null): string {
-  return value == null ? '—' : value.toFixed(2)
+/** Compact duration for SLA text: "21d", "3h", "1h 20m", "45m" (minutes only below 10 h). */
+function formatDuration(ms: number): string {
+  const minutes = Math.max(1, Math.round(Math.abs(ms) / 60_000))
+  if (minutes >= 24 * 60) return `${Math.floor(minutes / (24 * 60))}d`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h === 0) return `${m}m`
+  return h >= 10 || m === 0 ? `${h}h` : `${h}h ${m}m`
+}
+
+type SlaBucket = 'overdue' | 'today' | 'later'
+
+export interface SlaInfo {
+  bucket: SlaBucket
+  /** "Overdue 21d", "Due in 1h 20m", "Due tomorrow", "No SLA". */
+  text: string
+  tone: 'red' | 'amber' | 'muted'
+}
+
+/**
+ * Relative SLA for an open ticket (variant C list grouping). Overdue = flagged breached by the
+ * SlaBreachScheduler OR already past its deadline (the scheduler runs once a minute). "Due today"
+ * ends at local midnight; anything later, or with no deadline, is "Later".
+ */
+export function slaInfo(deadline: string | null, breached: boolean, now: number): SlaInfo {
+  const due = deadline ? parseServerTime(deadline).getTime() : NaN
+  if (Number.isNaN(due)) {
+    return breached
+      ? { bucket: 'overdue', text: 'Overdue', tone: 'red' }
+      : { bucket: 'later', text: 'No SLA', tone: 'muted' }
+  }
+  if (breached || due <= now) {
+    return { bucket: 'overdue', text: `Overdue ${formatDuration(now - due)}`, tone: 'red' }
+  }
+  const endOfToday = new Date(now)
+  endOfToday.setHours(24, 0, 0, 0)
+  if (due < endOfToday.getTime()) {
+    const soon = due - now < 2 * 60 * 60_000
+    return { bucket: 'today', text: `Due in ${formatDuration(due - now)}`, tone: soon ? 'amber' : 'muted' }
+  }
+  const endOfTomorrow = new Date(endOfToday)
+  endOfTomorrow.setDate(endOfTomorrow.getDate() + 1)
+  const text = due < endOfTomorrow.getTime() ? 'Due tomorrow' : `Due in ${formatDuration(due - now)}`
+  return { bucket: 'later', text, tone: 'muted' }
 }

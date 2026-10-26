@@ -38,6 +38,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.hamcrest.Matchers.endsWith;
+import static org.hamcrest.Matchers.hasLength;
+import static org.hamcrest.Matchers.startsWith;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -172,6 +175,23 @@ class TicketApiControllerTest {
         assertThat(orders).hasSize(1);
         assertThat(orders.get(0).getProperty()).isEqualTo("createdAt");
         assertThat(orders.get(0).isAscending()).isTrue();
+    }
+
+    @Test
+    void summaryDtoCarriesOneLineCappedSnippet() throws Exception {
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        t.setBody("Morning,\n\n  Is CMAU5551234 still held?\r\n" + "x".repeat(400));
+        EmailTicket empty = ticket(2, TicketStatus.DRAFT_READY);
+        when(emailTicketRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(t, empty), Pageable.ofSize(50), 2));
+
+        mockMvc.perform(get("/api/tickets"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].snippet").value(
+                        startsWith("Morning, Is CMAU5551234 still held? xxx")))
+                .andExpect(jsonPath("$.content[0].snippet").value(endsWith("…")))
+                .andExpect(jsonPath("$.content[0].snippet").value(hasLength(160)))
+                .andExpect(jsonPath("$.content[1].snippet").doesNotExist());
     }
 
     @Test

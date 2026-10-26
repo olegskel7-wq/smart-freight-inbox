@@ -13,6 +13,7 @@ import { useApi } from '../api/useApi.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { AnalyticsResponse, InboxAnswer } from '../types.ts'
 import { statusBadgeClass } from '../util/format.ts'
+import { statusLabel, typeLabel } from '../util/labels.ts'
 
 // Chart.js is tree-shaken — register only the pieces the two bar charts use. Served from our own
 // bundle, never a CDN: the product promise is that data never leaves the server.
@@ -228,7 +229,7 @@ export default function AnalyticsPage() {
                         {s.byType.map((t) => (
                           <tr key={t.type}>
                             <td className="ps-3" style={{ width: 170 }}>
-                              <span className="badge bg-primary">{t.type}</span>
+                              <span className="badge bg-primary">{typeLabel(t.type)}</span>
                             </td>
                             <td className="text-end pe-3 fw-semibold" style={{ width: 70 }}>{t.count}</td>
                             <td><Bars pct={t.count > 0 ? t.pct : 0} /></td>
@@ -298,7 +299,7 @@ export default function AnalyticsPage() {
                     {s.byStatus.map((st) => (
                       <tr key={st.status}>
                         <td className="ps-3" style={{ width: 200 }}>
-                          <span className={`badge ${statusBadgeClass(st.status)}`}>{st.status}</span>
+                          <span className={`badge ${statusBadgeClass(st.status)}`}>{statusLabel(st.status)}</span>
                         </td>
                         <td className="text-end pe-3 fw-semibold" style={{ width: 100 }}>{st.count}</td>
                         <td><Bars pct={st.count > 0 ? st.pct : 0} /></td>

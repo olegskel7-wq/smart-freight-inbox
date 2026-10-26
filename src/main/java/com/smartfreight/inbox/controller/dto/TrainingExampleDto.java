@@ -27,18 +27,10 @@ public record TrainingExampleDto(
         return new TrainingExampleDto(
                 e.getId(),
                 e.getTicketType() == null ? null : e.getTicketType().name(),
-                abbreviate(e.getEnquiryText(), ENQUIRY_MAX),
-                abbreviate(e.getAiDraft(), DRAFT_MAX),
-                abbreviate(e.getOperatorFinal(), DRAFT_MAX),
+                DtoText.abbreviate(e.getEnquiryText(), ENQUIRY_MAX),
+                DtoText.abbreviate(e.getAiDraft(), DRAFT_MAX),
+                DtoText.abbreviate(e.getOperatorFinal(), DRAFT_MAX),
                 e.getCreatedAt()
         );
-    }
-
-    /** Trims to at most {@code max} characters, appending an ellipsis when the text was cut. */
-    private static String abbreviate(String text, int max) {
-        if (text == null || text.length() <= max) {
-            return text;
-        }
-        return text.substring(0, max - 1) + "…";
     }
 }

@@ -4,6 +4,8 @@ export interface TicketSummary {
   id: number
   senderEmail: string | null
   subject: string | null
+  /** One-line body preview, capped server-side (null when the body is empty). */
+  snippet: string | null
   ticketType: string | null
   urgency: string | null
   sentimentNegative: boolean

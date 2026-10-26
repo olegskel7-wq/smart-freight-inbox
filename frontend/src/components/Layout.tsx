@@ -2,20 +2,13 @@ import type { ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useRoles } from '../auth/roles.ts'
+import { initialsOf } from '../util/labels.ts'
+import Icon from './Icon.tsx'
 
 // Shared chrome for the SPA. Phase 3 UI refresh: the old top navbar is now a left sidebar
 // (reads as a product-grade SaaS dashboard). Role gating (Users/Settings = ADMIN, Tenants =
 // SUPER_ADMIN) is unchanged — the API enforces it regardless, this only drives nav visibility.
 // Icons are inline SVG (Feather/Tabler paths) so there is no icon-font dependency and no CDN.
-
-function Icon({ d }: { d: string[] }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {d.map((p) => <path key={p} d={p} />)}
-    </svg>
-  )
-}
 
 // Icon path sets (24×24 stroke).
 const I = {
@@ -41,7 +34,7 @@ export default function Layout() {
   const username = profile?.preferred_username ?? 'operator'
   const { isAdmin, isSuperAdmin } = useRoles()
   const roleLabel = isSuperAdmin ? 'SUPER_ADMIN' : isAdmin ? 'ADMIN' : 'OPERATOR'
-  const initials = username.slice(0, 2).toUpperCase()
+  const initials = initialsOf(username)
 
   const link = (to: string, label: string, icon: ReactNode) => (
     <NavLink to={to} className={navClass}>

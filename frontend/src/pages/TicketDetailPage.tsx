@@ -1,19 +1,45 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import type { KeyboardEvent } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi, ApiError } from '../api/useApi.ts'
 import { useOperators } from '../api/useOperators.ts'
 import { useRoles } from '../auth/roles.ts'
-import type { TicketDetail } from '../types.ts'
-import { formatConfidence, formatDateTime, statusBadgeClass } from '../util/format.ts'
+import type { Page, TicketDetail, TicketSummary } from '../types.ts'
+import Icon from '../components/Icon.tsx'
+import { formatDateTime, formatDateTimeShort, statusBadgeClass } from '../util/format.ts'
+import {
+  confidenceLabel, docTypeLabel, initialsOf, isFinal, senderParts, statusLabel, toneLabel, typeLabel,
+} from '../util/labels.ts'
+import { groupTickets, queueFromState, queueIds, ticketSla } from '../util/queue.ts'
+import { useNow } from '../util/useNow.ts'
+import type { TicketQueue } from '../util/queue.ts'
+
+// Variant C (Phase 3.2 UI): a conversation layout — the customer email and the reply composer in a
+// centred thread, ticket facts in a right-hand context rail. The composer's action bar is sticky so
+// Send is always reachable; "Send and next" (Ctrl+Enter) walks the queue the list handed over.
+// The route renders this page with key={id}, so prev/next remounts it and no per-ticket state
+// (draft, pickers, notices) can leak from one ticket to the next.
+
+const SPARK = 'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z'
+
+const LOCK = ['M5 11h14v9H5z', 'M8 11V8a4 4 0 0 1 8 0v3']
+
+// Composer heading for a finished ticket; anything else is a draft to review or write.
+const FINAL_HEADINGS: Record<string, string> = {
+  AUTO_SENT: 'Sent automatically',
+  CLOSED: 'Closed',
+}
 
 export default function TicketDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const ticketId = Number(id)
   const api = useApi()
   const auth = useAuth()
   const myId = auth.user?.profile.sub
   const { isAdmin } = useRoles()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [ticket, setTicket] = useState<TicketDetail | null>(null)
   const [draft, setDraft] = useState('')
@@ -23,9 +49,37 @@ export default function TicketDetailPage() {
   // A tenant admin can assign to any teammate; non-admins can't read /api/users (403), so skip the fetch.
   const operators = useOperators(isAdmin)
   const [assignTarget, setAssignTarget] = useState('')
+  const [docTarget, setDocTarget] = useState('')
+  const now = useNow()
+
+  // The queue this ticket was opened from. A deep link (no router state) falls back to the first
+  // page of the Inbox, so Send and next still has somewhere to go.
+  const [queue, setQueue] = useState<TicketQueue | null>(() => queueFromState(location.state))
+  useEffect(() => {
+    if (queue) return
+    void api.get<Page<TicketSummary>>('/api/tickets?view=open')
+      .then((p) => setQueue({
+        ids: queueIds(groupTickets(p.content, Date.now())),
+        back: '/tickets',
+      }))
+      .catch(() => setQueue({ ids: [], back: '/tickets' }))
+  }, [api, queue])
+
+  const index = queue ? queue.ids.indexOf(ticketId) : -1
+  const prevId = index > 0 ? queue!.ids[index - 1] : null
+  // After the current ticket; a ticket not in the queue (deep link) continues from the queue's start.
+  const nextId = queue ? (index >= 0 ? queue.ids[index + 1] : queue.ids.find((x) => x !== ticketId)) ?? null : null
+  const backTo = queue?.back ?? '/tickets'
+
+  const go = useCallback((target: number | null) => {
+    if (target == null) {
+      navigate(backTo)
+    } else {
+      navigate(`/tickets/${target}`, { state: { queue } })
+    }
+  }, [navigate, backTo, queue])
 
   const load = useCallback(async () => {
-    setError(null)
     try {
       const t = await api.get<TicketDetail>(`/api/tickets/${id}`)
       setTicket(t)
@@ -39,51 +93,45 @@ export default function TicketDetailPage() {
     void load()
   }, [load])
 
-  const assign = async (userId: string | null) => {
+  // Runs one ticket mutation with the shared busy/error/notice handling.
+  const act = async (fn: () => Promise<TicketDetail>, done: string, failed: string) => {
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
-      const body = userId ? { userId } : {}
-      const updated = await api.post<TicketDetail>(`/api/tickets/${id}/assign`, body)
-      setTicket(updated)
-      setNotice('Ticket assigned.')
+      setTicket(await fn())
+      setNotice(done)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Assign failed')
+      setError(e instanceof Error ? e.message : failed)
     } finally {
       setBusy(false)
     }
   }
 
-  const unassign = async () => {
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
-      const updated = await api.post<TicketDetail>(`/api/tickets/${id}/unassign`)
-      setTicket(updated)
-      setNotice('Ticket released.')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Release failed')
-    } finally {
-      setBusy(false)
-    }
-  }
+  const assign = (userId: string | null) =>
+    act(() => api.post<TicketDetail>(`/api/tickets/${id}/assign`, userId ? { userId } : {}), 'Ticket assigned.', 'Assign failed')
+  const unassign = () =>
+    act(() => api.post<TicketDetail>(`/api/tickets/${id}/unassign`), 'Ticket released.', 'Release failed')
+  const attach = (documentId: number | null) =>
+    act(() => api.post<TicketDetail>(`/api/tickets/${id}/attach-document`, { documentId }),
+      documentId ? 'Document attached.' : 'Attachment removed.', 'Attach failed')
 
-  const terminal = ticket?.status === 'CLOSED' || ticket?.status === 'AUTO_SENT'
+  const terminal = isFinal(ticket?.status ?? null)
 
-  const submitDraft = async (action: 'save' | 'close' | 'send') => {
+  // save | close | send. Send and close move on: to the next ticket in the queue when asked
+  // ("Send and next"), else back to the list.
+  const submitDraft = async (action: 'save' | 'close' | 'send', advance = false) => {
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
       const updated = await api.post<TicketDetail>(`/api/tickets/${id}/draft`, { action, draftReply: draft })
-      setTicket(updated)
-      setDraft(updated.draftReply ?? '')
-      if (action === 'send' || action === 'close') {
-        navigate('/tickets')
+      if (action !== 'save') {
+        go(advance ? nextId : null)
         return
       }
+      setTicket(updated)
+      setDraft(updated.draftReply ?? '')
       setNotice('Draft saved.')
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) {
@@ -98,217 +146,232 @@ export default function TicketDetailPage() {
     }
   }
 
-  const attach = async (documentId: number | null) => {
-    setBusy(true)
-    setError(null)
-    try {
-      const updated = await api.post<TicketDetail>(`/api/tickets/${id}/attach-document`, { documentId })
-      setTicket(updated)
-      setNotice(documentId ? 'Document attached.' : 'Attachment removed.')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Attach failed')
-    } finally {
-      setBusy(false)
+  // Ctrl/Cmd+Enter in the reply box = Send and next. Scoped to the textarea on purpose: the same
+  // keys in the assign/attach selects must never email the customer.
+  const onReplyKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault()
+      if (!busy && draft.trim()) void submitDraft('send', true)
     }
   }
 
+  const topBar = (
+    <div className="sf-ticket-top">
+      <Link to={backTo}>&larr; Back to list</Link>
+      {ticket && <span className={`badge ${statusBadgeClass(ticket.status)}`}>{statusLabel(ticket.status)}</span>}
+      <span className="flex-grow-1" />
+      {queue && index >= 0 && <span>{index + 1} of {queue.ids.length}</span>}
+      <button type="button" className="sf-nav-btn" aria-label="Previous ticket" title="Previous ticket"
+        disabled={prevId == null} onClick={() => go(prevId)}>‹</button>
+      <button type="button" className="sf-nav-btn" aria-label="Next ticket" title="Next ticket"
+        disabled={nextId == null} onClick={() => go(nextId)}>›</button>
+    </div>
+  )
+
   if (error && !ticket) {
     return (
-      <div>
-        <Link to="/tickets">&larr; Back to tickets</Link>
+      <div className="sf-ws">
+        {topBar}
         <div className="alert alert-danger mt-3">{error}</div>
       </div>
     )
   }
   if (!ticket) {
-    return <div className="text-muted">Loading…</div>
+    return <div className="sf-ws">{topBar}<div className="text-muted mt-3">Loading…</div></div>
   }
 
+  const sender = senderParts(ticket.senderEmail)
+  const tone = toneLabel(ticket.urgency, ticket.sentimentNegative)
+  const sla = ticketSla(ticket, now)
+  const assignedToMe = ticket.assigneeUserId != null && ticket.assigneeUserId === myId
+  const aiDrafted = ticket.aiOriginalDraft != null
+  const isDocRequest = ticket.ticketType === 'DOCUMENT_REQUEST'
+
   return (
-    <div>
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <Link to="/tickets">&larr; Back to tickets</Link>
-        <span className={`badge ${statusBadgeClass(ticket.status)}`}>{ticket.status}</span>
-      </div>
+    <div className="sf-ws">
+      {topBar}
 
-      {error && <div className="alert alert-danger">{error}</div>}
-      {notice && <div className="alert alert-success">{notice}</div>}
+      <div className="sf-ticket-grid">
+        <div className="sf-thread">
+          <h1 className="sf-thread-title">{ticket.subject || '(no subject)'}</h1>
 
-      <h1 className="h5">{ticket.subject || '(no subject)'}</h1>
+          {error && <div className="alert alert-danger mb-0">{error}</div>}
+          {notice && <div className="alert alert-success mb-0">{notice}</div>}
 
-      <dl className="row small text-muted mb-3">
-        <dt className="col-sm-2">From</dt><dd className="col-sm-10">{ticket.senderEmail ?? '—'}</dd>
-        <dt className="col-sm-2">Type</dt><dd className="col-sm-10">{ticket.ticketType ?? '—'}</dd>
-        <dt className="col-sm-2">Priority</dt>
-        <dd className="col-sm-10">
-          {ticket.urgency === 'HIGH'
-            ? <span className="badge bg-warning text-dark">High urgency</span>
-            : <span>{ticket.urgency ? ticket.urgency.charAt(0) + ticket.urgency.slice(1).toLowerCase() : 'Normal'}</span>}
-          {ticket.sentimentNegative && <span className="badge bg-danger ms-2">Negative tone</span>}
-        </dd>
-        <dt className="col-sm-2">Identifier</dt><dd className="col-sm-10">{ticket.extractedIdentifier ?? '—'}</dd>
-        <dt className="col-sm-2">Confidence</dt><dd className="col-sm-10">{formatConfidence(ticket.aiConfidence)}</dd>
-        <dt className="col-sm-2">SLA deadline</dt>
-        <dd className="col-sm-10">
-          {formatDateTime(ticket.slaDeadlineAt)}
-          {ticket.slaBreached && <span className="badge bg-danger ms-2">Breached</span>}
-        </dd>
-        <dt className="col-sm-2">Received</dt><dd className="col-sm-10">{formatDateTime(ticket.createdAt)}</dd>
-      </dl>
-
-      <div className="card mb-3">
-        <div className="card-header d-flex justify-content-between align-items-center">
-          <span>Assignment</span>
-          <span>
-            {ticket.assigneeUserId ? (
-              ticket.assigneeUserId === myId
-                ? <span className="badge bg-info text-dark">Assigned to you</span>
-                : <span className="badge bg-secondary">{ticket.assigneeEmail ?? 'Assigned'}</span>
-            ) : (
-              <span className="badge bg-light text-dark border">Unassigned</span>
+          <article className="sf-msg">
+            <header className="sf-msg-head">
+              <span className="sf-av" aria-hidden="true">{initialsOf(sender.name)}</span>
+              <div className="sf-msg-from">
+                <div className="fw-semibold">{ticket.proactive ? 'Proactive update' : sender.name}</div>
+                <div className="sf-msg-meta">
+                  {ticket.proactive ? `to ${sender.address}` : sender.address} · {formatDateTimeShort(ticket.createdAt)}
+                </div>
+              </div>
+              <span className="flex-grow-1" />
+              {tone && <span className="sf-tone">{tone}</span>}
+            </header>
+            <div className="sf-msg-body">{ticket.body || '(empty)'}</div>
+            {ticket.attachmentText && (
+              <details className="sf-msg-attach">
+                <summary>Text read from the attachments</summary>
+                <div className="sf-msg-body">{ticket.attachmentText}</div>
+              </details>
             )}
-          </span>
-        </div>
-        <div className="card-body d-flex flex-wrap align-items-center gap-2">
-          {!ticket.assigneeUserId && (
-            <button type="button" className="btn btn-outline-primary btn-sm" disabled={busy} onClick={() => void assign(null)}>
-              Claim
-            </button>
+          </article>
+
+          {isDocRequest && (
+            <section className="sf-docreq" aria-label="Document request">
+              <div>
+                Customer asked for: <strong>{docTypeLabel(ticket.requestedDocType)}</strong>
+              </div>
+              <div>
+                Attached:{' '}
+                {ticket.attachedDocument ? (
+                  <>
+                    <strong>{ticket.attachedDocument.filename}</strong>
+                    {!terminal && (
+                      <button type="button" className="btn btn-link btn-sm text-danger p-0 ms-2"
+                        disabled={busy} onClick={() => void attach(null)}>
+                        remove
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-muted">none</span>
+                )}
+              </div>
+              {!terminal && ticket.availableDocuments.length > 0 && (
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <label htmlFor="attach-doc" className="visually-hidden">Document to attach</label>
+                  <select id="attach-doc" className="form-select form-select-sm w-auto" value={docTarget}
+                    onChange={(e) => setDocTarget(e.target.value)}>
+                    <option value="">Choose a document…</option>
+                    {ticket.availableDocuments.map((d) => (
+                      <option key={d.id} value={d.id}>{docTypeLabel(d.docType)} — {d.filename}</option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn btn-outline-secondary btn-sm"
+                    disabled={busy || !docTarget} onClick={() => void attach(Number(docTarget))}>
+                    Attach
+                  </button>
+                </div>
+              )}
+            </section>
           )}
-          {ticket.assigneeUserId && (
-            <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy} onClick={() => void unassign()}>
-              Release
-            </button>
-          )}
-          {ticket.assigneeUserId && ticket.assigneeUserId !== myId && (
-            <button type="button" className="btn btn-outline-primary btn-sm" disabled={busy} onClick={() => void assign(null)}>
-              Claim for me
-            </button>
-          )}
-          {isAdmin && operators.length > 0 && (
-            <div className="d-flex align-items-center gap-2 ms-auto">
-              <select
-                className="form-select form-select-sm"
-                style={{ width: 'auto' }}
-                value={assignTarget}
-                onChange={(e) => setAssignTarget(e.target.value)}
-              >
-                <option value="">Assign to teammate…</option>
-                {operators.map((o) => (
-                  <option key={o.id} value={o.id}>{o.email} ({o.role ?? 'OPERATOR'})</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn btn-outline-secondary btn-sm"
-                disabled={busy || !assignTarget}
-                onClick={() => { if (assignTarget) void assign(assignTarget) }}
-              >
-                Assign
+
+          <section className="sf-composer" aria-label="Your reply">
+            <div className="sf-composer-head">
+              <Icon d={[SPARK]} size={16} />
+              {FINAL_HEADINGS[ticket.status ?? '']
+                ?? (aiDrafted ? 'Draft written for you — check it, edit if needed, send'
+                  : 'Your reply')}
+            </div>
+            <label htmlFor="reply-draft" className="visually-hidden">Reply</label>
+            <textarea
+              id="reply-draft"
+              className="sf-composer-text"
+              value={draft}
+              disabled={terminal || busy}
+              placeholder={ticket.status === 'PROCESSING' || ticket.status === 'NEW' ? 'The AI draft is still being written…' : 'Write a reply…'}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onReplyKeyDown}
+            />
+          </section>
+          {!terminal && (
+            <div className="sf-composer-bar">
+              <button type="button" className="btn btn-link btn-sm text-secondary" disabled={busy}
+                onClick={() => void submitDraft('close')}>
+                Close without reply
+              </button>
+              <button type="button" className="btn btn-link btn-sm text-secondary" disabled={busy}
+                onClick={() => void submitDraft('save')}>
+                Save draft
+              </button>
+              <span className="flex-grow-1" />
+              <span className="sf-kbd d-none d-md-inline">Ctrl+Enter</span>
+              <button type="button" className="btn btn-outline-primary btn-sm" disabled={busy || !draft.trim()}
+                onClick={() => void submitDraft('send')}>
+                Send
+              </button>
+              <button type="button" className="btn btn-primary btn-sm" disabled={busy || !draft.trim()}
+                title={nextId == null ? 'Send, then back to the list' : 'Send, then open the next ticket'}
+                onClick={() => void submitDraft('send', true)}>
+                Send and next
               </button>
             </div>
           )}
         </div>
-      </div>
 
-      <div className="card mb-3">
-        <div className="card-header">Email body</div>
-        <div className="card-body">
-          <pre className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>{ticket.body || '(empty)'}</pre>
-        </div>
-      </div>
-
-      {ticket.attachmentText && (
-        <div className="card mb-3">
-          <div className="card-header">Attachment text</div>
-          <div className="card-body">
-            <pre className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>{ticket.attachmentText}</pre>
-          </div>
-        </div>
-      )}
-
-      {ticket.ticketType === 'DOCUMENT_REQUEST' && (
-        <div className="card mb-3">
-          <div className="card-header">
-            Document request{ticket.requestedDocType ? ` — ${ticket.requestedDocType}` : ''}
-          </div>
-          <div className="card-body">
-            <p className="mb-2">
-              Attached:{' '}
-              {ticket.attachedDocument ? (
-                <>
-                  <strong>{ticket.attachedDocument.filename}</strong>
-                  {!terminal && (
-                    <button
-                      type="button"
-                      className="btn btn-link btn-sm text-danger p-0 ms-2"
-                      disabled={busy}
-                      onClick={() => void attach(null)}
-                    >
-                      remove
-                    </button>
-                  )}
-                </>
-              ) : (
-                <span className="text-muted">none</span>
+        <aside className="sf-rail" aria-label="Ticket context">
+          <div className="sf-rail-card">
+            <div className="sf-rail-label">Ticket</div>
+            <div>{typeLabel(ticket.ticketType)}{tone && <span className="sf-tone ms-2">{tone}</span>}</div>
+            {sla && (
+              <div className={`sf-sla is-${sla.tone}`} title={`SLA deadline ${formatDateTime(ticket.slaDeadlineAt)}`}>
+                SLA · {sla.text}
+              </div>
+            )}
+            <div className="text-muted small">Received {formatDateTime(ticket.createdAt)}</div>
+            <div className="mt-2">
+              {ticket.assigneeUserId
+                ? (assignedToMe ? 'Assigned to you' : `Assigned to ${ticket.assigneeEmail ?? 'a teammate'}`)
+                : 'Unassigned'}
+              {' · '}
+              {!ticket.assigneeUserId && (
+                <button type="button" className="sf-linkbtn" disabled={busy} onClick={() => void assign(null)}>Claim</button>
               )}
-            </p>
-            {!terminal && ticket.availableDocuments.length > 0 && (
-              <div className="d-flex align-items-center gap-2">
-                <select
-                  className="form-select form-select-sm"
-                  style={{ width: 'auto' }}
-                  defaultValue=""
-                  id="attach-doc-select"
-                >
-                  <option value="" disabled>Choose a document…</option>
-                  {ticket.availableDocuments.map((d) => (
-                    <option key={d.id} value={d.id}>{d.docType} — {d.filename}</option>
+              {ticket.assigneeUserId && (
+                <button type="button" className="sf-linkbtn" disabled={busy} onClick={() => void unassign()}>Release</button>
+              )}
+              {ticket.assigneeUserId && !assignedToMe && (
+                <> · <button type="button" className="sf-linkbtn" disabled={busy} onClick={() => void assign(null)}>Take it</button></>
+              )}
+            </div>
+            {isAdmin && operators.length > 0 && (
+              <div className="d-flex gap-2 mt-2">
+                <label htmlFor="assign-to" className="visually-hidden">Assign to teammate</label>
+                <select id="assign-to" className="form-select form-select-sm" value={assignTarget}
+                  onChange={(e) => setAssignTarget(e.target.value)}>
+                  <option value="">Assign to teammate…</option>
+                  {operators.map((o) => (
+                    <option key={o.id} value={o.id}>{o.email}</option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  disabled={busy}
-                  onClick={() => {
-                    const sel = document.getElementById('attach-doc-select') as HTMLSelectElement
-                    if (sel?.value) void attach(Number(sel.value))
-                  }}
-                >
-                  Attach
+                <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy || !assignTarget}
+                  onClick={() => void assign(assignTarget)}>
+                  Assign
                 </button>
               </div>
             )}
           </div>
-        </div>
-      )}
 
-      <div className="card mb-3">
-        <div className="card-header">Reply draft</div>
-        <div className="card-body">
-          <textarea
-            className="form-control"
-            rows={10}
-            value={draft}
-            disabled={terminal || busy}
-            onChange={(e) => setDraft(e.target.value)}
-          />
-        </div>
+          {/* TODO(grounding): the backend does not persist which sources grounded a draft (rate match,
+              knowledge-base articles, few-shot corrections) — only the extracted identifier, the
+              confidence score and an attached document are on the ticket. Showing those sources here
+              needs a backend change (record them at draft time); until then show only what is real. */}
+          <div className="sf-rail-card">
+            <div className="sf-rail-label">The draft is based on</div>
+            {aiDrafted || ticket.extractedIdentifier || ticket.attachedDocument ? (
+              <ul className="sf-rail-list">
+                {ticket.extractedIdentifier && (
+                  <li>Reference <strong>{ticket.extractedIdentifier}</strong> found in the email ✓</li>
+                )}
+                {ticket.attachedDocument && (
+                  <li>{docTypeLabel(ticket.attachedDocument.docType)} attached: {ticket.attachedDocument.filename} ✓</li>
+                )}
+                <li>Confidence {confidenceLabel(ticket.aiConfidence)}</li>
+              </ul>
+            ) : (
+              <div className="text-muted">No AI draft for this ticket.</div>
+            )}
+          </div>
+
+          <div className="sf-uk-note">
+            <Icon d={LOCK} size={16} />
+            Drafted on your UK server
+          </div>
+        </aside>
       </div>
-
-      {!terminal && (
-        <div className="d-flex gap-2">
-          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void submitDraft('save')}>
-            Save
-          </button>
-          <button type="button" className="btn btn-outline-secondary" disabled={busy} onClick={() => void submitDraft('close')}>
-            Close without sending
-          </button>
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void submitDraft('send')}>
-            Send reply
-          </button>
-        </div>
-      )}
     </div>
   )
 }
