@@ -479,6 +479,7 @@ services:
       - DB_PORT=5432
       - DB_USER=${PORT_DB_USER:-postgres}
       - DB_PASSWORD=${PORT_DB_PASSWORD:-postgres}
+      - SCHEDULER_ENABLED=${PORT_SCHEDULER_ENABLED:-false}
       - SCHEDULER_INTERVAL_MS=300000
       - PORT_SERVICE_API_KEY=${PORT_SERVICE_API_KEY:-smartfreight-port-secret}
     depends_on:

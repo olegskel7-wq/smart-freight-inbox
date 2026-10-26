@@ -6,6 +6,7 @@ import com.smartfreight.port_service.repository.ContainerRepository;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -33,8 +34,14 @@ import java.util.concurrent.ThreadLocalRandom;
  * – Demonstrate real-time data updates
  * – Test the inbox application's behaviour as statuses change
  * – Demo talking point: "statuses are actually updated every 5 minutes"
+ *
+ * OFF by default ({@code port.scheduler.enabled=false}): it was built for the diploma defence demo.
+ * It advances only the status, never the location or ETA, so the data it leaves behind contradicts
+ * itself ("IN_TRANSIT" at "HMRC Examination Bay 3") and the inbox drafts repeat the contradiction.
+ * Set {@code SCHEDULER_ENABLED=true} to bring it back for a live-update demo.
  */
 @Component
+@ConditionalOnProperty(name = "port.scheduler.enabled", havingValue = "true")
 public class StatusUpdateScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(StatusUpdateScheduler.class);

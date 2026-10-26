@@ -43,6 +43,8 @@ port:
   api:
     key: ${PORT_SERVICE_API_KEY:dev-local-key}
   scheduler:
+    # Demo status simulator (diploma defence) — off: it leaves status/location contradictions.
+    enabled: ${SCHEDULER_ENABLED:false}
     interval-ms: ${SCHEDULER_INTERVAL_MS:300000}
 
 logging:
