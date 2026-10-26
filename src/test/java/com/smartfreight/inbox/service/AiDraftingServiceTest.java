@@ -342,6 +342,18 @@ class AiDraftingServiceTest {
         assertFalse(context.contains("Status last updated"), "No timestamp line without updatedAt");
     }
 
+    // Статус не пришёл (null) при прошедшем ETA — не NPE, а «Unknown» + пометка устаревшего ETA.
+    @Test
+    void buildItemContext_nullStatusWithPastEta_doesNotThrow() {
+        TrackedItem item = new TrackedItem("CMAU5551234", null,
+                LocalDateTime.of(2026, 4, 15, 9, 30), null, null);
+
+        String context = service.buildItemContext(item);
+
+        assertTrue(context.contains("Current status: Unknown\n"));
+        assertTrue(context.contains("OUT OF DATE"));
+    }
+
     // Будущий ETA — без пометок; неизвестный код статуса просто очеловечивается.
     @Test
     void buildItemContext_futureEtaAndUnknownStatus_plainLines() {

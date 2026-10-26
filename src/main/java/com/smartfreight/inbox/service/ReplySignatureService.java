@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -42,6 +43,15 @@ public class ReplySignatureService {
             "(?i)(?:(?:best|kind|warm|warmest|with best|with kind|thanks and)\\s+)?(?:regards|wishes)"
             + "|(?:yours\\s+)?(?:sincerely|faithfully|truly)(?:\\s+yours)?"
             + "|(?:many\\s+)?thanks(?:\\s+again)?|thank\\s+you(?:\\s+again)?|best|cheers");
+
+    /** Trailing ", . !" removed before matching {@link #CLOSING_LINE}. */
+    private static final Pattern TRAILING_PUNCTUATION = Pattern.compile("[\\s,.!]+$");
+
+    /** A line ending like a sentence — body text, so the scan for a sign-off stops there. */
+    private static final Pattern SENTENCE_END = Pattern.compile("[.?!:;]$");
+
+    /** "Felixstowe Freight Solutions Ltd." ends in a full stop but is a signature line, not a sentence. */
+    private static final Pattern COMPANY_SUFFIX = Pattern.compile("(?i)\\b(?:ltd|limited|plc|llp|inc|co|corp)\\.$");
 
     /** A bare template placeholder line such as "[Your Name]" or "[Company]". */
     private static final Pattern PLACEHOLDER_LINE = Pattern.compile("^\\[[^\\]]{1,40}]$");
@@ -93,9 +103,10 @@ public class ReplySignatureService {
         int end = lines.size();
         for (int i = lines.size() - 1; i >= Math.max(0, lines.size() - MAX_SIGN_OFF_TAIL); i--) {
             String line = lines.get(i).strip();
-            if (CLOSING_LINE.matcher(line.replaceAll("[\\s,.!]+$", "")).matches()) {
+            if (CLOSING_LINE.matcher(TRAILING_PUNCTUATION.matcher(line).replaceAll("")).matches()) {
                 end = i;
-            } else if (line.length() > MAX_SIGNATURE_LINE_CHARS || line.matches(".*[.?!:;]$")) {
+            } else if (line.length() > MAX_SIGNATURE_LINE_CHARS
+                    || (SENTENCE_END.matcher(line).find() && !COMPANY_SUFFIX.matcher(line).find())) {
                 break;
             }
         }
@@ -115,8 +126,8 @@ public class ReplySignatureService {
         if (name != null && !name.isBlank()) {
             return name.trim();
         }
-        String full = (nullToEmpty(jwt.getClaimAsString("given_name")) + " "
-                + nullToEmpty(jwt.getClaimAsString("family_name"))).trim();
+        String full = (Objects.toString(jwt.getClaimAsString("given_name"), "") + " "
+                + Objects.toString(jwt.getClaimAsString("family_name"), "")).trim();
         return full.isEmpty() ? null : full;
     }
 
@@ -127,9 +138,5 @@ public class ReplySignatureService {
             return Optional.empty();
         }
         return tenantRepository.findById(tenantId).map(Tenant::getName).filter(n -> !n.isBlank());
-    }
-
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
     }
 }

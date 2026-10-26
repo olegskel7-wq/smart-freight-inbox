@@ -46,6 +46,13 @@ class ReplySignatureServiceTest {
         assertEquals(BODY, ReplySignatureService.stripSignOff(BODY + "\n\nMany thanks!\r\n\r\n[Your Name]\r\n"));
     }
 
+    // "Ltd." ends in a full stop but is a signature line — the closing above it must still be found.
+    @Test
+    void stripSignOff_companyLineWithFullStopIsStillSignature() {
+        assertEquals(BODY, ReplySignatureService.stripSignOff(
+                BODY + "\n\nBest regards,\n[Your Name]\nFelixstowe Freight Solutions Ltd."));
+    }
+
     // Trailing placeholder lines are dropped even without a closing line.
     @Test
     void stripSignOff_dropsTrailingPlaceholderWithoutClosing() {

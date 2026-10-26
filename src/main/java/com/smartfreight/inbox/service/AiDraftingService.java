@@ -531,7 +531,8 @@ public class AiDraftingService {
         } else {
             sb.append("ETA: ").append(item.getEta().format(ETA_FORMATTER));
             if (item.getEta().isBefore(LocalDateTime.now(clock))) {
-                sb.append(ARRIVED_STATUSES.contains(item.getStatus())
+                // Set.of rejects contains(null): a status-less item counts as not yet arrived.
+                sb.append(item.getStatus() != null && ARRIVED_STATUSES.contains(item.getStatus())
                         ? " (in the past: the container has already arrived)"
                         : " (OUT OF DATE: this date has already passed. Do not quote it as an upcoming "
                           + "arrival; say an updated ETA will be confirmed.)");
