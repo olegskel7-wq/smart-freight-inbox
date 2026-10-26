@@ -8,14 +8,18 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -36,6 +40,20 @@ public class AiDraftingService {
      * must not follow the server's default locale, drafts are quoted to UK customers. */
     private static final DateTimeFormatter ETA_FORMATTER =
             DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm", java.util.Locale.ENGLISH);
+
+    /**
+     * What each port-service status code means, worded for the model (lifecycle from port-service's
+     * {@code ContainerStatus}). The label leads, so the model quotes it instead of the raw code.
+     */
+    private static final Map<String, String> STATUS_MEANINGS = Map.of(
+            "IN_TRANSIT", "In transit (travelling by sea or road; not yet arrived at the port)",
+            "AT_PORT", "At port (arrived at the terminal and unloaded; not yet through customs)",
+            "CUSTOMS", "Held at customs (undergoing customs inspection; not yet released)",
+            "RELEASED", "Released by customs (cleared and ready for collection)",
+            "DELIVERED", "Delivered (handed over to the final recipient)");
+
+    /** Statuses after arrival: a past ETA is history there, not a stale promise. */
+    private static final Set<String> ARRIVED_STATUSES = Set.of("AT_PORT", "CUSTOMS", "RELEASED", "DELIVERED");
 
     /** Maximum email body length sent to the LLM. */
     private static final int MAX_PROMPT_BODY_CHARS = 2000;
@@ -166,9 +184,6 @@ public class AiDraftingService {
 
             I hope you are well. I am following up on the freight quote we sent you recently.
             Please let me know if you have any questions or if you would like to go ahead — we would be glad to help.
-
-            Kind regards,
-            Customer Service Team
             """;
 
     /** Draft generation model name — read from application.yaml. */
@@ -176,14 +191,31 @@ public class AiDraftingService {
 
     private final OllamaClientProvider ollamaClients;
     private final SettingsService settingsService;
+    private final ReplySignatureService signatureService;
+    private final Clock clock;
     private final Timer ollamaTimer;
 
+    @Autowired
     public AiDraftingService(OllamaClientProvider ollamaClients,
                              SettingsService settingsService,
+                             ReplySignatureService signatureService,
                              MeterRegistry meterRegistry,
                              @Value("${ollama.drafting-model:llama3.1:8b}") String draftingModel) {
+        this(ollamaClients, settingsService, signatureService, meterRegistry, draftingModel,
+                Clock.systemDefaultZone());
+    }
+
+    /** Test seam: a fixed clock makes the stale-ETA flag in {@link #buildItemContext} deterministic. */
+    AiDraftingService(OllamaClientProvider ollamaClients,
+                      SettingsService settingsService,
+                      ReplySignatureService signatureService,
+                      MeterRegistry meterRegistry,
+                      String draftingModel,
+                      Clock clock) {
         this.ollamaClients = ollamaClients;
         this.settingsService = settingsService;
+        this.signatureService = signatureService;
+        this.clock = clock;
         this.draftingModel = draftingModel;
         this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
                 .description("Ollama response time per model")
@@ -399,17 +431,12 @@ public class AiDraftingService {
                     Please find the requested %s attached to this email.
 
                     Do not hesitate to contact us if you require anything further.
-                    Kind regards,
-                    Customer Service Team
                     """, docLabel);
         }
         return String.format("""
                 Thank you for your enquiry.
 
                 We have received your request for the %s and are retrieving it. We will send it to you shortly.
-
-                Kind regards,
-                Customer Service Team
                 """, docLabel);
     }
 
@@ -428,7 +455,9 @@ public class AiDraftingService {
         try {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", draftingModel);
-            requestBody.put("prompt", prompt);
+            // Appended to every template (stored prompts included): drafts are unsigned, the real
+            // signature is added at send time by ReplySignatureService.
+            requestBody.put("prompt", prompt + "\n\n" + signatureService.draftingInstruction());
             requestBody.put("stream", false);
 
             log.debug("Sending drafting request to Ollama model {}", draftingModel);
@@ -452,7 +481,8 @@ public class AiDraftingService {
                 return fallbackDraft;
             }
 
-            String draft = String.valueOf(response.getOrDefault("response", "")).trim();
+            // Small local models still sign off ("Best regards, [Your Name]") despite the instruction.
+            String draft = ReplySignatureService.stripSignOff(String.valueOf(response.getOrDefault("response", "")));
             if (draft.isEmpty()) {
                 log.warn("Ollama returned empty draft");
                 return fallbackDraft;
@@ -475,26 +505,58 @@ public class AiDraftingService {
     /**
      * Builds a text block of item data for insertion into the prompt.
      *
+     * <p>Deterministic rather than clever: small local models take every line at face value, so the
+     * block spells out what a status code means, says when an ETA is already in the past, and tells
+     * the model which fact wins when the backend's status and location disagree (the port-service
+     * simulator advances status without moving the location — "In transit" at "HMRC Examination
+     * Bay 3" — and a real TOS feed can lag the same way).
+     *
      * @param item tracked-item data or null
      * @return formatted text with item information
      */
-    private String buildItemContext(TrackedItem item) {
+    String buildItemContext(TrackedItem item) {
         if (item == null) {
             return "Item not found in our system.";
         }
 
         StringBuilder sb = new StringBuilder();
         sb.append("Reference: ").append(item.getIdentifier()).append("\n");
-        sb.append("Status: ").append(item.getStatus() != null ? item.getStatus() : "Unknown").append("\n");
-
-        if (item.getEta() != null) {
-            sb.append("ETA: ").append(item.getEta().format(ETA_FORMATTER)).append("\n");
-        } else {
-            sb.append("ETA: Not available\n");
+        sb.append("Current status: ").append(describeStatus(item.getStatus())).append("\n");
+        if (item.getUpdatedAt() != null) {
+            sb.append("Status last updated: ").append(item.getUpdatedAt().format(ETA_FORMATTER)).append("\n");
         }
 
-        sb.append("Location: ").append(item.getLocation() != null ? item.getLocation() : "Unknown");
+        if (item.getEta() == null) {
+            sb.append("ETA: Not available\n");
+        } else {
+            sb.append("ETA: ").append(item.getEta().format(ETA_FORMATTER));
+            if (item.getEta().isBefore(LocalDateTime.now(clock))) {
+                sb.append(ARRIVED_STATUSES.contains(item.getStatus())
+                        ? " (in the past: the container has already arrived)"
+                        : " (OUT OF DATE: this date has already passed. Do not quote it as an upcoming "
+                          + "arrival; say an updated ETA will be confirmed.)");
+            }
+            sb.append("\n");
+        }
+
+        sb.append("Last recorded location: ").append(item.getLocation() != null ? item.getLocation() : "Unknown")
+                .append("\n");
+        sb.append("Note: the current status is the authoritative fact. If the last recorded location does not "
+                + "fit the current status, do not mention the location.");
         return sb.toString();
+    }
+
+    /** Plain-English meaning of a port-service status code; unknown codes are just humanised. */
+    private static String describeStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "Unknown";
+        }
+        String meaning = STATUS_MEANINGS.get(status);
+        if (meaning != null) {
+            return meaning;
+        }
+        String words = status.replace('_', ' ').toLowerCase(java.util.Locale.ENGLISH);
+        return Character.toUpperCase(words.charAt(0)) + words.substring(1);
     }
 
     /**
@@ -510,8 +572,6 @@ public class AiDraftingService {
                     Thank you for your enquiry.
                     Unfortunately, we were unable to locate the reference in our system at this time.
                     Please contact our team for further assistance.
-                    Kind regards,
-                    Customer Service Team
                     """;
         }
 
@@ -523,8 +583,6 @@ public class AiDraftingService {
                 Location: %s
 
                 Please do not hesitate to contact us if you require further information.
-                Kind regards,
-                Customer Service Team
                 """,
                 item.getIdentifier(),
                 item.getStatus() != null ? item.getStatus() : "N/A",

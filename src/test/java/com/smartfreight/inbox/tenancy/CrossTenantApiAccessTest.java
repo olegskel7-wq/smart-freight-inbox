@@ -115,7 +115,7 @@ class CrossTenantApiAccessTest {
 
     @Test
     void attacker_cannotSendOrEditForeignDraft() {
-        assertCrossTenant404(() -> tickets.updateDraft(victimTicketId, new DraftRequest("send", "HACKED")));
+        assertCrossTenant404(() -> tickets.updateDraft(victimTicketId, new DraftRequest("send", "HACKED"), null));
     }
 
     @Test
@@ -147,7 +147,7 @@ class CrossTenantApiAccessTest {
 
     @Test
     void victimTicket_survivesEveryCrossTenantMutationAttempt() {
-        assertCrossTenant404(() -> tickets.updateDraft(victimTicketId, new DraftRequest("send", "HACKED")));
+        assertCrossTenant404(() -> tickets.updateDraft(victimTicketId, new DraftRequest("send", "HACKED"), null));
         assertCrossTenant404(() -> tickets.close(victimTicketId));
         assertCrossTenant404(() -> tickets.attachDocument(victimTicketId, new AttachRequest(null)));
         assertCrossTenant404(() -> tickets.assign(victimTicketId, new AssignRequest("attacker-user"), attackerJwt()));

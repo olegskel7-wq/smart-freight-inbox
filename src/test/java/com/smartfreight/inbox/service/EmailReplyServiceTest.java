@@ -1,10 +1,13 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.EmailTicket;
+import com.smartfreight.inbox.entity.Tenant;
 import com.smartfreight.inbox.entity.TenantDocument;
 import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.TenantDocumentRepository;
+import com.smartfreight.inbox.repository.TenantRepository;
+import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,11 +37,15 @@ class EmailReplyServiceTest {
     @Mock
     private TenantDocumentRepository documentRepository;
 
+    @Mock
+    private TenantRepository tenantRepository;
+
     private EmailReplyService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailReplyService(mailSenderProvider, documentRepository, new SimpleMeterRegistry());
+        service = new EmailReplyService(mailSenderProvider, documentRepository,
+                new ReplySignatureService(tenantRepository), new SimpleMeterRegistry());
         // Every send resolves the sender for the ticket's mailbox; here it is the platform sender mock.
         when(mailSenderProvider.resolve(any()))
                 .thenReturn(new MailSenderProvider.ResolvedSender(mailSender, "operator@smartfreight.com"));
@@ -142,6 +149,24 @@ class EmailReplyServiceTest {
 
         assertDoesNotThrow(() -> service.sendReply(ticket));
         verify(mailSender, times(1)).send(mimeMessage);
+    }
+
+    // Подпись добавляется только в исходящее письмо: подпись модели заменяется на имя оператора +
+    // название тенанта, а draft_reply не трогается (KPI acceptance сравнивает неподписанный текст).
+    @Test
+    void sendReply_signsOutgoingTextOnly_draftReplyUnchanged() throws Exception {
+        Tenant tenant = new Tenant();
+        tenant.setId(1L);
+        tenant.setName("Felixstowe Freight Solutions Ltd");
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant));
+        String draft = "Your container has been released.\n\nBest regards,\n[Your Name]";
+        EmailTicket ticket = buildTicket("client@example.com", "Release", draft, null);
+
+        TenantContext.runAs(1L, () -> service.sendReply(ticket, "Jane Doe"));
+
+        verify(mimeMessage).setText("Your container has been released.\n\n"
+                + "Kind regards,\nJane Doe\nFelixstowe Freight Solutions Ltd", "UTF-8");
+        assertEquals(draft, ticket.getDraftReply());
     }
 
     // Phase 2.4: проактивный апдейт — свежее письмо, НЕ reply. Даже при непустом (синтетическом)
