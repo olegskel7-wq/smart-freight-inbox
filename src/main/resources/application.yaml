@@ -8,6 +8,14 @@ server:
       timeout: 8h
 
 spring:
+  # Gate C5: compose mounts secrets as files under /run/secrets (docker-compose.yml `secrets:`). Each
+  # file becomes a property named after it (DB_APP_PASSWORD, MAILBOX_ENCRYPTION_KEY, ...), so the
+  # ${...} placeholders below resolve from it unchanged. Optional: tests and IntelliJ runs have no
+  # such directory and keep using env vars / the dev defaults. An env var of the same name would
+  # win over the file — compose therefore passes no secret as env.
+  config:
+    import: optional:configtree:/run/secrets/
+
   # Gate B5: per-phase budget for the graceful stop (web requests, then the 40 s listener drain).
   lifecycle:
     timeout-per-shutdown-phase: 45s

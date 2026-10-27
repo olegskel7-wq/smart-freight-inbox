@@ -2,6 +2,11 @@ spring:
   application:
     name: port-service
 
+  # Gate C5: secrets arrive as files under /run/secrets (DB_PASSWORD, PORT_SERVICE_API_KEY) and
+  # resolve the ${...} placeholders below; optional for IntelliJ runs and tests.
+  config:
+    import: optional:configtree:/run/secrets/
+
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5435}/port_system
     username: ${DB_USER:postgres}
