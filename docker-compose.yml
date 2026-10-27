@@ -242,7 +242,9 @@ services:
       - -c
       - >-
         umask 077
-        && printf 'requirepass "%s"\n' "$$(tr -d '\r' < /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf
+        && pw="$$(tr -d '\r' < /run/secrets/REDIS_PASSWORD)"
+        && { [ -n "$$pw" ] || { echo 'REDIS_PASSWORD is empty - refusing to start without auth' >&2; exit 1; }; }
+        && printf 'requirepass "%s"\n' "$$pw" > /tmp/redis.conf
         && chown redis /tmp/redis.conf
         && exec docker-entrypoint.sh redis-server /tmp/redis.conf --appendonly yes
     secrets:

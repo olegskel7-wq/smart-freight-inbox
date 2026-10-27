@@ -22,17 +22,18 @@
 ENV_FILE="${1:-.env}"
 [ -f "$ENV_FILE" ] || { echo "check-prod-env: $ENV_FILE not found" >&2; exit 1; }
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
-
-# Last assignment wins, as in docker compose. Drops a CR (a .env prepared on Windows) and one
-# pair of surrounding quotes.
-value_of() {
-    grep -E "^[[:space:]]*$1=" "$ENV_FILE" | tail -n 1 | tr -d '\r' | sed -E "s/^[^=]*=//; s/^[\"'](.*)[\"']\$/\1/"
-}
+. "$REPO_ROOT/scripts/env-file.sh"
 
 fail=0
 problem() { echo "  ✗ $1" >&2; fail=1; }
 
 # --- where the secrets live ------------------------------------------------------------------
+# compose prefers a SECRETS_DIR exported in the shell over .env — then the directory checked here
+# would not be the one mounted. Refuse rather than guess.
+if [ -n "${SECRETS_DIR:-}" ]; then
+    echo "  ✗ SECRETS_DIR is exported in this shell (compose would use it over $ENV_FILE) — unset it" >&2
+    exit 1
+fi
 SECRETS_DIR="$(value_of SECRETS_DIR)"
 if [ -z "$SECRETS_DIR" ]; then
     echo "  ✗ SECRETS_DIR is not set in $ENV_FILE (compose would mount ./secrets.dev — the public dev values)" >&2
@@ -59,13 +60,8 @@ case "$mode" in
     *) problem "SECRETS_DIR permissions are $mode — must be 700 (chmod 700 $SECRETS_DIR)" ;;
 esac
 
-# Every secret docker-compose.yml mounts (its top-level `secrets:`). Optional ones may be empty files.
-ALL_SECRETS="POSTGRES_PASSWORD DB_APP_PASSWORD RABBITMQ_PASSWORD REDIS_PASSWORD KEYCLOAK_ADMIN_PASSWORD
-    KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET GRAFANA_PASSWORD PORT_DB_PASSWORD PORT_SERVICE_API_KEY
-    MAILBOX_ENCRYPTION_KEY IMAP_PASSWORD SMTP_PASSWORD TELEGRAM_BOT_TOKEN HEALTHCHECKS_PING_URL
-    BACKUP_ENCRYPTION_PASSPHRASE OFFSITE_S3_ACCESS_KEY_ID OFFSITE_S3_SECRET_ACCESS_KEY BACKUP_HEALTHCHECKS_PING_URL"
-
-for name in $ALL_SECRETS; do
+# Every secret compose mounts must exist as a file (optional ones may be empty).
+for name in $(secret_names); do
     f="$secrets_real/$name"
     if [ ! -f "$f" ]; then
         problem "$name is missing from SECRETS_DIR (compose refuses to start without it; may be empty if optional)"
@@ -73,40 +69,35 @@ for name in $ALL_SECRETS; do
         problem "$name contains a CR (edited on Windows?) — rewrite it: printf '%s' '<value>' > $name"
     fi
     # A secret must not ALSO sit in .env — that is exactly the cleartext-in-the-working-tree C5 removes.
-    grep -qE "^[[:space:]]*$name=" "$ENV_FILE" && problem "$name is assigned in $ENV_FILE — secrets belong in SECRETS_DIR only (delete the line)"
+    grep -qE "$(assignment_re "$name")" "$ENV_FILE" && problem "$name is assigned in $ENV_FILE — secrets belong in SECRETS_DIR only (delete the line)"
 done
 
 # The file's content (missing → empty; already reported above). Runs in $(...) — never calls problem.
 secret_of() { tr -d '\r\n' < "$secrets_real/$1" 2>/dev/null; }
 
 # --- secrets: present, not a dev default, long enough ---------------------------------------
-# name:dev-default (the value in secrets.dev). The backend repeats this check at startup for the
+# The dev default is the value in secrets.dev. The backend repeats this check at startup for the
 # secrets it resolves itself (DevCredentialsGuard, Gate C6) — keep the two in sync.
-for pair in \
-    POSTGRES_PASSWORD:postgres \
-    DB_APP_PASSWORD:smartfreight_app \
-    RABBITMQ_PASSWORD:smartfreight \
-    REDIS_PASSWORD:smartfreight-dev-redis \
-    KEYCLOAK_ADMIN_PASSWORD:admin \
-    KEYCLOAK_DB_PASSWORD:keycloak \
-    KEYCLOAK_ADMIN_CLIENT_SECRET:smartfreight-admin-secret \
-    GRAFANA_PASSWORD:admin \
-    PORT_DB_PASSWORD:postgres \
-    PORT_SERVICE_API_KEY:smartfreight-port-secret \
-    MAILBOX_ENCRYPTION_KEY:
+for name in POSTGRES_PASSWORD DB_APP_PASSWORD RABBITMQ_PASSWORD REDIS_PASSWORD KEYCLOAK_ADMIN_PASSWORD \
+    KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET GRAFANA_PASSWORD PORT_DB_PASSWORD \
+    PORT_SERVICE_API_KEY MAILBOX_ENCRYPTION_KEY
 do
-    name="${pair%%:*}"
-    dev_default="${pair#*:}"
     [ -f "$secrets_real/$name" ] || continue
     v="$(secret_of "$name")"
     if [ -z "$v" ]; then
         problem "$name is empty"
-    elif [ "$v" = "$dev_default" ]; then
+    elif [ "$v" = "$(dev_value_of "$name")" ]; then
         problem "$name still has the dev default"
     elif [ "${#v}" -lt 16 ]; then
         problem "$name is shorter than 16 characters"
     fi
 done
+
+# The platform mail account: SMTP_PASSWORD no longer falls back to IMAP_PASSWORD (an empty file is
+# an empty password, not "unset") — the same account needs the same value in both files.
+if [ -n "$(secret_of IMAP_PASSWORD)" ] && [ -z "$(secret_of SMTP_PASSWORD)" ]; then
+    problem "IMAP_PASSWORD is set but SMTP_PASSWORD is empty — platform replies would log in with no password (copy it: cp IMAP_PASSWORD SMTP_PASSWORD)"
+fi
 
 # Gate B1: backups must leave the host, encrypted. Bucket credentials have no dev default, so only
 # presence is checked; the passphrase is a secret like any other (and must also live OUTSIDE the server).

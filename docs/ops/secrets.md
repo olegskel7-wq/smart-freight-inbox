@@ -28,7 +28,7 @@ the services already read files, so a Vault agent can later render the same file
 | `PORT_DB_PASSWORD` | port-db, port-service | applied at first volume init only |
 | `PORT_SERVICE_API_KEY` | backend, port-service | |
 | `MAILBOX_ENCRYPTION_KEY` | backend | AES master key — **never change once set**; keep a copy outside the server |
-| `IMAP_PASSWORD`, `SMTP_PASSWORD` | backend (platform mail account) | may be empty files |
+| `IMAP_PASSWORD`, `SMTP_PASSWORD` | backend (platform mail account) | may be empty files; SMTP no longer falls back to IMAP — same account ⇒ same value in both |
 | `TELEGRAM_BOT_TOKEN`, `HEALTHCHECKS_PING_URL` | alertmanager | Gate B4 |
 | `BACKUP_ENCRYPTION_PASSPHRASE`, `OFFSITE_S3_ACCESS_KEY_ID`, `OFFSITE_S3_SECRET_ACCESS_KEY`, `BACKUP_HEALTHCHECKS_PING_URL` | backup-offsite | Gate B1 — keep the passphrase outside the server |
 
@@ -43,7 +43,7 @@ container read `/run/secrets/<name>` (exec sessions do not inherit those env var
 
 ```bash
 sudo mkdir -p /etc/smartfreight/secrets
-sudo chown "$USER" /etc/smartfreight/secrets && chmod 700 /etc/smartfreight/secrets
+sudo chown -R "$USER" /etc/smartfreight && chmod 700 /etc/smartfreight/secrets   # migrate writes its .env backup into /etc/smartfreight
 cd /etc/smartfreight/secrets
 for n in POSTGRES_PASSWORD DB_APP_PASSWORD RABBITMQ_PASSWORD REDIS_PASSWORD KEYCLOAK_ADMIN_PASSWORD \
          KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET GRAFANA_PASSWORD PORT_DB_PASSWORD PORT_SERVICE_API_KEY; do
@@ -56,7 +56,7 @@ printf '%s' '<healthchecks ping url>' > HEALTHCHECKS_PING_URL
 printf '%s' '<s3 key id>'            > OFFSITE_S3_ACCESS_KEY_ID    # docs/ops/backup-restore.md
 printf '%s' '<s3 secret>'            > OFFSITE_S3_SECRET_ACCESS_KEY
 printf '%s' '<backup ping url>'      > BACKUP_HEALTHCHECKS_PING_URL
-: > IMAP_PASSWORD; : > SMTP_PASSWORD                               # or the platform account's password
+: > IMAP_PASSWORD; : > SMTP_PASSWORD     # or the platform account's password — in BOTH files (no fallback)
 chmod 644 ./*
 ```
 
@@ -74,8 +74,11 @@ backups are unusable (`backup-restore.md`). `KEYCLOAK_ADMIN_CLIENT_SECRET`: set 
 `smartfreight-admin` client in the Keycloak admin console (Clients → Credentials).
 
 The deploy (`.github/workflows/deploy.yml`) never writes secrets — none pass through GitHub — it only
-runs `check-prod-env.sh`, which refuses: a missing/in-repo/group-readable `SECRETS_DIR`, a missing
-file, a dev default or a value under 16 characters, a CR in a file, a secret still assigned in `.env`.
+runs `check-prod-env.sh`, which refuses: a missing/in-repo/group-readable `SECRETS_DIR` (or one
+exported in the shell, which compose would prefer over `.env`), a missing file, a dev default or a
+value under 16 characters, a CR in a file, a secret still assigned in `.env` (also `export NAME=`),
+an IMAP password without the SMTP one. The secret list itself is `ls secrets.dev` — a new secret is a
+new file there plus its compose entries; both scripts pick it up.
 
 ## Existing `.env` with secrets → files (one-time)
 

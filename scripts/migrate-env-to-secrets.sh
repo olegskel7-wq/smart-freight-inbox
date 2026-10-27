@@ -14,6 +14,7 @@ set -eu
 ENV_FILE="${1:?usage: $0 <.env> <secrets dir outside the repo>}"
 DIR="${2:?usage: $0 <.env> <secrets dir outside the repo>}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+. "$REPO_ROOT/scripts/env-file.sh"
 [ -f "$ENV_FILE" ] || { echo "migrate: $ENV_FILE not found" >&2; exit 1; }
 
 mkdir -p "$DIR"
@@ -25,17 +26,13 @@ case "$DIR/" in
         echo "migrate: $DIR is inside the repo — pick a directory outside it" >&2; exit 1 ;;
 esac
 
-# Same parsing as check-prod-env.sh: last assignment wins, CR and one pair of quotes dropped.
-value_of() {
-    grep -E "^[[:space:]]*$1=" "$ENV_FILE" | tail -n 1 | tr -d '\r' | sed -E "s/^[^=]*=//; s/^[\"'](.*)[\"']\$/\1/"
-}
+# Backup and the new .env FIRST: if either directory is not writable we stop before anything changed.
+backup="$(dirname "$DIR")/env.backup-$(date +%Y%m%d-%H%M%S)"
+(umask 077; cp "$ENV_FILE" "$backup")
+tmp="$ENV_FILE.tmp.$$"
+(umask 077; : > "$tmp")
 
-SECRETS="POSTGRES_PASSWORD DB_APP_PASSWORD RABBITMQ_PASSWORD REDIS_PASSWORD KEYCLOAK_ADMIN_PASSWORD
-    KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET GRAFANA_PASSWORD PORT_DB_PASSWORD PORT_SERVICE_API_KEY
-    MAILBOX_ENCRYPTION_KEY IMAP_PASSWORD SMTP_PASSWORD TELEGRAM_BOT_TOKEN HEALTHCHECKS_PING_URL
-    BACKUP_ENCRYPTION_PASSPHRASE OFFSITE_S3_ACCESS_KEY_ID OFFSITE_S3_SECRET_ACCESS_KEY BACKUP_HEALTHCHECKS_PING_URL"
-
-for name in $SECRETS; do
+for name in $(secret_names); do
     target="$DIR/$name"
     if [ -f "$target" ]; then
         echo "  $name: kept (file exists)"
@@ -48,7 +45,7 @@ for name in $SECRETS; do
         source="from $ENV_FILE (IMAP_PASSWORD)"
     fi
     if [ -z "$v" ]; then
-        v="$(cat "$REPO_ROOT/secrets.dev/$name")"
+        v="$(dev_value_of "$name")"
         source="dev default"
     fi
     # 644 inside a 700 dir: every container user can read its bind mount, no other host user can.
@@ -57,12 +54,7 @@ for name in $SECRETS; do
     echo "  $name: $source"
 done
 
-backup="$(dirname "$DIR")/env.backup-$(date +%Y%m%d-%H%M%S)"
-(umask 077; cp "$ENV_FILE" "$backup")
-
-pattern="^[[:space:]]*($(echo $SECRETS | tr ' ' '|'))="
-tmp="$ENV_FILE.tmp.$$"
-grep -vE "$pattern" "$ENV_FILE" | grep -vE '^[[:space:]]*SECRETS_DIR=' > "$tmp" || true
+grep -vE "$(assignment_re "($(secret_names | paste -sd '|' -)|SECRETS_DIR)")" "$ENV_FILE" > "$tmp" || true
 # Docker Desktop on Windows wants C:/... rather than Git Bash's /c/...
 env_dir="$DIR"
 command -v cygpath >/dev/null 2>&1 && env_dir="$(cygpath -m "$DIR")"
