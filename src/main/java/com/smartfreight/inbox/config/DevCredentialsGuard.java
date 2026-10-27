@@ -13,7 +13,7 @@ import java.util.Set;
 /**
  * Gate C6: the backend refuses to start on a public deployment that still runs on DEV credentials.
  *
- * <p>{@code scripts/check-prod-env.sh} (Gate C1) already blocks such a {@code .env} before
+ * <p>{@code scripts/check-prod-env.sh} (Gate C1) already blocks such a {@code .env} + {@code SECRETS_DIR} before
  * {@code docker compose up} — but only when the deploy goes through it. This is the second layer,
  * inside the application: it sees the values Spring actually resolved, whatever started it.
  *
@@ -62,7 +62,8 @@ public class DevCredentialsGuard {
         throw new IllegalStateException("Refusing to start: the token issuer " + issuer
                 + " is a public host, but these secrets are unset, dev defaults or shorter than "
                 + MIN_SECRET_LENGTH + " characters: " + weak
-                + ". Set them in .env and run scripts/check-prod-env.sh (Gate C1/C6).");
+                + ". Put real values in SECRETS_DIR (docs/ops/secrets.md) and run"
+                + " scripts/check-prod-env.sh (Gate C1/C5/C6).");
     }
 
     /** Property names whose value is missing, a dev default or too short — sorted, values never exposed. */

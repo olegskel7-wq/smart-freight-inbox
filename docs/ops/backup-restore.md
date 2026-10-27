@@ -15,15 +15,16 @@ holds ciphertext. Not backed up on purpose: Ollama models (re-pulled), Prometheu
    `s3:ListBucket`, `s3:DeleteObject` (the last one is for 200-day retention). Create an access key.
 3. **Passphrase:** `openssl rand -base64 32`.
 4. **Heartbeat:** a healthchecks.io check, period **1 h**, grace **3 h** → ping URL.
-5. `.env` on the server:
+5. `.env` on the server: `OFFSITE_S3_BUCKET=<bucket>`. The rest are secrets — files in `SECRETS_DIR`
+   (Gate C5, [`secrets.md`](secrets.md)), written without a newline:
    ```
-   OFFSITE_S3_BUCKET=<bucket>
-   OFFSITE_S3_ACCESS_KEY_ID=<key id>
-   OFFSITE_S3_SECRET_ACCESS_KEY=<secret>
-   BACKUP_ENCRYPTION_PASSPHRASE=<passphrase>
-   BACKUP_HEALTHCHECKS_PING_URL=<ping url>
+   printf '%s' '<key id>'     > "$SECRETS_DIR/OFFSITE_S3_ACCESS_KEY_ID"
+   printf '%s' '<secret>'     > "$SECRETS_DIR/OFFSITE_S3_SECRET_ACCESS_KEY"
+   printf '%s' '<passphrase>' > "$SECRETS_DIR/BACKUP_ENCRYPTION_PASSPHRASE"
+   printf '%s' '<ping url>'   > "$SECRETS_DIR/BACKUP_HEALTHCHECKS_PING_URL"
+   docker compose up -d --force-recreate backup-offsite
    ```
-   `scripts/check-prod-env.sh` refuses a server `.env` without them.
+   `scripts/check-prod-env.sh` refuses a server without them.
 
 ## Key custody — read this
 
@@ -47,17 +48,17 @@ Keycloak. `local` instead of `offsite` tests the on-host copies. Exit 0 = restor
 
 ## Real disaster: rebuild on a new host
 
-1. New VPS, clone the repo, put the **same** `.env` back (from the password manager).
+1. New VPS, clone the repo, put the **same** `.env` and `SECRETS_DIR` files back (from the password manager — [`secrets.md`](secrets.md)).
 2. `docker compose up -d postgres keycloak-db` (empty volumes).
 3. Pull and decrypt the newest dumps:
    ```
    docker compose run --rm -T --entrypoint /bin/sh backup-offsite -c \
-     '. /etc/offsite/offsite-env.sh; rclone lsf vault:daily/ | sort | tail -n 2'
+     '. /file-env.sh; . /etc/offsite/offsite-env.sh; rclone lsf vault:daily/ | sort | tail -n 2'
    docker compose run --rm -T --entrypoint /bin/sh backup-offsite -c \
-     '. /etc/offsite/offsite-env.sh; rclone cat vault:daily/smartfreight-<date>.sql.gz' > smartfreight.sql.gz
+     '. /file-env.sh; . /etc/offsite/offsite-env.sh; rclone cat vault:daily/smartfreight-<date>.sql.gz' > smartfreight.sql.gz
    ```
    (same for `keycloak-<date>.sql.gz`).
-4. `pg_dump` carries no roles — create the app role first, with the password from `.env`:
+4. `pg_dump` carries no roles — create the app role first, with the password from `$SECRETS_DIR/DB_APP_PASSWORD`:
    ```
    docker compose exec -T postgres psql -U postgres -c \
      "CREATE ROLE smartfreight_app LOGIN PASSWORD '<DB_APP_PASSWORD>' NOSUPERUSER NOBYPASSRLS"

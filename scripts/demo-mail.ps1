@@ -9,12 +9,12 @@
     land in Mailpit: http://localhost:8025.
 
     HOW TO RUN THE HARNESS (the one place this is documented):
-    - Compose: put these two lines in .env (it already holds MAILBOX_ENCRYPTION_KEY), so every
+    - Compose: put these two lines in .env (MAILBOX_ENCRYPTION_KEY is a file in SECRETS_DIR), so every
       routine `docker compose up -d` keeps the demo on - then run `docker compose up -d`:
         COMPOSE_PROFILES=demo
         DEMO_MAIL_ENABLED=true
     - IDE run config instead: DEMO_MAIL_ENABLED=true, DEMO_IMAP_HOST=localhost,
-      DEMO_SMTP_HOST=localhost and MAILBOX_ENCRYPTION_KEY (copy from .env).
+      DEMO_SMTP_HOST=localhost and MAILBOX_ENCRYPTION_KEY (copy from SECRETS_DIR).
     - Road tenant 90001 needs dev-seed V36 (job-ref extraction) - load it via psql.
     - Turn it OFF before any real pilot mail (ROADMAP Gate B14): delete both .env lines,
       `docker compose up -d` (backend removes the demo mailboxes), `docker compose stop greenmail mailpit`.

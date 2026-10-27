@@ -106,7 +106,10 @@ flowchart TD
 
 ## ⚙️ Environment Variables (Email Configuration)
 
-To test with real emails, configure your IMAP/SMTP credentials. You can set these in a `.env` file or in your IDE Run Configuration:
+To test with real emails, configure your IMAP/SMTP credentials. Under Docker Compose the hosts/users go
+in `.env` and the passwords are **files** in `SECRETS_DIR` outside the repo (`IMAP_PASSWORD`,
+`SMTP_PASSWORD` — see [`docs/ops/secrets.md`](docs/ops/secrets.md)); in your IDE Run Configuration all of
+them are plain environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -119,7 +122,8 @@ To test with real emails, configure your IMAP/SMTP credentials. You can set thes
 | `SMTP_USER` | *(Same as IMAP_USER)* | SMTP username |
 | `SMTP_PASSWORD`| *(Same as IMAP_PASSWORD)*| SMTP password |
 
-*See `.env.example` for Mailtrap/Gmail examples.*
+*See `.env.example` for Mailtrap/Gmail examples. A fresh clone needs neither: compose falls back to
+the public dev values in `secrets.dev/`.*
 
 ---
 
