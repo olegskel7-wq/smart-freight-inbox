@@ -1,12 +1,13 @@
 #!/bin/sh
-# Gate C5: entrypoint wrapper for images that read secrets only from env vars (RabbitMQ, Keycloak,
-# Alertmanager, rclone). Exports every file compose mounted under /run/secrets as an env var of the
-# same name — the compose `target:` is the variable the image expects — then execs the real
-# entrypoint. The values live in this process tree only: never in docker-compose.yml, `.env`,
-# `docker inspect` or the repo. Note `docker compose exec` sessions do NOT inherit them — scripts
-# read /run/secrets/<name> directly. Usage: entrypoint: ["/bin/sh", "/file-env.sh", <entrypoint>...]
-# Sourced with no arguments (`. /file-env.sh`), it only exports — scripts/restore-test.sh does that.
-set -eu
+# Gate C5: the one way anything reads a secret inside a container whose image only knows env vars
+# (RabbitMQ, Keycloak, Redis, Alertmanager, rclone). Exports every file compose mounted under
+# /run/secrets as an env var of the same name — the compose `target:` is the variable the image
+# expects — then execs the real entrypoint. The values live in this process tree only: never in
+# docker-compose.yml, `.env`, `docker inspect` or the repo.
+#   entrypoint: ["/bin/sh", "/file-env.sh", <real entrypoint>...]
+# `docker compose exec` sessions do NOT inherit those vars — there, source it first (no arguments =
+# export only): `. /file-env.sh && redis-cli ...` (healthchecks, erase-tenant.sh, restore-test.sh).
+# No `set -e/-u` here: when sourced it would leak into the caller's shell.
 
 for f in /run/secrets/*; do
     [ -f "$f" ] || continue
@@ -15,4 +16,4 @@ for f in /run/secrets/*; do
     export "${f##*/}=$value"
 done
 
-exec "$@"
+[ "$#" -eq 0 ] || exec "$@"

@@ -20,11 +20,10 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 mkdir -p "$DIR"
 chmod 700 "$DIR"
 DIR="$(cd "$DIR" && pwd -P)"
-case "$DIR/" in
-    "$REPO_ROOT"/*)
-        rmdir "$DIR" 2>/dev/null || true   # only if we just created it empty
-        echo "migrate: $DIR is inside the repo — pick a directory outside it" >&2; exit 1 ;;
-esac
+if inside_repo "$DIR"; then
+    rmdir "$DIR" 2>/dev/null || true   # only if we just created it empty
+    echo "migrate: $DIR is inside the repo — pick a directory outside it" >&2; exit 1
+fi
 
 # Backup and the new .env FIRST: if either directory is not writable we stop before anything changed.
 backup="$(dirname "$DIR")/env.backup-$(date +%Y%m%d-%H%M%S)"
@@ -49,8 +48,7 @@ for name in $(secret_names); do
         source="dev default"
     fi
     # 644 inside a 700 dir: every container user can read its bind mount, no other host user can.
-    (umask 077; printf '%s' "$v" > "$target")
-    chmod 644 "$target"
+    printf '%s' "$v" > "$target" && chmod 644 "$target"
     echo "  $name: $source"
 done
 

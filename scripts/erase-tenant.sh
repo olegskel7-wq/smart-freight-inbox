@@ -47,7 +47,8 @@ fi
 counts() {  # $1 = SQL predicate on tenant_id → "table=n ..." per table
     for t in "${TABLES[@]}"; do printf '%s=%s ' "$t" "$(sql "SELECT count(*) FROM $t WHERE $1")"; done
 }
-kc() { docker compose exec -T keycloak sh -c "/opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8081 --realm master --user \"\$KC_BOOTSTRAP_ADMIN_USERNAME\" --password \"\$(cat /run/secrets/KC_BOOTSTRAP_ADMIN_PASSWORD)\" >/dev/null 2>&1 && /opt/keycloak/bin/kcadm.sh $1" 2>/dev/null; }
+# Gate C5: `docker compose exec` sessions do not see secrets as env vars — `. /file-env.sh` first.
+kc() { docker compose exec -T keycloak sh -c ". /file-env.sh && /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8081 --realm master --user \"\$KC_BOOTSTRAP_ADMIN_USERNAME\" --password \"\$KC_BOOTSTRAP_ADMIN_PASSWORD\" >/dev/null 2>&1 && /opt/keycloak/bin/kcadm.sh $1" 2>/dev/null; }
 kc_user_ids() {  # operators of this tenant, via the same q=tenant_id: search KeycloakAdminService uses
     # Guard: if the attribute filter were ever ignored (wrong syntax, API change) the search would
     # return EVERY user — another client's operators included. A tenant id that cannot exist must
@@ -61,8 +62,7 @@ kc_user_ids() {  # operators of this tenant, via the same q=tenant_id: search Ke
     kc "get users -r smartfreight -q q=tenant_id:$TENANT_ID --fields id --format csv --noquotes" \
         | tr -d '\r' | grep -E '^[0-9a-f-]{36}$' || true
 }
-# Gate C5: `docker compose exec` sessions do not see secrets as env vars — read the mounted files.
-redis_keys() { docker compose exec -T redis sh -c "REDISCLI_AUTH=\"\$(cat /run/secrets/REDIS_PASSWORD)\" redis-cli --scan --pattern 'rateSheets::$TENANT_ID:*'" | tr -d '\r'; }
+redis_keys() { docker compose exec -T redis sh -c ". /file-env.sh && REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli --scan --pattern 'rateSheets::$TENANT_ID:*'" | tr -d '\r'; }
 
 before_mine="$(counts "tenant_id = $TENANT_ID")"
 before_others="$(counts "tenant_id <> $TENANT_ID")"
@@ -98,7 +98,7 @@ sleep 40
 for id in $kc_ids; do kc "delete users/$id -r smartfreight" >/dev/null; done
 # 4. cache
 for key in $rkeys; do
-    docker compose exec -T redis sh -c "REDISCLI_AUTH=\"\$(cat /run/secrets/REDIS_PASSWORD)\" redis-cli del '$key'" >/dev/null
+    docker compose exec -T redis sh -c ". /file-env.sh && REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli del '$key'" >/dev/null
 done
 
 after_mine="$(counts "tenant_id = $TENANT_ID")"

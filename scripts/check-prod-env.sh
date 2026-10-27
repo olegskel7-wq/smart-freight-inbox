@@ -26,43 +26,51 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 
 fail=0
 problem() { echo "  ✗ $1" >&2; fail=1; }
+verdict() {
+    [ "$fail" -eq 0 ] && return
+    echo "check-prod-env: $ENV_FILE / ${SECRETS_DIR:-?} are not fit for a server — fix the items above." >&2
+    exit 1
+}
+die() { problem "$1"; verdict; }
 
 # --- where the secrets live ------------------------------------------------------------------
 # compose prefers a SECRETS_DIR exported in the shell over .env — then the directory checked here
 # would not be the one mounted. Refuse rather than guess.
-if [ -n "${SECRETS_DIR:-}" ]; then
-    echo "  ✗ SECRETS_DIR is exported in this shell (compose would use it over $ENV_FILE) — unset it" >&2
-    exit 1
-fi
+[ -n "${SECRETS_DIR:-}" ] && die "SECRETS_DIR is exported in this shell (compose would use it over $ENV_FILE) — unset it"
 SECRETS_DIR="$(value_of SECRETS_DIR)"
-if [ -z "$SECRETS_DIR" ]; then
-    echo "  ✗ SECRETS_DIR is not set in $ENV_FILE (compose would mount ./secrets.dev — the public dev values)" >&2
-    echo "check-prod-env: $ENV_FILE is not fit for a server — fix the items above." >&2
-    exit 1
-fi
-if [ ! -d "$SECRETS_DIR" ]; then
-    echo "  ✗ SECRETS_DIR $SECRETS_DIR does not exist (docs/ops/secrets.md)" >&2
-    exit 1
-fi
-secrets_real="$(cd "$SECRETS_DIR" && pwd -P)"
-case "$secrets_real/" in
-    "$REPO_ROOT"/*) problem "SECRETS_DIR is inside the repo working tree — move it out (e.g. /etc/smartfreight/secrets)" ;;
-esac
+[ -n "$SECRETS_DIR" ] || die "SECRETS_DIR is not set in $ENV_FILE (compose would mount ./secrets.dev — the public dev values)"
+[ -d "$SECRETS_DIR" ] || die "SECRETS_DIR $SECRETS_DIR does not exist (docs/ops/secrets.md)"
+inside_repo "$SECRETS_DIR" && problem "SECRETS_DIR is inside the repo working tree — move it out (e.g. /etc/smartfreight/secrets)"
 case "$SECRETS_DIR" in
     /*) ;;
     *) problem "SECRETS_DIR must be an absolute path (a relative one resolves against the repo)" ;;
 esac
-# Nobody but its owner may list or read the directory (the files themselves are 0444 so that every
+# Nobody but its owner may list or read the directory (the files themselves are 644 so that every
 # container user can read its bind mount — the directory is what keeps other host users out).
-mode="$(stat -c %a "$secrets_real" 2>/dev/null || echo unknown)"
+mode="$(stat -c %a "$SECRETS_DIR" 2>/dev/null || echo unknown)"
 case "$mode" in
     *00) ;;
     *) problem "SECRETS_DIR permissions are $mode — must be 700 (chmod 700 $SECRETS_DIR)" ;;
 esac
 
-# Every secret compose mounts must exist as a file (optional ones may be empty).
+# secrets.dev is the list; it must match what docker-compose.yml actually mounts.
+compose_secrets="$(grep -oE 'secrets\.dev\}/[A-Z0-9_]+' "$REPO_ROOT/docker-compose.yml" | sed 's#.*/##' | sort -u)"
+[ "$compose_secrets" = "$(secret_names | sort)" ] \
+    || problem "docker-compose.yml top-level secrets and secrets.dev/ list different names — add the missing file/entry"
+
+# The value as the containers see it (missing → empty; reported below). Runs in $(...) — no problem().
+secret_of() { secret_in "$SECRETS_DIR" "$1"; }
+
+# Optional secrets: the platform mail account, and the backup/alert ones checked by their gates below.
+is_optional() {
+    case "$1" in
+        IMAP_PASSWORD|SMTP_PASSWORD|TELEGRAM_*|HEALTHCHECKS_*|BACKUP_*|OFFSITE_*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 for name in $(secret_names); do
-    f="$secrets_real/$name"
+    f="$SECRETS_DIR/$name"
     if [ ! -f "$f" ]; then
         problem "$name is missing from SECRETS_DIR (compose refuses to start without it; may be empty if optional)"
     elif grep -q "$(printf '\r')" "$f"; then
@@ -70,19 +78,10 @@ for name in $(secret_names); do
     fi
     # A secret must not ALSO sit in .env — that is exactly the cleartext-in-the-working-tree C5 removes.
     grep -qE "$(assignment_re "$name")" "$ENV_FILE" && problem "$name is assigned in $ENV_FILE — secrets belong in SECRETS_DIR only (delete the line)"
-done
 
-# The file's content (missing → empty; already reported above). Runs in $(...) — never calls problem.
-secret_of() { tr -d '\r\n' < "$secrets_real/$1" 2>/dev/null; }
-
-# --- secrets: present, not a dev default, long enough ---------------------------------------
-# The dev default is the value in secrets.dev. The backend repeats this check at startup for the
-# secrets it resolves itself (DevCredentialsGuard, Gate C6) — keep the two in sync.
-for name in POSTGRES_PASSWORD DB_APP_PASSWORD RABBITMQ_PASSWORD REDIS_PASSWORD KEYCLOAK_ADMIN_PASSWORD \
-    KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET GRAFANA_PASSWORD PORT_DB_PASSWORD \
-    PORT_SERVICE_API_KEY MAILBOX_ENCRYPTION_KEY
-do
-    [ -f "$secrets_real/$name" ] || continue
+    # Every required secret: present, not its secrets.dev value, at least 16 characters. The backend
+    # repeats this at startup for the secrets it resolves itself (DevCredentialsGuard, Gate C6).
+    { [ -f "$f" ] && ! is_optional "$name"; } || continue
     v="$(secret_of "$name")"
     if [ -z "$v" ]; then
         problem "$name is empty"
@@ -122,8 +121,5 @@ case ",$(value_of COMPOSE_PROFILES)," in
     *,demo,*) problem "COMPOSE_PROFILES contains demo (GreenMail/Mailpit — Gate B14)" ;;
 esac
 
-if [ "$fail" -ne 0 ]; then
-    echo "check-prod-env: $ENV_FILE / $SECRETS_DIR are not fit for a server — fix the items above." >&2
-    exit 1
-fi
+verdict
 echo "check-prod-env: OK"

@@ -196,7 +196,8 @@ services:
     # on :15672 (login = RABBITMQ_USER/RABBITMQ_PASSWORD) — queue depths, DLQ, rates.
     image: rabbitmq:3.13-management-alpine
     # Gate C5: RABBITMQ_DEFAULT_PASS comes from the secret via file-env.sh (the image has no *_FILE).
-    # Overriding the entrypoint drops the image CMD, hence the explicit command.
+    # Overriding the entrypoint drops the image CMD, hence the explicit command — both copy the
+    # upstream ENTRYPOINT docker-entrypoint.sh / CMD rabbitmq-server (recheck on an image upgrade).
     entrypoint: ["/bin/sh", "/file-env.sh", "docker-entrypoint.sh"]
     command: ["rabbitmq-server"]
     environment:
@@ -234,28 +235,20 @@ services:
     # so cached/session state survives a redis restart too. Always password-protected (Gate C1;
     # was empty) — the backend reads the same REDIS_PASSWORD secret.
     image: redis:7-alpine
-    # Gate C5: the password goes into a root-written, redis-only config file, NOT the command line
-    # (`--requirepass x` shows in `ps` and `docker inspect`). The image entrypoint still drops to
-    # the redis user because its first argument is `redis-server`.
-    command:
-      - /bin/sh
-      - -c
-      - >-
-        umask 077
-        && pw="$$(tr -d '\r' < /run/secrets/REDIS_PASSWORD)"
-        && { [ -n "$$pw" ] || { echo 'REDIS_PASSWORD is empty - refusing to start without auth' >&2; exit 1; }; }
-        && printf 'requirepass "%s"\n' "$$pw" > /tmp/redis.conf
-        && chown redis /tmp/redis.conf
-        && exec docker-entrypoint.sh redis-server /tmp/redis.conf --appendonly yes
+    # Gate C5: password from the secret into a config file, never argv/env (monitoring/redis/entrypoint.sh).
+    entrypoint: ["/bin/sh", "/redis-entrypoint.sh"]
+    command: []
     secrets:
       - REDIS_PASSWORD
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+      - ./monitoring/redis/entrypoint.sh:/redis-entrypoint.sh:ro
+      - ./scripts/file-env.sh:/file-env.sh:ro
     healthcheck:
       # A bare `redis-cli ping` exits 0 even on NOAUTH, so it was green regardless — require PONG.
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(tr -d '\\r' < /run/secrets/REDIS_PASSWORD)\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", ". /file-env.sh && REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -275,7 +268,8 @@ services:
     # No mixed content, one cert, no `127.0.0.1 keycloak` browser hosts entry needed.
     # start-dev is fine for the pilot; switch to `start` + a real hostname/TLS for production.
     image: quay.io/keycloak/keycloak:26.0
-    # Gate C5: KC_BOOTSTRAP_ADMIN_PASSWORD / KC_DB_PASSWORD come from secrets via file-env.sh.
+    # Gate C5: KC_BOOTSTRAP_ADMIN_PASSWORD / KC_DB_PASSWORD come from secrets via file-env.sh, which
+    # then execs the upstream ENTRYPOINT /opt/keycloak/bin/kc.sh (recheck on an image upgrade).
     entrypoint: ["/bin/sh", "/file-env.sh", "/opt/keycloak/bin/kc.sh"]
     command: ["start-dev", "--import-realm", "--http-port=8081"]
     secrets:

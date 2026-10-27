@@ -34,10 +34,11 @@ the services already read files, so a Vault agent can later render the same file
 
 How each service reads them: Spring (backend, port-service) — `spring.config.import:
 optional:configtree:/run/secrets/` turns each file into a property of the same name; postgres images
-and postgres-backup — `POSTGRES_PASSWORD_FILE`; grafana — `GF_SECURITY_ADMIN_PASSWORD__FILE`; redis — a
-root-written config file; rabbitmq, keycloak, alertmanager, backup-offsite — `scripts/file-env.sh`
-exports the files as env vars inside the container only. Scripts that `docker compose exec` into a
-container read `/run/secrets/<name>` (exec sessions do not inherit those env vars).
+and postgres-backup — `POSTGRES_PASSWORD_FILE`; grafana — `GF_SECURITY_ADMIN_PASSWORD__FILE`; rabbitmq,
+keycloak, redis, alertmanager, backup-offsite — `scripts/file-env.sh` exports the files as env vars
+inside the container only (redis then moves its password into a root-written config file,
+`monitoring/redis/entrypoint.sh`). Healthchecks and scripts that `docker compose exec` into a container
+source it first — `. /file-env.sh && …` — since exec sessions do not inherit those env vars.
 
 ## New server (once)
 

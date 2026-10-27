@@ -13,8 +13,21 @@ value_of() {
 }
 
 # Every secret docker-compose.yml mounts. secrets.dev holds exactly one file per secret (its dev
-# value), so it is the list — a new secret = a new file there + its compose entries.
+# value), so it is the list — a new secret = a new file there + its compose entries
+# (check-prod-env.sh verifies the two agree).
 secret_names() { ls "$REPO_ROOT/secrets.dev" | grep -v '\.md$'; }
 
+# A secret file's value as its consumers see it (CR/LF stripped, like file-env.sh and configtree);
+# a missing file reads as empty.
+secret_in() { tr -d '\r\n' < "$1/$2" 2>/dev/null; }
+
 # The public dev value of a secret (what compose mounts when SECRETS_DIR is unset).
-dev_value_of() { cat "$REPO_ROOT/secrets.dev/$1"; }
+dev_value_of() { secret_in "$REPO_ROOT/secrets.dev" "$1"; }
+
+# True when DIR (an existing directory) is inside the repo working tree.
+inside_repo() {
+    case "$(cd "$1" && pwd -P)/" in
+        "$REPO_ROOT"/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
