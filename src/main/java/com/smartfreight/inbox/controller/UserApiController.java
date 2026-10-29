@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.controller.dto.UserDto;
+import com.smartfreight.inbox.service.OperatorName;
 import com.smartfreight.inbox.service.UserManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +49,7 @@ public class UserApiController {
     }
 
     /** New-operator payload (role defaults to OPERATOR when blank; OPERATOR/ADMIN accepted, Phase 3.3). */
-    public record CreateUserRequest(String email, String password, String role) {}
+    public record CreateUserRequest(String email, String firstName, String lastName, String password, String role) {}
 
     /** Password-reset payload for an existing operator. */
     public record ChangePasswordRequest(String newPassword) {}
@@ -73,7 +74,8 @@ public class UserApiController {
         }
         String role = (request.role() == null || request.role().isBlank()) ? "OPERATOR" : request.role();
         try {
-            userManagementService.createUser(request.email(), request.password(), role);
+            userManagementService.createUser(request.email(),
+                    OperatorName.of(request.firstName(), request.lastName()), request.password(), role);
             log.info("User created: {}", request.email().trim().toLowerCase());
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());

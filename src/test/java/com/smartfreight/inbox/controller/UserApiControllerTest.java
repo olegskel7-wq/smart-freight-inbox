@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.service.KeycloakAdminService.KeycloakUser;
+import com.smartfreight.inbox.service.OperatorName;
 import com.smartfreight.inbox.service.UserManagementService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -40,6 +42,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class UserApiControllerTest {
+
+    private static final OperatorName DANA = new OperatorName("Dana", "Price");
 
     @Mock private UserManagementService userManagementService;
 
@@ -82,31 +86,41 @@ class UserApiControllerTest {
     void createDefaultsRoleAndReturnsSnapshot() throws Exception {
         mockMvc.perform(post("/api/users")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"new@sf.com\",\"password\":\"password123\"}"))
+                        .content("{\"email\":\"new@sf.com\",\"firstName\":\"Dana\",\"lastName\":\"Price\",\"password\":\"password123\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("uuid-1"));
 
-        verify(userManagementService).createUser(eq("new@sf.com"), eq("password123"), eq("OPERATOR"));
+        verify(userManagementService).createUser(eq("new@sf.com"), eq(DANA), eq("password123"), eq("OPERATOR"));
+    }
+
+    @Test
+    void createWithoutANameIsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"new@sf.com\",\"firstName\":\"Dana\",\"password\":\"password123\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(userManagementService, never()).createUser(any(), any(), any(), any());
     }
 
     @Test
     void createBlankEmailIsBadRequest() throws Exception {
         mockMvc.perform(post("/api/users")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"  \",\"password\":\"password123\"}"))
+                        .content("{\"email\":\"  \",\"firstName\":\"Dana\",\"lastName\":\"Price\",\"password\":\"password123\"}"))
                 .andExpect(status().isBadRequest());
 
-        verify(userManagementService, never()).createUser(eq("  "), eq("password123"), eq("OPERATOR"));
+        verify(userManagementService, never()).createUser(eq("  "), eq(DANA), eq("password123"), eq("OPERATOR"));
     }
 
     @Test
     void createPropagatesValidationErrorAsBadRequest() throws Exception {
         doThrow(new IllegalArgumentException("User with email new@sf.com already exists."))
-                .when(userManagementService).createUser(eq("new@sf.com"), eq("short"), eq("OPERATOR"));
+                .when(userManagementService).createUser(eq("new@sf.com"), eq(DANA), eq("short"), eq("OPERATOR"));
 
         mockMvc.perform(post("/api/users")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"new@sf.com\",\"password\":\"short\",\"role\":\"OPERATOR\"}"))
+                        .content("{\"email\":\"new@sf.com\",\"firstName\":\"Dana\",\"lastName\":\"Price\",\"password\":\"short\",\"role\":\"OPERATOR\"}"))
                 .andExpect(status().isBadRequest());
     }
 

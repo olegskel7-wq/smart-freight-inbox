@@ -61,13 +61,14 @@ public class TenantManagementService {
      *
      * @param name          tenant (organisation) name — must be unique
      * @param adminEmail    login email for the tenant's first user — globally unique in Keycloak
+     * @param adminName     the first user's first/last name — signs their replies
      * @param adminPassword initial password — set non-temporary in Keycloak
      * @return the created tenant
-     * @throws IllegalArgumentException on blank/duplicate name, taken email, or a password that fails
-     *                                  the length check or the realm passwordPolicy
+     * @throws IllegalArgumentException on blank/duplicate name, taken email, or a password or person
+     *                                  name that fails our checks or Keycloak's
      */
     @Transactional
-    public Tenant createTenant(String name, String adminEmail, String adminPassword) {
+    public Tenant createTenant(String name, String adminEmail, OperatorName adminName, String adminPassword) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Tenant name must not be blank.");
         }
@@ -90,10 +91,9 @@ public class TenantManagementService {
         Tenant tenant = tenantRepository.save(Tenant.builder().name(trimmedName).build());
         // Last step, still inside the TX: a Keycloak failure here rolls back the tenant row.
         try {
-            keycloakAdminService.createUser(email, adminPassword, tenant.getId(), FIRST_USER_ROLE);
+            keycloakAdminService.createUser(email, adminName, adminPassword, tenant.getId(), FIRST_USER_ROLE);
         } catch (WebClientResponseException.BadRequest e) {
-            // The realm passwordPolicy (upper/lower/digit/notUsername) — a clear 400, not an opaque 500.
-            throw new IllegalArgumentException(UserManagementService.PASSWORD_POLICY_MESSAGE);
+            throw UserManagementService.rejection(e);
         }
         return tenant;
     }

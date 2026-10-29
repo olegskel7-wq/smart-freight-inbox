@@ -19,6 +19,8 @@ export default function UsersPage() {
 
   // Add-operator form.
   const [email, setEmail] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('OPERATOR')
 
@@ -43,9 +45,11 @@ export default function UsersPage() {
     e.preventDefault()
     setMsg(null)
     try {
-      setUsers(await api.post<User[]>('/api/users', { email, password, role }))
+      setUsers(await api.post<User[]>('/api/users', { email, firstName, lastName, password, role }))
       setMsg({ kind: 'success', text: `User ${email.trim().toLowerCase()} created.` })
       setEmail('')
+      setFirstName('')
+      setLastName('')
       setPassword('')
       setRole('OPERATOR')
     } catch (err) {
@@ -110,12 +114,24 @@ export default function UsersPage() {
         <div className="card-header fw-semibold">Add operator</div>
         <div className="card-body">
           <form onSubmit={createUser} className="row g-2 align-items-end">
-            <div className="col-md-4">
+            <div className="col-md-6">
               <label className="form-label small mb-1">Email</label>
               <input type="email" className="form-control form-control-sm" placeholder="operator@company.com"
                      value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div className="col-md-3">
+              <label className="form-label small mb-1">First name</label>
+              <input type="text" className="form-control form-control-sm" maxLength={100}
+                     value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+            </div>
+            <div className="col-md-3">
+              <label className="form-label small mb-1">
+                Last name <span className="text-muted">(signs their replies)</span>
+              </label>
+              <input type="text" className="form-control form-control-sm" maxLength={100}
+                     value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+            </div>
+            <div className="col-md-5">
               <label className="form-label small mb-1">
                 Password <span className="text-muted">(min 10, Aa1)</span>
               </label>
@@ -123,7 +139,7 @@ export default function UsersPage() {
                      placeholder="10+ chars, mixed case + digit"
                      value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
-            <div className="col-md-2">
+            <div className="col-md-4">
               <label className="form-label small mb-1">Role</label>
               <select className="form-select form-select-sm" value={role}
                       onChange={(e) => setRole(e.target.value)}>

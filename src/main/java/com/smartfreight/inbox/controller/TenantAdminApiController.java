@@ -2,6 +2,7 @@ package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.controller.dto.TenantSummaryDto;
 import com.smartfreight.inbox.entity.Tenant;
+import com.smartfreight.inbox.service.OperatorName;
 import com.smartfreight.inbox.service.TenantManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,8 +46,9 @@ public class TenantAdminApiController {
         this.tenantManagementService = tenantManagementService;
     }
 
-    /** New-tenant payload: organisation name plus the first operator's login. */
-    public record CreateTenantRequest(String name, String adminEmail, String adminPassword) {}
+    /** New-tenant payload: organisation name plus the first user's (the tenant admin's) login and name. */
+    public record CreateTenantRequest(String name, String adminEmail, String adminFirstName,
+                                      String adminLastName, String adminPassword) {}
 
     /** GET /api/admin/tenants — all tenants with their Keycloak operator counts (cross-tenant). */
     @GetMapping
@@ -61,8 +63,8 @@ public class TenantAdminApiController {
     @PostMapping
     public List<TenantSummaryDto> create(@RequestBody CreateTenantRequest request) {
         try {
-            Tenant tenant = tenantManagementService.createTenant(
-                    request.name(), request.adminEmail(), request.adminPassword());
+            Tenant tenant = tenantManagementService.createTenant(request.name(), request.adminEmail(),
+                    OperatorName.of(request.adminFirstName(), request.adminLastName()), request.adminPassword());
             log.info("Tenant created: id={} name={}", tenant.getId(), tenant.getName());
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());

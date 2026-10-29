@@ -105,13 +105,15 @@ public class KeycloakAdminService {
     // ---------------------------------------------------------------------
 
     /**
-     * Creates an enabled user with the {@code tenant_id} attribute, an initial (non-temporary)
-     * password and the given realm role, then returns the new Keycloak user id (UUID).
+     * Creates an enabled user with the {@code tenant_id} attribute, first/last name, an initial
+     * (non-temporary) password and the given realm role, then returns the new Keycloak user id (UUID).
      */
-    public String createUser(String email, String password, Long tenantId, String role) {
+    public String createUser(String email, OperatorName name, String password, Long tenantId, String role) {
         Map<String, Object> representation = Map.of(
                 "username", email,
                 "email", email,
+                "firstName", name.firstName(),
+                "lastName", name.lastName(),
                 "enabled", true,
                 "emailVerified", true,
                 "attributes", Map.of("tenant_id", List.of(String.valueOf(tenantId))),
