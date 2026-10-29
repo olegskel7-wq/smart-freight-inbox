@@ -7,6 +7,7 @@ import com.smartfreight.inbox.tenancy.TenantContext;
 import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,10 @@ import org.springframework.stereotype.Component;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.Date;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -51,6 +56,9 @@ public class MailboxImapAdapterManager {
     private static final Logger log = LoggerFactory.getLogger(MailboxImapAdapterManager.class);
 
     private static final String FLOW_ID_PREFIX = "imap-mailbox-";
+
+    /** Tolerance for the mail server's clock vs ours on the connection cut-off (Gate B6). */
+    static final Duration CLOCK_SKEW_GRACE = Duration.ofMinutes(15);
 
     private final IntegrationFlowContext flowContext;
     private final EmailIngestionService emailIngestionService;
@@ -149,6 +157,7 @@ public class MailboxImapAdapterManager {
     private IntegrationFlow buildFlow(TenantMailbox mailbox, String password) {
         Long tenantId = mailbox.getTenantId();
         Long mailboxId = mailbox.getId();
+        Instant connectedAt = connectedAt(mailbox);
         String url = String.format("imaps://%s:%s@%s:%d/INBOX",
                 encode(mailbox.getUsername()), encode(password), mailbox.getHost(), mailbox.getPort());
 
@@ -157,6 +166,7 @@ public class MailboxImapAdapterManager {
                         .javaMailProperties(javaMailProperties(mailbox, password))
                         .shouldMarkMessagesAsRead(true)
                         .shouldDeleteMessages(false)
+                        .selector(message -> receivedSinceConnection(connectedAt, message))
                         .autoStartup(true))
                 .handle(message -> ingest(tenantId, mailboxId, (MimeMessage) message.getPayload()))
                 .get();
@@ -198,6 +208,39 @@ public class MailboxImapAdapterManager {
                     mailboxId, tenantId, EmailAddressUtils.maskAddresses(String.valueOf(e.getMessage())));
             return false;
         }
+    }
+
+    /**
+     * Gate B6: IDLE takes only mail received since the mailbox was connected. On first connect the
+     * adapter would otherwise turn EVERY unread email in the client's INBOX into a ticket, however
+     * old — years of unread newsletters and handled enquiries. A rejected message is left exactly as
+     * it was: the adapter fetches only its envelope (no body → no implicit \Seen) and flags only the
+     * messages that pass the selector. Same cut-off as {@link MailboxCatchUp}.
+     *
+     * <p>Fails open (unknown date or a read error → ingest): dropping a client's email silently is
+     * worse than one stray ticket.
+     */
+    static boolean receivedSinceConnection(Instant connectedAt, MimeMessage message) {
+        if (connectedAt == null) {
+            return true;
+        }
+        try {
+            Date received = message.getReceivedDate();
+            return received == null || !received.toInstant().isBefore(connectedAt);
+        } catch (MessagingException e) {
+            return true;
+        }
+    }
+
+    /**
+     * When the mailbox was connected (its row created; edit in place keeps it, Gate B15), minus
+     * {@link #CLOCK_SKEW_GRACE}: the cut-off compares the mail server's INTERNALDATE with OUR clock,
+     * and a server running a few minutes behind must not make IDLE and catch-up both silently drop
+     * the first enquiries after onboarding.
+     */
+    static Instant connectedAt(TenantMailbox mailbox) {
+        return mailbox.getCreatedAt() == null ? null
+                : mailbox.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant().minus(CLOCK_SKEW_GRACE);
     }
 
     private static String fingerprint(TenantMailbox mailbox) {

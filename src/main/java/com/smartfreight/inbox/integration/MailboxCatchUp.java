@@ -20,7 +20,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
@@ -134,11 +133,8 @@ public class MailboxCatchUp {
     /** Look-back window start, clamped to when the mailbox was connected. */
     Instant windowStart(TenantMailbox mailbox, Instant now) {
         Instant windowStart = now.minus(lookBack);
-        if (mailbox.getCreatedAt() == null) {
-            return windowStart;
-        }
-        Instant connected = mailbox.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant();
-        return connected.isAfter(windowStart) ? connected : windowStart;
+        Instant connected = MailboxImapAdapterManager.connectedAt(mailbox);
+        return connected != null && connected.isAfter(windowStart) ? connected : windowStart;
     }
 
     private static String messageId(Message message) throws MessagingException {

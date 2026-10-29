@@ -25,7 +25,7 @@ import java.util.Set;
 public class UserManagementService {
 
     /** Minimum acceptable password length — matches the realm {@code passwordPolicy} (length(10)). */
-    private static final int MIN_PASSWORD_LENGTH = 10;
+    static final int MIN_PASSWORD_LENGTH = 10;
 
     /**
      * User-facing description of the realm password policy (length(10) + upperCase + lowerCase +
@@ -33,7 +33,7 @@ public class UserManagementService {
      * operator gets the actual rule instead of an opaque 500 — the realm stays the single source of
      * truth for the full policy, we just translate its rejection.
      */
-    private static final String PASSWORD_POLICY_MESSAGE =
+    static final String PASSWORD_POLICY_MESSAGE =
             "Password does not meet the security policy: at least 10 characters, including an uppercase "
             + "letter, a lowercase letter and a digit, and it must not be the same as the email.";
 

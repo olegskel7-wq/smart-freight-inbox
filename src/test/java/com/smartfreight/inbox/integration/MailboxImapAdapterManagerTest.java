@@ -6,11 +6,17 @@ import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.startup.DemoMailProperties;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.integration.dsl.context.IntegrationFlowContext;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Date;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -20,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link MailboxImapAdapterManager}: the adapter → ingestion hop (every arriving
@@ -82,6 +89,55 @@ class MailboxImapAdapterManagerTest {
         Properties p = manager.javaMailProperties(mailbox("greenmail"), "demo");
 
         assertThat(p.getProperty("mail.imaps.ssl.trust")).isEqualTo("greenmail");
+    }
+
+    @Test
+    void receivedSinceConnection_skipsMailFromBeforeTheMailboxWasConnected() throws Exception {
+        // Gate B6: on first connect IDLE must not turn the client's old unread INBOX into tickets.
+        Instant connected = Instant.parse("2026-10-29T10:00:00Z");
+
+        assertThat(MailboxImapAdapterManager.receivedSinceConnection(connected,
+                received(connected.minus(Duration.ofDays(400))))).isFalse();
+        assertThat(MailboxImapAdapterManager.receivedSinceConnection(connected,
+                received(connected.minusSeconds(1)))).isFalse();
+        assertThat(MailboxImapAdapterManager.receivedSinceConnection(connected,
+                received(connected))).isTrue();
+        assertThat(MailboxImapAdapterManager.receivedSinceConnection(connected,
+                received(connected.plus(Duration.ofMinutes(5))))).isTrue();
+    }
+
+    @Test
+    void receivedSinceConnection_failsOpen() throws Exception {
+        // Dropping a client's email silently is worse than one stray ticket.
+        Instant connected = Instant.parse("2026-10-29T10:00:00Z");
+        MimeMessage noDate = mock(MimeMessage.class);
+        MimeMessage unreadable = mock(MimeMessage.class);
+        when(unreadable.getReceivedDate()).thenThrow(new MessagingException("connection reset"));
+
+        assertThat(MailboxImapAdapterManager.receivedSinceConnection(connected, noDate)).isTrue();
+        assertThat(MailboxImapAdapterManager.receivedSinceConnection(connected, unreadable)).isTrue();
+        assertThat(MailboxImapAdapterManager.receivedSinceConnection(null,
+                received(connected.minus(Duration.ofDays(400))))).isTrue();
+    }
+
+    @Test
+    void connectedAt_isTheRowCreationInstant() {
+        TenantMailbox m = mailbox("imap.gmail.com");
+        m.setCreatedAt(null);
+        assertThat(MailboxImapAdapterManager.connectedAt(m)).isNull();
+
+        LocalDateTime created = LocalDateTime.of(2026, 10, 29, 10, 0);
+        m.setCreatedAt(created);
+
+        // Minus the clock-skew grace: a mail server a few minutes behind must not lose fresh mail.
+        assertThat(MailboxImapAdapterManager.connectedAt(m))
+                .isEqualTo(created.atZone(ZoneId.systemDefault()).toInstant().minus(Duration.ofMinutes(15)));
+    }
+
+    private static MimeMessage received(Instant at) throws MessagingException {
+        MimeMessage m = mock(MimeMessage.class);
+        when(m.getReceivedDate()).thenReturn(Date.from(at));
+        return m;
     }
 
     private static TenantMailbox mailbox(String host) {

@@ -4,6 +4,7 @@ import com.smartfreight.inbox.entity.Tenant;
 import com.smartfreight.inbox.repository.TenantRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
 
@@ -28,8 +29,11 @@ import java.util.List;
 @Service
 public class TenantManagementService {
 
-    /** Matches {@link UserManagementService}'s minimum — same rule, same UI hint. */
-    private static final int MIN_PASSWORD_LENGTH = 8;
+    /**
+     * The tenant's first user is its ADMIN (Gate B6): only ADMIN reaches /settings (mailboxes) and
+     * /users, so an OPERATOR-only first user left a new tenant with no way to connect its mailbox.
+     */
+    static final String FIRST_USER_ROLE = "ADMIN";
 
     private final TenantRepository tenantRepository;
     private final KeycloakAdminService keycloakAdminService;
@@ -53,13 +57,14 @@ public class TenantManagementService {
     }
 
     /**
-     * Onboards a new tenant: the {@code tenant} row plus its first operator in Keycloak.
+     * Onboards a new tenant: the {@code tenant} row plus its first user (the tenant ADMIN) in Keycloak.
      *
      * @param name          tenant (organisation) name — must be unique
-     * @param adminEmail    login email for the tenant's first operator — globally unique in Keycloak
+     * @param adminEmail    login email for the tenant's first user — globally unique in Keycloak
      * @param adminPassword initial password — set non-temporary in Keycloak
      * @return the created tenant
-     * @throws IllegalArgumentException on blank/duplicate name, taken email or short password
+     * @throws IllegalArgumentException on blank/duplicate name, taken email, or a password that fails
+     *                                  the length check or the realm passwordPolicy
      */
     @Transactional
     public Tenant createTenant(String name, String adminEmail, String adminPassword) {
@@ -70,9 +75,9 @@ public class TenantManagementService {
         if (tenantRepository.findByName(trimmedName).isPresent()) {
             throw new IllegalArgumentException("Tenant '" + trimmedName + "' already exists.");
         }
-        if (adminPassword == null || adminPassword.length() < MIN_PASSWORD_LENGTH) {
+        if (adminPassword == null || adminPassword.length() < UserManagementService.MIN_PASSWORD_LENGTH) {
             throw new IllegalArgumentException(
-                    "Password must be at least " + MIN_PASSWORD_LENGTH + " characters long.");
+                    "Password must be at least " + UserManagementService.MIN_PASSWORD_LENGTH + " characters long.");
         }
         if (adminEmail == null || adminEmail.isBlank()) {
             throw new IllegalArgumentException("Operator email must not be blank.");
@@ -84,7 +89,12 @@ public class TenantManagementService {
 
         Tenant tenant = tenantRepository.save(Tenant.builder().name(trimmedName).build());
         // Last step, still inside the TX: a Keycloak failure here rolls back the tenant row.
-        keycloakAdminService.createUser(email, adminPassword, tenant.getId(), "OPERATOR");
+        try {
+            keycloakAdminService.createUser(email, adminPassword, tenant.getId(), FIRST_USER_ROLE);
+        } catch (WebClientResponseException.BadRequest e) {
+            // The realm passwordPolicy (upper/lower/digit/notUsername) — a clear 400, not an opaque 500.
+            throw new IllegalArgumentException(UserManagementService.PASSWORD_POLICY_MESSAGE);
+        }
         return tenant;
     }
 }
