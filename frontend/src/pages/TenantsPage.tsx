@@ -43,7 +43,7 @@ export default function TenantsPage() {
       setTenants(await api.post<Tenant[]>('/api/admin/tenants', { name, adminEmail, adminPassword }))
       setMsg({
         kind: 'success',
-        text: `Tenant '${name.trim()}' created with operator ${adminEmail.trim().toLowerCase()}.`,
+        text: `Tenant '${name.trim()}' created with admin ${adminEmail.trim().toLowerCase()}.`,
       })
       setName('')
       setAdminEmail('')
@@ -81,15 +81,15 @@ export default function TenantsPage() {
                      value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
             <div className="col-md-4">
-              <label className="form-label small mb-1">First operator email</label>
+              <label className="form-label small mb-1">First admin email</label>
               <input type="email" className="form-control form-control-sm" placeholder="operator@acme.co.uk"
                      value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} required />
             </div>
             <div className="col-md-2">
               <label className="form-label small mb-1">
-                Password <span className="text-muted">(min 8)</span>
+                Password <span className="text-muted">(min 10, Aa1)</span>
               </label>
-              <input type="password" className="form-control form-control-sm" minLength={8}
+              <input type="password" className="form-control form-control-sm" minLength={10}
                      value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} required />
             </div>
             <div className="col-md-2">
@@ -134,8 +134,8 @@ export default function TenantsPage() {
 
       <div className="card shadow-sm border-0 bg-light">
         <div className="card-body small text-muted">
-          Creating a tenant also creates its first operator account. Settings, rates and users are
-          managed from inside the tenant after that operator logs in. There is no tenant deletion by
+          Creating a tenant also creates its first admin account. Mailboxes, settings, rates and users are
+          managed from inside the tenant after that admin logs in. There is no tenant deletion by
           design — removing a tenant owns tickets, audit history and rates, which is a data-retention
           decision rather than a button.
         </div>

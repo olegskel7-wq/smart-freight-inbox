@@ -101,7 +101,8 @@ class MailboxCatchUpTest {
     void neverReachesBeforeTheMailboxWasConnected() throws Exception {
         // Onboarding: the client's mail from before we connected is history, not new enquiries.
         Instant connected = NOW.minus(Duration.ofHours(2));
-        MimeMessage before = message("<old@a.test>", connected.minus(Duration.ofMinutes(5)));
+        // Beyond the 15-minute clock-skew grace (MailboxImapAdapterManager.CLOCK_SKEW_GRACE).
+        MimeMessage before = message("<old@a.test>", connected.minus(Duration.ofMinutes(30)));
         MimeMessage after = message("<new@a.test>", connected.plus(Duration.ofMinutes(5)));
         inboxHolds(before, after);
         when(tickets.findExistingMessageIds(any())).thenReturn(List.of());
@@ -117,7 +118,8 @@ class MailboxCatchUpTest {
         assertThat(catchUp.windowStart(mailbox(NOW.minus(Duration.ofDays(30))), NOW))
                 .isEqualTo(NOW.minus(Duration.ofHours(48)));
         Instant connected = NOW.minus(Duration.ofHours(3));
-        assertThat(catchUp.windowStart(mailbox(connected), NOW)).isEqualTo(connected);
+        assertThat(catchUp.windowStart(mailbox(connected), NOW))
+                .isEqualTo(connected.minus(MailboxImapAdapterManager.CLOCK_SKEW_GRACE));
     }
 
     @Test

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
 import java.util.Optional;
@@ -50,8 +51,22 @@ class TenantManagementServiceTest {
         Tenant created = service.createTenant("  Acme Logistics  ", "  OPS@Acme.co.uk ", "secret-pass");
 
         assertThat(created.getName()).isEqualTo("Acme Logistics");
-        // The operator goes into Keycloak (email normalised) scoped to the new tenant id.
-        verify(keycloakAdminService).createUser("ops@acme.co.uk", "secret-pass", 42L, "OPERATOR");
+        // The first user goes into Keycloak (email normalised) scoped to the new tenant id, as its
+        // ADMIN — an OPERATOR could not reach /settings to connect the tenant's mailbox (Gate B6).
+        verify(keycloakAdminService).createUser("ops@acme.co.uk", "secret-pass", 42L, "ADMIN");
+    }
+
+    @Test
+    void createTenant_passwordRejectedByRealmPolicy_isAClear400NotA500() {
+        when(tenantRepository.findByName("Acme")).thenReturn(Optional.empty());
+        when(keycloakAdminService.emailExists("ops@acme.co.uk")).thenReturn(false);
+        when(keycloakAdminService.createUser(any(), any(), any(), any())).thenThrow(
+                WebClientResponseException.create(400, "Bad Request", null, null, null));
+
+        // 10+ chars passes our length check; Keycloak's upper/lower/digit policy rejects it.
+        assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", "alllowercase"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(UserManagementService.PASSWORD_POLICY_MESSAGE);
     }
 
     @Test
@@ -78,7 +93,7 @@ class TenantManagementServiceTest {
 
         assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", "short"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("at least 8");
+                .hasMessageContaining("at least 10");
         verify(tenantRepository, never()).save(any());
         verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
     }
