@@ -1,3 +1,7 @@
+> **Historical document** (last updated 2026-06-14). It describes an earlier stage of the system and is
+> kept for context only. For how the system works today see [ARCHITECTURE.md](ARCHITECTURE.md) and
+> [adr/](adr/README.md).
+
 # Smart Freight Inbox — Project Overview
 
 ## The Problem

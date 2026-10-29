@@ -1,3 +1,7 @@
+> **Historical document** (last updated 2026-05-26). It describes an earlier stage of the system and is
+> kept for context only. For how the system works today see [ARCHITECTURE.md](ARCHITECTURE.md) and
+> [adr/](adr/README.md).
+
 # Architecture Diagrams — SmartFreight Inbox
 
 > All diagrams use [Mermaid](https://mermaid.js.org/) syntax.  
