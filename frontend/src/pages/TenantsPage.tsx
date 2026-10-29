@@ -21,6 +21,8 @@ export default function TenantsPage() {
   // Add-tenant form.
   const [name, setName] = useState('')
   const [adminEmail, setAdminEmail] = useState('')
+  const [adminFirstName, setAdminFirstName] = useState('')
+  const [adminLastName, setAdminLastName] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
 
   const load = useCallback(async () => {
@@ -40,13 +42,15 @@ export default function TenantsPage() {
     e.preventDefault()
     setMsg(null)
     try {
-      setTenants(await api.post<Tenant[]>('/api/admin/tenants', { name, adminEmail, adminPassword }))
+      setTenants(await api.post<Tenant[]>('/api/admin/tenants', { name, adminEmail, adminFirstName, adminLastName, adminPassword }))
       setMsg({
         kind: 'success',
         text: `Tenant '${name.trim()}' created with admin ${adminEmail.trim().toLowerCase()}.`,
       })
       setName('')
       setAdminEmail('')
+      setAdminFirstName('')
+      setAdminLastName('')
       setAdminPassword('')
     } catch (err) {
       setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Create failed' })
@@ -75,17 +79,29 @@ export default function TenantsPage() {
         <div className="card-header fw-semibold">Add tenant</div>
         <div className="card-body">
           <form onSubmit={createTenant} className="row g-2 align-items-end">
-            <div className="col-md-4">
+            <div className="col-md-6">
               <label className="form-label small mb-1">Organisation name</label>
               <input type="text" className="form-control form-control-sm" placeholder="Acme Logistics Ltd"
                      value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
-            <div className="col-md-4">
+            <div className="col-md-6">
               <label className="form-label small mb-1">First admin email</label>
               <input type="email" className="form-control form-control-sm" placeholder="operator@acme.co.uk"
                      value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} required />
             </div>
-            <div className="col-md-2">
+            <div className="col-md-3">
+              <label className="form-label small mb-1">First name</label>
+              <input type="text" className="form-control form-control-sm" maxLength={100}
+                     value={adminFirstName} onChange={(e) => setAdminFirstName(e.target.value)} required />
+            </div>
+            <div className="col-md-3">
+              <label className="form-label small mb-1">
+                Last name <span className="text-muted">(signs their replies)</span>
+              </label>
+              <input type="text" className="form-control form-control-sm" maxLength={100}
+                     value={adminLastName} onChange={(e) => setAdminLastName(e.target.value)} required />
+            </div>
+            <div className="col-md-4">
               <label className="form-label small mb-1">
                 Password <span className="text-muted">(min 10, Aa1)</span>
               </label>

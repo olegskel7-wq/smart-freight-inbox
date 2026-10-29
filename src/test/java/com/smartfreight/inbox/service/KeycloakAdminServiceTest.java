@@ -60,7 +60,7 @@ class KeycloakAdminServiceTest {
         server.enqueue(json("{\"id\":\"role-1\",\"name\":\"OPERATOR\"}"));   // GET role
         server.enqueue(new MockResponse().setResponseCode(204));            // role mapping
 
-        String userId = service.createUser("op@acme.co", "pw-secret", 7L, "OPERATOR");
+        String userId = service.createUser("op@acme.co", new OperatorName("Dana", "Price"), "pw-secret", 7L, "OPERATOR");
 
         assertThat(userId).isEqualTo("abc-123");
 

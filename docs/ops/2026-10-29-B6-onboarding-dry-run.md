@@ -36,7 +36,7 @@ the demo GreenMail/Mailpit harness stood in for the client's mailbox and their c
 
 ## Open points (not fixed here)
 
-1. **First login asks for first/last name** (Keycloak declarative user profile marks `firstName`/
+1. ✅ **RESOLVED 29 Oct (branch `fix/operator-names-at-provisioning`):** first/last name are now collected on `/tenants` and `/users` and sent to Keycloak, so the first login has no profile form and replies are signed with the operator's name (live: "Kind regards, Dana Price / Signature Check Haulage Ltd" in Mailpit; Keycloak E2E asserts no required action). Users created before keep the form once — correct, a nameless user signs "Customer Service Team". Was: **First login asks for first/last name** (Keycloak declarative user profile marks `firstName`/
    `lastName` required for `user`; provisioning sends neither). Harmless but it is the first thing a
    client's user sees. Options: make both optional in the realm user profile (realm import + a live
    `kcadm` update) or collect names at provisioning.

@@ -58,11 +58,13 @@ public class UserManagementService {
      * Creates a new operator account in Keycloak, scoped to the caller's tenant.
      *
      * @param email       login email — must be globally unique
+     * @param name        first/last name — signs the operator's replies
      * @param rawPassword initial password — stored by Keycloak (non-temporary)
      * @param role        realm role name (without the {@code ROLE_} prefix)
-     * @throws IllegalArgumentException if the password is too short or the email is already taken
+     * @throws IllegalArgumentException if the password is too short, the email is already taken, or
+     *                                  Keycloak rejects the password or the name
      */
-    public void createUser(String email, String rawPassword, String role) {
+    public void createUser(String email, OperatorName name, String rawPassword, String role) {
         validatePassword(rawPassword);
         validateRole(role);
         String normalised = email.trim().toLowerCase();
@@ -70,12 +72,28 @@ public class UserManagementService {
             throw new IllegalArgumentException("User with email " + normalised + " already exists.");
         }
         try {
-            keycloakAdminService.createUser(normalised, rawPassword, currentTenantId(), role);
+            keycloakAdminService.createUser(normalised, name, rawPassword, currentTenantId(), role);
         } catch (WebClientResponseException.BadRequest e) {
-            // Keycloak enforces the full realm passwordPolicy (upper/lower/digit/notUsername) that our
-            // cheap length check cannot — translate its 400 into a clear message, not an opaque 500.
-            throw new IllegalArgumentException(PASSWORD_POLICY_MESSAGE);
+            throw rejection(e);
         }
+    }
+
+    /**
+     * Translates Keycloak's 400 on user creation into a clear message, not an opaque 500. Keycloak
+     * enforces the full realm passwordPolicy (upper/lower/digit/notUsername) that our cheap length
+     * check cannot, and its user profile refuses some characters in a name; each gets its own message
+     * so a bad name is never reported as a bad password.
+     */
+    static IllegalArgumentException rejection(WebClientResponseException.BadRequest e) {
+        String body = e.getResponseBodyAsString();
+        if (body.contains("invalidPassword")) {
+            return new IllegalArgumentException(PASSWORD_POLICY_MESSAGE);
+        }
+        if (body.contains("person-name")) {
+            return new IllegalArgumentException(
+                    "The name contains characters that are not allowed (such as < > & \" $ % ! # ; * / =).");
+        }
+        return new IllegalArgumentException("The identity provider rejected this user — check the email and name.");
     }
 
     /**

@@ -9,3 +9,4 @@ date | started (UTC) | tenant | result
 2026-10-05 | 2026-10-05T18:48:33Z | tenant 90099 "Erasure Test Ltd" (synthetic — B10 drill, docs/ops/2026-10-05-B10-erasure-drill.md) | erased
 2026-10-29 | 2026-10-29T19:52:26Z | tenant 6 "B6 Dry Run Haulage Ltd" | erased
 2026-10-29 | 2026-10-29T19:58:33Z | tenant 8 "B6 Dry Run Haulage Ltd" | erased
+2026-10-29 | 2026-10-29T20:17:23Z | tenant 9 "Signature Check Haulage Ltd" | erased
