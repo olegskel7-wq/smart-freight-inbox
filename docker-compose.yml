@@ -556,6 +556,7 @@ services:
     # demo addresses live in ONE place (application.yaml demo.mail.inboxes) — fake data only.
     # Host ports bound to 127.0.0.1: nothing outside this machine needs the demo mail servers.
     image: greenmail/standalone:2.1.2
+    restart: unless-stopped
     profiles: ["demo"]
     # The bundled cert doesn't name `greenmail`/`localhost`, and Angus Mail 2.x verifies the
     # server hostname even with ssl.trust — so mint a throwaway self-signed cert with the right
@@ -583,6 +584,7 @@ services:
     # Phase 4.8 S2: catches every reply the demo tenants send — http://localhost:8025 is the
     # customer's view of the conversation during a demo. Accepts any SMTP credentials.
     image: axllent/mailpit:v1.21
+    restart: unless-stopped
     profiles: ["demo"]
     environment:
       - MP_SMTP_AUTH_ACCEPT_ANY=1
