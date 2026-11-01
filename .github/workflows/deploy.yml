@@ -12,8 +12,11 @@ jobs:
     name: Deploy to VPS
     runs-on: ubuntu-latest
 
-    # Деплоим только если CI прошёл успешно
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Деплоим только если CI прошёл успешно И деплой включён.
+    # ⚠️ ВЫКЛЮЧЕНО с 01.11.2026: VPS ещё нет (Gate C). Чтобы включить — GitHub → Settings → Secrets and
+    # variables → Actions: секреты DEPLOY_* (см. ниже) + Variables → DEPLOY_ENABLED = true.
+    # Без переменной job пропускается (skipped), а не падает на «missing server host».
+    if: ${{ github.event.workflow_run.conclusion == 'success' && vars.DEPLOY_ENABLED == 'true' }}
 
     steps:
       # 1. Скачать код (нужен docker-compose.yml и конфиги)

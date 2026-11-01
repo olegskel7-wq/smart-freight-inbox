@@ -159,6 +159,12 @@ IMAP IDLE → Qwen 2.5 (extraction) → Llama 3.1 (drafting) → Human review �
 
 ### Gate C — «можно на публичный VPS» — ⚠️ с 03.07 ОБЯЗАТЕЛЕН до старта пилота №1 (два внешних клиента = 24/7)
 
+> ⚠️ **Автодеплой ВЫКЛЮЧЕН (01.11.2026)** — VPS ещё нет, `deploy.yml` падал на «missing server host» после
+> каждого зелёного CI. Job теперь запускается только при переменной репозитория `DEPLOY_ENABLED = true`.
+> **При переезде на VPS:** GitHub → Settings → Secrets and variables → Actions → секреты `DEPLOY_HOST`,
+> `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` + Variables → `DEPLOY_ENABLED = true` (после C1–C4 и
+> секретов на сервере, `docs/ops/secrets.md`).
+
 | # | Пункт | Усилие |
 |---|-------|--------|
 | **C1** (=R4.1) ✅ DONE (05.10.2026) | ✅ **Сделано (ветка `gate-c/close-ports-actuator`):** все host-порты кроме nginx 443/8443 → `127.0.0.1` (на Linux Docker-порты обходят UFW — фаервол один их НЕ закрыл бы); Redis всегда с паролем (dev-дефолт `smartfreight-dev-redis`), его healthcheck теперь требует PONG (голый `redis-cli ping` давал exit 0 на NOAUTH → health был зелёным всегда); `scripts/check-prod-env.sh` (в `deploy.yml` до `compose up`) отказывает при dev-кредах/коротких (<16) секретах и dev-переключателях (`USE_SYSTEM_CA_CERTS`, демо-почта), читает `.env` без source, значения не печатает, CRLF-safe. **Артефакт:** с LAN-IP 192.168.1.175 открыты только 443/8443, остальные 12 портов закрыты; Redis без пароля → NOAUTH. ⏳ На VPS: внешний nmap (критерий выхода Gate C) + сгенерировать секреты ДО первого `up` (Postgres/RabbitMQ/KC-DB берут пароль только при init тома); `KEYCLOAK_ADMIN_CLIENT_SECRET` захардкожен в realm-импорте → C3. **Исходно:** 🔴 **Закрыть инфра-порты + дефолт-креды** — compose публикует `ports:` у postgres(5433)/port-db(5435)/redis(6379)/rabbitmq(5672,15672)/ollama(11434)/prometheus(9090)/grafana(3000)/keycloak(8081)/backend(8080); дефолты `:-` слабые: **Redis с ПУСТЫМ паролем**, остальное `admin/admin`-уровня. Наружу только 443 (nginx); прочим убрать `ports:`/забиндить `127.0.0.1` + UFW | M |
