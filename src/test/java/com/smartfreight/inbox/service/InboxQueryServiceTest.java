@@ -11,6 +11,9 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -18,7 +21,9 @@ import reactor.core.publisher.Mono;
 
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,6 +52,9 @@ class InboxQueryServiceTest {
     @Mock private AnalyticsService analyticsService;
     @Mock private SettingsService settingsService;
     @Mock private OllamaClientProvider ollamaClients;
+
+    /** A default locale whose decimal separator is a comma. */
+    private static final Locale RU = Locale.forLanguageTag("ru-RU");
 
     private InboxQueryService service;
     private CircuitBreaker circuitBreaker;
@@ -163,6 +171,55 @@ class InboxQueryServiceTest {
         assertThat(answer.metric()).isEqualTo(InboxMetric.QUOTE_CONVERSION);
     }
 
+    // ---- platform independence: the figures never follow the JVM default locale or line separator ----
+
+    @Test
+    @ResourceLock(Resources.LOCALE)
+    void ask_underNonEnglishDefaultLocale_headlineStillUsesDecimalPoint() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithBacklog(4, 1, 0));
+        stubOllamaSequence(
+                Map.of("response", "JUNK_COUNT | 30 | NONE"),
+                Map.of("response", ""));
+
+        InboxAnswer answer = withDefaultLocale(RU, () -> service.ask("how much junk did we get?"));
+
+        // ru-RU would render %.1f as "20,0" — the headline must stay "20.0%" on every machine.
+        assertThat(answer.answer()).contains("(20.0% of all mail)").doesNotContain("20,0");
+    }
+
+    @Test
+    @ResourceLock(Resources.LOCALE)
+    void ask_underNonEnglishDefaultLocale_slaBreachRateUsesDecimalPoint() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithBacklog(5, 0, 1));
+        stubOllamaSequence(
+                Map.of("response", "SLA_BREACHES | 30 | NONE"),
+                Map.of("response", ""));
+
+        InboxAnswer answer = withDefaultLocale(RU, () -> service.ask("how many SLA breaches?"));
+
+        assertThat(answer.answer()).contains("(20.0% of relevant tickets)");
+    }
+
+    @Test
+    @ResourceLock(Resources.LOCALE)
+    @SuppressWarnings("unchecked")
+    void ask_underNonEnglishDefaultLocale_phrasingPromptFactsUseDecimalPointAndLf() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithBacklog(5, 0, 1));
+        stubOllamaSequence(
+                Map.of("response", "BOTTLENECKS | 30 | NONE"),
+                Map.of("response", "Five tickets are waiting at NEW."));
+
+        withDefaultLocale(RU, () -> service.ask("where are we getting stuck?"));
+
+        ArgumentCaptor<Object> bodies = ArgumentCaptor.forClass(Object.class);
+        verify(requestBodySpec, times(2)).bodyValue(bodies.capture());
+        String phrasingPrompt = (String) ((Map<String, Object>) bodies.getAllValues().get(1)).get("prompt");
+        assertThat(phrasingPrompt)
+                .contains("  NEW: 5\n  PROCESSING: 0\n")
+                .contains("SLA breaches: 1 (20.0% of relevant)\nAverage first-response time: —")
+                .doesNotContain("\r");
+    }
+
     @Test
     void ask_breakerOpen_returnsGuidanceWithoutCallingTheModel() {
         circuitBreaker.transitionToOpenState();
@@ -231,6 +288,37 @@ class InboxQueryServiceTest {
         byType.put(type, count);
         return new AnalyticsSummary(30, byStatus, byType, 0L, 0L, 0L, 0L, null,
                 List.<DayVolume>of(), List.<Long>of(), 0L, 0L, 0L, 0L);
+    }
+
+    /** Minimal summary with NEW and IRRELEVANT tickets plus SLA breaches, for the locale assertions. */
+    private static AnalyticsSummary summaryWithBacklog(long newTickets, long junk, long slaBreached) {
+        Map<TicketStatus, Long> byStatus = new EnumMap<>(TicketStatus.class);
+        for (TicketStatus s : TicketStatus.values()) {
+            byStatus.put(s, 0L);
+        }
+        byStatus.put(TicketStatus.NEW, newTickets);
+        byStatus.put(TicketStatus.IRRELEVANT, junk);
+        Map<TicketType, Long> byType = new EnumMap<>(TicketType.class);
+        for (TicketType t : TicketType.values()) {
+            byType.put(t, 0L);
+        }
+        return new AnalyticsSummary(30, byStatus, byType, 0L, 0L, 0L, slaBreached, null,
+                List.<DayVolume>of(), List.<Long>of(), 0L, 0L, 0L, 0L);
+    }
+
+    /** Runs the call with every default-locale category switched, restoring them afterwards. */
+    private static <T> T withDefaultLocale(Locale locale, Supplier<T> call) {
+        Locale def = Locale.getDefault();
+        Locale display = Locale.getDefault(Locale.Category.DISPLAY);
+        Locale format = Locale.getDefault(Locale.Category.FORMAT);
+        Locale.setDefault(locale);
+        try {
+            return call.get();
+        } finally {
+            Locale.setDefault(def);
+            Locale.setDefault(Locale.Category.DISPLAY, display);
+            Locale.setDefault(Locale.Category.FORMAT, format);
+        }
     }
 
     /** Minimal summary carrying quote-conversion figures, enough for the QUOTE_CONVERSION assertions. */
