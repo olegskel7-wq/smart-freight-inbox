@@ -23,7 +23,7 @@ export default function SmartRoutingSection({ settings, form, onChange, save, op
                 smartRoutingEnabled: form.smartRoutingEnabled,
                 escalationAssignee: form.escalationAssignee,
               }),
-            featureSaved('Smart-routing settings', (s) => s.smartRoutingEnabled),
+            (s) => featureSaved('Smart-routing settings', s.smartRoutingEnabled),
           )
         }}
       >

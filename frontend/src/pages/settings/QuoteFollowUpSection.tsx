@@ -21,7 +21,7 @@ export default function QuoteFollowUpSection({ settings, form, onChange, save }:
                 enabled: form.quoteFollowUpEnabled,
                 delayHours: form.quoteFollowUpDelayHours,
               }),
-            featureSaved('Quote follow-up automation', (s) => s.quoteFollowUpEnabled),
+            (s) => featureSaved('Quote follow-up automation', s.quoteFollowUpEnabled),
           )
         }}
       >

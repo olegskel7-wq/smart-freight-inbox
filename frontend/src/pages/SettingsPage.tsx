@@ -2,6 +2,7 @@ import { useOperators } from '../api/useOperators.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import AiEndpointSection from './settings/AiEndpointSection.tsx'
 import AutoSendSection from './settings/AutoSendSection.tsx'
+import { useMailboxForms } from './settings/mailboxForm.ts'
 import MailboxesSection from './settings/MailboxesSection.tsx'
 import NotificationsSection from './settings/NotificationsSection.tsx'
 import PlatformSmtpSection from './settings/PlatformSmtpSection.tsx'
@@ -19,7 +20,8 @@ export default function SettingsPage() {
   // Operator list for the escalation-assignee dropdown. Best-effort: a non-admin can't
   // read /api/users (403) → the selector just falls back to "no operators".
   const operators = useOperators()
-  const { data, form, error, msg, dismissMsg, patchForm, save, saveInForm, deleteAndReload } = useSettings()
+  const { data, form, error, msg, dismissMsg, patchForm, save, deleteAndReload } = useSettings()
+  const mailboxForms = useMailboxForms()
 
   if (error) return <div className="alert alert-danger">{error}</div>
   if (!data || !form) return <div className="text-muted">Loading…</div>
@@ -40,7 +42,7 @@ export default function SettingsPage() {
         subtitle="Mailboxes, AI endpoint, auto-send and prompts for this tenant"
       />
 
-      <MailboxesSection settings={data} save={save} saveInForm={saveInForm} deleteAndReload={deleteAndReload} />
+      <MailboxesSection settings={data} forms={mailboxForms} save={save} deleteAndReload={deleteAndReload} />
       <AiEndpointSection {...section} />
       <PlatformSmtpSection settings={data} />
       <NotificationsSection {...section} />

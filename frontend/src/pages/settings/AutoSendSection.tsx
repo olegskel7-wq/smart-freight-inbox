@@ -5,7 +5,11 @@ import { featureSaved, type SectionProps } from './useSettings.ts'
 export default function AutoSendSection({ settings, form, onChange, save }: SectionProps) {
   const types = form.autoSendTypes
   const toggleType = (t: string) =>
-    onChange({ autoSendTypes: types.includes(t) ? types.filter((x) => x !== t) : [...types, t] })
+    onChange((prev) => ({
+      autoSendTypes: prev.autoSendTypes.includes(t)
+        ? prev.autoSendTypes.filter((x) => x !== t)
+        : [...prev.autoSendTypes, t],
+    }))
 
   return (
     <SettingsCard title="Auto-send" on={settings.autoSendEnabled}>
@@ -27,7 +31,7 @@ export default function AutoSendSection({ settings, form, onChange, save }: Sect
             (s) =>
               s.autoSendEnabled && s.autoSendTypes.length === 0
                 ? { kind: 'warning', text: 'Auto-send is on but no ticket types are allowed — nothing will be sent automatically.' }
-                : featureSaved('Auto-send settings', (saved) => saved.autoSendEnabled)(s),
+                : featureSaved('Auto-send settings', s.autoSendEnabled),
           )
         }}
       >

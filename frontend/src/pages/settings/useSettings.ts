@@ -35,27 +35,30 @@ const formFrom = (s: Settings): SettingsForm => ({
 /** What a successful save reports: a fixed text, or a message built from the refreshed snapshot. */
 export type Outcome = string | ((s: Settings) => NonNullable<Msg>)
 
-export type SaveSettings = (call: (api: Api) => Promise<Settings>, outcome: Outcome) => Promise<boolean>
-
-/** Like SaveSettings, but a failure goes to `setError` (shown inside a form) instead of the page alert. */
-export type SaveInForm = (call: (api: Api) => Promise<Settings>, ok: string,
-                          setError: (text: string | null) => void) => Promise<boolean>
+/**
+ * Runs a save call, re-seeds from its refreshed snapshot and reports the outcome in the page alert.
+ * With `setFormError` a failure is shown inside that form instead (the page alert is off-screen while
+ * a mailbox table row is being edited). Resolves to whether the save succeeded.
+ */
+export type SaveSettings = (call: (api: Api) => Promise<Settings>, outcome: Outcome,
+                            setFormError?: (text: string | null) => void) => Promise<boolean>
 
 export type DeleteAndReload = (call: (api: Api) => Promise<unknown>, ok: string) => Promise<void>
+
+export type FormPatch = Partial<SettingsForm> | ((prev: SettingsForm) => Partial<SettingsForm>)
 
 /** The props every editable section card takes. */
 export type SectionProps = {
   settings: Settings
   form: SettingsForm
-  onChange: (patch: Partial<SettingsForm>) => void
+  onChange: (patch: FormPatch) => void
   save: SaveSettings
 }
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback)
 
 // Loads the /api/settings snapshot and owns the page-level state: the snapshot, the editable form
-// seeded from it, the load error and the page alert. The save helpers resolve to whether the call
-// succeeded, so a form can reset or close only then.
+// seeded from it, the load error and the page alert.
 export function useSettings() {
   const api = useApi()
 
@@ -83,32 +86,23 @@ export function useSettings() {
   }, [load])
 
   const patchForm = useCallback(
-    (patch: Partial<SettingsForm>) => setForm((prev) => (prev ? { ...prev, ...patch } : prev)),
+    (patch: FormPatch) =>
+      setForm((prev) => (prev ? { ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) } : prev)),
     [],
   )
 
-  const save: SaveSettings = async (call, outcome) => {
+  const save: SaveSettings = async (call, outcome, setFormError) => {
     setMsg(null)
+    setFormError?.(null)
     try {
       const s = await call(api)
       applyData(s)
       setMsg(typeof outcome === 'string' ? { kind: 'success', text: outcome } : outcome(s))
       return true
     } catch (e) {
-      setMsg({ kind: 'danger', text: errorText(e, 'Save failed') })
-      return false
-    }
-  }
-
-  const saveInForm: SaveInForm = async (call, ok, setFormError) => {
-    setMsg(null)
-    setFormError(null)
-    try {
-      applyData(await call(api))
-      setMsg({ kind: 'success', text: ok })
-      return true
-    } catch (e) {
-      setFormError(errorText(e, 'Save failed'))
+      const text = errorText(e, 'Save failed')
+      if (setFormError) setFormError(text)
+      else setMsg({ kind: 'danger', text })
       return false
     }
   }
@@ -128,10 +122,10 @@ export function useSettings() {
   return {
     data, form, error, msg,
     dismissMsg: () => setMsg(null),
-    patchForm, save, saveInForm, deleteAndReload,
+    patchForm, save, deleteAndReload,
   }
 }
 
 /** The usual outcome of a feature card's save: says so when the saved feature is still off. */
-export const featureSaved = (what: string, enabled: (s: Settings) => boolean) =>
-  (s: Settings): NonNullable<Msg> => ({ kind: 'success', text: `${what} saved${enabled(s) ? '' : ' (feature is off)'}.` })
+export const featureSaved = (what: string, enabled: boolean): NonNullable<Msg> =>
+  ({ kind: 'success', text: `${what} saved${enabled ? '' : ' (feature is off)'}.` })

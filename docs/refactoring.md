@@ -130,8 +130,8 @@ Branch coverage of the classes the plan touches (clean run):
    identical to `baseline-1` across 18 scenarios (`-Ignore confidence,watch_armed`: both columns changed
    format/meaning in `f598761`, after the baselines were taken — re-capture baselines on the next step).
 3. ✅ `SettingsPage.tsx` (795 → 55 lines) → `pages/settings/`: `useSettings` (snapshot, form seeded
-   from it, page alert, `save` / `saveInForm` / `deleteAndReload`), a `SettingsCard` + `FeatureSwitch`
-   shell, one component per card (mailboxes with `MailboxFields` + `mailboxForm` helpers, AI endpoint,
+   from it, page alert, `save` / `deleteAndReload`), a `SettingsCard` + `FeatureSwitch`
+   shell, one component per card (mailboxes with `MailboxFields` + `mailboxForm` helpers and form-state hook, AI endpoint,
    platform SMTP, notifications, auto-send, status update, quote follow-up, smart routing, prompts,
    SMTP how-to). Branch `refactor/1.3-settings-page`; first commit adds 19 characterisation tests
    (25 in all) for every card — requests, messages, in-form mailbox errors, confirm + reload on

@@ -1,10 +1,10 @@
-import { Fragment, useState } from 'react'
+import { Fragment } from 'react'
 import type { MailboxRow, Settings } from '../../types.ts'
 import { formatDateTime } from '../../util/format.ts'
 import MailboxFields from './MailboxFields.tsx'
-import { EMPTY_MAILBOX, type MailboxEdit, type MailboxForm, toEdit, toRequest } from './mailboxForm.ts'
+import { EMPTY_MAILBOX, type MailboxEdit, type MailboxForms, toEdit, toRequest } from './mailboxForm.ts'
 import { SettingsCard } from './SettingsCard.tsx'
-import type { DeleteAndReload, SaveInForm, SaveSettings } from './useSettings.ts'
+import type { DeleteAndReload, SaveSettings } from './useSettings.ts'
 
 // "Running" only means the adapter is registered; the login probe says whether it can actually log in.
 function MailboxStatus({ m }: { m: MailboxRow }) {
@@ -42,22 +42,18 @@ function MailboxStatus({ m }: { m: MailboxRow }) {
 }
 
 // Mailbox table with edit-in-place (one row at a time), enable/disable and delete, plus the add form.
-// Add and edit report failures inside their own form (saveInForm); toggle and delete use the page alert.
-export default function MailboxesSection({ settings, save, saveInForm, deleteAndReload }: {
+// Add and edit report failures inside their own form; toggle and delete use the page alert.
+export default function MailboxesSection({ settings, forms, save, deleteAndReload }: {
   settings: Settings
+  forms: MailboxForms
   save: SaveSettings
-  saveInForm: SaveInForm
   deleteAndReload: DeleteAndReload
 }) {
-  // New-mailbox form, and the edit-in-place form for one mailbox at a time (null = closed).
-  const [newMailbox, setNewMailbox] = useState<MailboxForm>(EMPTY_MAILBOX)
-  const [editing, setEditing] = useState<MailboxEdit | null>(null)
-  const [addError, setAddError] = useState<string | null>(null)
-  const [editError, setEditError] = useState<string | null>(null)
+  const { newMailbox, setNewMailbox, editing, setEditing, addError, setAddError, editError, setEditError } = forms
 
   const addMailbox = async (e: React.FormEvent) => {
     e.preventDefault()
-    const added = await saveInForm(
+    const added = await save(
       (api) => api.post<Settings>('/api/settings/mailboxes', toRequest(newMailbox)),
       'Mailbox added — its IMAP adapter starts within ~30 seconds.',
       setAddError,
@@ -68,7 +64,7 @@ export default function MailboxesSection({ settings, save, saveInForm, deleteAnd
   const updateMailbox = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editing) return
-    const saved = await saveInForm(
+    const saved = await save(
       (api) => api.put<Settings>(`/api/settings/mailboxes/${editing.id}`, toRequest(editing)),
       'Mailbox updated — changes apply within ~30 seconds.',
       setEditError,

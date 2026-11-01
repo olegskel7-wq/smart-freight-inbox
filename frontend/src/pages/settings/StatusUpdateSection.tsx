@@ -20,7 +20,7 @@ export default function StatusUpdateSection({ settings, form, onChange, save }: 
                 enabled: form.statusUpdateEnabled,
                 milestones: form.statusUpdateMilestones,
               }),
-            featureSaved('Status-update automation', (s) => s.statusUpdateEnabled),
+            (s) => featureSaved('Status-update automation', s.statusUpdateEnabled),
           )
         }}
       >
