@@ -74,8 +74,9 @@ class AiDraftingPromptCharacterizationTest {
         lenient().when(ollamaClients.client()).thenReturn(webClient);
         lenient().when(ollamaClients.circuitBreaker()).thenReturn(CircuitBreaker.ofDefaults("ollama-test"));
         meterRegistry = new SimpleMeterRegistry();
-        service = new AiDraftingService(ollamaClients, settingsService,
-                new ReplySignatureService(tenantRepository), meterRegistry, "llama3.1:8b", CLOCK);
+        service = new AiDraftingService(new OllamaDraftClient(ollamaClients,
+                new ReplySignatureService(tenantRepository), meterRegistry, "llama3.1:8b"),
+                settingsService, CLOCK);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -127,7 +128,7 @@ class AiDraftingPromptCharacterizationTest {
     void replyPrompt_defaultTemplate_noContexts_usesNotesForEverySlot() {
         stubReply("ok");
 
-        service.generateDraft("Where is my container?", null, "", "", "");
+        service.generateDraft(new DraftRequest("Where is my container?", null, "", "", ""));
 
         assertEquals("""
                 You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
@@ -159,7 +160,7 @@ class AiDraftingPromptCharacterizationTest {
     void replyPrompt_defaultTemplate_contextsAreTrimmedIntoTheirSlots() {
         stubReply("ok");
 
-        service.generateDraft("Quote please", item(), "  Rate: GBP 1200\n", "\nEXAMPLES ", " KB ");
+        service.generateDraft(new DraftRequest("Quote please", item(), "  Rate: GBP 1200\n", "\nEXAMPLES ", " KB "));
 
         assertEquals("""
                 You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
@@ -191,7 +192,7 @@ class AiDraftingPromptCharacterizationTest {
     void replyPrompt_nullContexts_behaveLikeEmpty() {
         stubReply("ok");
 
-        service.generateDraft("Hi", null, null, null, null);
+        service.generateDraft(new DraftRequest("Hi", null, null, null, null));
 
         String prompt = sentPrompt();
         assertTrue(prompt.contains("No rate information available for this enquiry. Do not quote any price."));
@@ -200,10 +201,10 @@ class AiDraftingPromptCharacterizationTest {
     }
 
     @Test
-    void replyPrompt_shorterOverloads_passEmptyContexts() {
+    void replyPrompt_requestOf_hasEmptyContexts() {
         stubReply("ok");
 
-        service.generateDraft("Hi", null);
+        service.generateDraft(DraftRequest.of("Hi", null));
 
         assertTrue(sentPrompt().contains("No rate information available"));
     }
@@ -216,7 +217,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("Item: {itemContext}\nEmail: {email}");
         stubReply("ok");
 
-        service.generateDraft("Quote please", null, "RATES", "EXAMPLES", "KB");
+        service.generateDraft(new DraftRequest("Quote please", null, "RATES", "EXAMPLES", "KB"));
 
         assertEquals("""
                 Item: Item not found in our system.
@@ -238,7 +239,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("Email: {email}");
         stubReply("ok");
 
-        service.generateDraft("Hi", null, "", "  ", null);
+        service.generateDraft(new DraftRequest("Hi", null, "", "  ", null));
 
         assertEquals("Email: Hi", sentPrompt());
     }
@@ -249,7 +250,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("{rateContext}|{rateContext}|{email}|{email}");
         stubReply("ok");
 
-        service.generateDraft("E", null, "R", "", "");
+        service.generateDraft(new DraftRequest("E", null, "R", "", ""));
 
         assertEquals("R|R|E|E", sentPrompt());
     }
@@ -261,7 +262,7 @@ class AiDraftingPromptCharacterizationTest {
         stubReply("ok");
         TrackedItem hostile = new TrackedItem("{rateContext}", "AT_PORT", null, null, null);
 
-        service.generateDraft("E", hostile, "R", "", "");
+        service.generateDraft(new DraftRequest("E", hostile, "R", "", ""));
 
         String prompt = sentPrompt();
         assertTrue(prompt.startsWith("Reference: {rateContext}\n"), "Item data is inlined after trusted slots");
@@ -274,7 +275,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("{email}");
         stubReply("ok");
 
-        service.generateDraft("a".repeat(2000) + "b".repeat(500), null, "", "", "");
+        service.generateDraft(new DraftRequest("a".repeat(2000) + "b".repeat(500), null, "", "", ""));
 
         assertEquals("a".repeat(2000), sentPrompt());
     }
@@ -449,7 +450,7 @@ class AiDraftingPromptCharacterizationTest {
                 Thank you for your enquiry.
                 Unfortunately, we were unable to locate the reference in our system at this time.
                 Please contact our team for further assistance.
-                """, service.generateDraft("Where?", null, "", "", ""));
+                """, service.generateDraft(new DraftRequest("Where?", null, "", "", "")));
     }
 
     @Test
@@ -464,20 +465,21 @@ class AiDraftingPromptCharacterizationTest {
                 Location: N/A
 
                 Please do not hesitate to contact us if you require further information.
-                """, service.generateDraft("Where?", new TrackedItem("MSCU1234567", null, null, null, null),
-                "", "", ""));
+                """, service.generateDraft(new DraftRequest("Where?",
+                new TrackedItem("MSCU1234567", null, null, null, null), "", "", "")));
     }
 
     // ── Ollama call ──────────────────────────────────────────────────────────────────────────────
 
     @Test
     void ollamaCall_requestShape_metricAndUsage() {
-        service = new AiDraftingService(ollamaClients, settingsService,
-                new ReplySignatureService(tenantRepository), meterRegistry, "custom-model:3b", CLOCK);
+        service = new AiDraftingService(new OllamaDraftClient(ollamaClients,
+                new ReplySignatureService(tenantRepository), meterRegistry, "custom-model:3b"),
+                settingsService, CLOCK);
         Map<String, Object> response = Map.of("response", "Draft", "done", true);
         stubOllama(Mono.just(response));
 
-        String draft = service.generateDraft("Hi", null, "", "", "");
+        String draft = service.generateDraft(new DraftRequest("Hi", null, "", "", ""));
 
         assertEquals("Draft", draft);
         verify(requestBodyUriSpec).uri("/api/generate");
@@ -497,7 +499,7 @@ class AiDraftingPromptCharacterizationTest {
     void ollamaCall_nullResponse_returnsFallback() {
         stubOllama(Mono.empty());
 
-        String draft = service.generateDraft("Where?", null, "", "", "");
+        String draft = service.generateDraft(new DraftRequest("Where?", null, "", "", ""));
 
         assertTrue(draft.startsWith("Thank you for your enquiry.\nUnfortunately"));
         verify(ollamaClients).recordUsage(eq("drafting"), eq("llama3.1:8b"), isNull());
@@ -509,20 +511,23 @@ class AiDraftingPromptCharacterizationTest {
         noField.put("done", true);
         stubOllama(Mono.just(noField));
 
-        assertTrue(service.generateDraft("Where?", null, "", "", "").startsWith("Thank you for your enquiry."));
+        assertTrue(service.generateDraft(new DraftRequest("Where?", null, "", "", ""))
+                .startsWith("Thank you for your enquiry."));
     }
 
     @Test
     void ollamaCall_onlySignOff_strippedToEmpty_returnsFallback() {
         stubReply("Best regards,\n[Your Name]");
 
-        assertTrue(service.generateDraft("Where?", null, "", "", "").startsWith("Thank you for your enquiry."));
+        assertTrue(service.generateDraft(new DraftRequest("Where?", null, "", "", ""))
+                .startsWith("Thank you for your enquiry."));
     }
 
     @Test
     void ollamaCall_replyIsTrimmed() {
         stubReply("\n  Your container is at port.  \n");
 
-        assertEquals("Your container is at port.", service.generateDraft("Where?", null, "", "", ""));
+        assertEquals("Your container is at port.",
+                service.generateDraft(new DraftRequest("Where?", null, "", "", "")));
     }
 }

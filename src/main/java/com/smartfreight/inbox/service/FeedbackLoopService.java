@@ -193,7 +193,7 @@ public class FeedbackLoopService {
         }
     }
 
-    /** Formats matched corrections as enquiry/approved-reply pairs; headers live in AiDraftingService. */
+    /** Formats matched corrections as enquiry/approved-reply pairs; headers live in DraftPrompts. */
     private String buildExampleContext(List<TrainingExample> examples) {
         StringBuilder sb = new StringBuilder();
         for (TrainingExample ex : examples) {

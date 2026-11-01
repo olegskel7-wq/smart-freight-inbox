@@ -347,7 +347,8 @@ public class TicketProcessingService {
             // Ground the draft with the tenant's knowledge base (FAQs / policies / rules) so
             // typical "how / where / when" enquiries get a substantive answer even without backend data.
             String knowledgeContext = knowledgeBaseService.retrieveContext(aiInput, enquiryEmbedding);
-            draft = aiDraftingService.generateDraft(aiInput, item, rateContext, exampleContext, knowledgeContext);
+            draft = aiDraftingService.generateDraft(
+                    new DraftRequest(aiInput, item, rateContext, exampleContext, knowledgeContext));
         }
         ticket.setDraftReply(draft);
         // Preserve the unmodified AI draft so the feedback loop can compare it against

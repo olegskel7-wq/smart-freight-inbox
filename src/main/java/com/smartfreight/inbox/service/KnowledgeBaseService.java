@@ -221,7 +221,7 @@ public class KnowledgeBaseService {
         }
     }
 
-    /** Formats matched documents as title/answer pairs; headers live in AiDraftingService. */
+    /** Formats matched documents as title/answer pairs; headers live in DraftPrompts. */
     private String buildKnowledgeContext(List<KnowledgeDoc> docs) {
         StringBuilder sb = new StringBuilder();
         for (KnowledgeDoc doc : docs) {
