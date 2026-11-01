@@ -195,25 +195,25 @@ public class InboxQueryService {
 
         return switch (intent.metric()) {
             case EMAILS_RECEIVED -> result(
-                    "You received %d emails in %s (%d relevant, %d junk).".formatted(
+                    fmt("You received %d emails in %s (%d relevant, %d junk).",
                             s.totalReceived(), win, s.relevant(), s.irrelevant()),
-                    "Emails received: %d%nRelevant: %d%nJunk: %d".formatted(
+                    fmt("Emails received: %d\nRelevant: %d\nJunk: %d",
                             s.totalReceived(), s.relevant(), s.irrelevant()));
 
             case RELEVANT_COUNT -> result(
-                    "You received %d relevant business emails in %s (junk excluded).".formatted(s.relevant(), win),
-                    "Relevant emails: %d%nTotal received: %d".formatted(s.relevant(), s.totalReceived()));
+                    fmt("You received %d relevant business emails in %s (junk excluded).", s.relevant(), win),
+                    fmt("Relevant emails: %d\nTotal received: %d", s.relevant(), s.totalReceived()));
 
             case JUNK_COUNT -> result(
-                    "%d junk emails were filtered out in %s (%.1f%% of all mail).".formatted(
+                    fmt("%d junk emails were filtered out in %s (%.1f%% of all mail).",
                             s.irrelevant(), win, s.irrelevantPct()),
-                    "Junk emails: %d%nTotal received: %d".formatted(s.irrelevant(), s.totalReceived()));
+                    fmt("Junk emails: %d\nTotal received: %d", s.irrelevant(), s.totalReceived()));
 
             case TYPE_COUNT -> {
                 long n = s.byType().getOrDefault(intent.type(), 0L);
                 yield result(
-                        "You received %d %s emails in %s.".formatted(n, intent.type().name(), win),
-                        "%s emails: %d%nRelevant emails: %d".formatted(intent.type().name(), n, s.relevant()));
+                        fmt("You received %d %s emails in %s.", n, intent.type().name(), win),
+                        fmt("%s emails: %d\nRelevant emails: %d", intent.type().name(), n, s.relevant()));
             }
 
             case TYPE_BREAKDOWN -> {
@@ -223,7 +223,7 @@ public class InboxQueryService {
                     facts.append("Unclassified: ").append(s.untyped()).append('\n');
                 }
                 yield result(
-                        "Relevant emails by type over %s — %s.".formatted(win, inline(facts.toString())),
+                        fmt("Relevant emails by type over %s — %s.", win, inline(facts.toString())),
                         facts.toString().strip());
             }
 
@@ -231,48 +231,48 @@ public class InboxQueryService {
                 StringBuilder facts = new StringBuilder();
                 s.byStatus().forEach((st, n) -> facts.append(st.name()).append(": ").append(n).append('\n'));
                 yield result(
-                        "Tickets by status over %s — %s.".formatted(win, inline(facts.toString())),
+                        fmt("Tickets by status over %s — %s.", win, inline(facts.toString())),
                         facts.toString().strip());
             }
 
             case REPLIES_SENT -> result(
-                    "You sent %d replies in %s (%d by an operator, %d automatically).".formatted(
+                    fmt("You sent %d replies in %s (%d by an operator, %d automatically).",
                             s.totalSends(), win, s.manualSends(), s.autoSends()),
-                    "Replies sent: %d%nBy operator: %d%nAuto-sent: %d".formatted(
+                    fmt("Replies sent: %d\nBy operator: %d\nAuto-sent: %d",
                             s.totalSends(), s.manualSends(), s.autoSends()));
 
             case AUTOMATION_RATE -> result(
-                    "%.1f%% of replies were sent automatically in %s (%d of %d).".formatted(
+                    fmt("%.1f%% of replies were sent automatically in %s (%d of %d).",
                             s.autoSendPct(), win, s.autoSends(), s.totalSends()),
-                    "Automation rate: %.1f%%%nAuto-sent: %d%nTotal replies: %d".formatted(
+                    fmt("Automation rate: %.1f%%\nAuto-sent: %d\nTotal replies: %d",
                             s.autoSendPct(), s.autoSends(), s.totalSends()));
 
             case AVG_RESPONSE_TIME -> result(
-                    "Your average first-response time over %s was %s.".formatted(win, s.avgResponseFormatted()),
-                    "Average first-response time: %s%nReplies sent: %d".formatted(
+                    fmt("Your average first-response time over %s was %s.", win, s.avgResponseFormatted()),
+                    fmt("Average first-response time: %s\nReplies sent: %d",
                             s.avgResponseFormatted(), s.totalSends()));
 
             case SLA_BREACHES -> result(
-                    "%d tickets breached their SLA in %s (%.1f%% of relevant tickets).".formatted(
+                    fmt("%d tickets breached their SLA in %s (%.1f%% of relevant tickets).",
                             s.slaBreached(), win, s.slaBreachedPct()),
-                    "SLA breaches: %d%nRelevant tickets: %d%nBreach rate: %.1f%%".formatted(
+                    fmt("SLA breaches: %d\nRelevant tickets: %d\nBreach rate: %.1f%%",
                             s.slaBreached(), s.relevant(), s.slaBreachedPct()));
 
             case QUOTE_CONVERSION -> result(
                     s.quotesSent() == 0
-                            ? "No quotes were sent in %s, so there is no conversion rate yet.".formatted(win)
-                            : "%s of quotes turned into bookings in %s (%d of %d quotes booked).".formatted(
+                            ? fmt("No quotes were sent in %s, so there is no conversion rate yet.", win)
+                            : fmt("%s of quotes turned into bookings in %s (%d of %d quotes booked).",
                                     s.quoteConversionFormatted(), win, s.quotesConverted(), s.quotesSent()),
-                    "Quote-to-booking conversion: %s%nQuotes sent: %d%nBooked: %d".formatted(
+                    fmt("Quote-to-booking conversion: %s\nQuotes sent: %d\nBooked: %d",
                             s.quoteConversionFormatted(), s.quotesSent(), s.quotesConverted()));
 
             case BOTTLENECKS -> {
                 TicketStatus busiest = busiestOpenStage(s);
                 long backlog = busiest == null ? 0L : s.byStatus().getOrDefault(busiest, 0L);
-                String facts = ("Backlog by open stage (newest work first):%n"
-                        + "  RECEIVED: %d%n  NEW: %d%n  PROCESSING: %d%n  DRAFT_READY (awaiting operator): %d%n"
-                        + "  RETRY_LATER: %d%n  FAILED: %d%n"
-                        + "SLA breaches: %d (%.1f%% of relevant)%nAverage first-response time: %s").formatted(
+                String facts = fmt("Backlog by open stage (newest work first):\n"
+                        + "  RECEIVED: %d\n  NEW: %d\n  PROCESSING: %d\n  DRAFT_READY (awaiting operator): %d\n"
+                        + "  RETRY_LATER: %d\n  FAILED: %d\n"
+                        + "SLA breaches: %d (%.1f%% of relevant)\nAverage first-response time: %s",
                         s.byStatus().getOrDefault(TicketStatus.RECEIVED, 0L),
                         s.byStatus().getOrDefault(TicketStatus.NEW, 0L),
                         s.byStatus().getOrDefault(TicketStatus.PROCESSING, 0L),
@@ -281,8 +281,8 @@ public class InboxQueryService {
                         s.byStatus().getOrDefault(TicketStatus.FAILED, 0L),
                         s.slaBreached(), s.slaBreachedPct(), s.avgResponseFormatted());
                 String headline = busiest == null || backlog == 0
-                        ? "Over %s nothing is backed up — no open tickets are piling up at any stage.".formatted(win)
-                        : "Over %s the biggest backlog is %d ticket(s) at the %s stage; %d SLA breaches.".formatted(
+                        ? fmt("Over %s nothing is backed up — no open tickets are piling up at any stage.", win)
+                        : fmt("Over %s the biggest backlog is %d ticket(s) at the %s stage; %d SLA breaches.",
                                 win, backlog, busiest.name(), s.slaBreached());
                 yield result(headline, facts);
             }
@@ -355,6 +355,14 @@ public class InboxQueryService {
 
     private static MetricResult result(String headline, String facts) {
         return new MetricResult(headline, facts);
+    }
+
+    /**
+     * Formats with a fixed English locale and {@code \n} line breaks, so headlines and the facts
+     * block are identical on every JVM ({@code 20.0%}, never the default-locale {@code 20,0%}).
+     */
+    private static String fmt(String template, Object... args) {
+        return String.format(Locale.ENGLISH, template, args);
     }
 
     /** Flattens a multi-line "k: v" block to a single inline clause for the headline sentence. */
