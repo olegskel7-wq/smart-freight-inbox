@@ -13,7 +13,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * Encrypts secrets at rest with AES-256-GCM (Phase 2.2 S3).
+ * Encrypts secrets at rest with AES-256-GCM.
  *
  * <p>Built for {@code tenant_mailbox.password_enc}: client IMAP passwords must not sit in
  * plaintext in the DB — the daily {@code pg_dump} backup volume would otherwise contain
@@ -22,7 +22,7 @@ import java.util.Base64;
  *
  * <p>The key comes from the {@code MAILBOX_ENCRYPTION_KEY} environment variable (base64,
  * exactly 32 bytes). Key custody is environment-level by design: a DB dump alone is
- * useless without the deployment's env. Phase 4 (Vault) replaces the key SOURCE, not this
+ * useless without the deployment's env. A secrets vault would replace the key SOURCE, not this
  * scheme. Generate a key with: {@code openssl rand -base64 32}.
  *
  * <p>Wire format: {@code base64(iv[12] || ciphertext+tag)}. A fresh random IV per

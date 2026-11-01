@@ -5,12 +5,12 @@ import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
- * The fixed catalogue of questions the natural-language inbox assistant can answer (Phase 2.8).
+ * The fixed catalogue of questions the natural-language inbox assistant can answer.
  *
- * <p>2.8 deliberately does NOT let the LLM write SQL. A local 7B/8B model is unreliable at SQL and
+ * <p>The assistant deliberately does NOT let the LLM write SQL (see docs/adr/0011-nl-query-metric-router.md). A local 7B/8B model is unreliable at SQL and
  * the product promise is correct, auditable numbers in front of a customer. Instead the model only
  * <em>routes</em> a free-text question to one of these metrics; every figure is then computed
- * deterministically by {@link AnalyticsService} (reusing the Phase 2.1 aggregation) and the model
+ * deterministically by {@link AnalyticsService} (reusing the dashboard aggregation) and the model
  * is asked to phrase an answer from those exact numbers. The catalogue is the trust boundary:
  * nothing outside it can be asked, so RLS-scoped reads and "no invented data" hold by construction.
  *

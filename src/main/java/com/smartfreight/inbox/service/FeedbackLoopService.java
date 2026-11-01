@@ -16,7 +16,8 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
- * Captures operator corrections as training examples (Phase 3.1 — AI Feedback Loop).
+ * Captures operator corrections as training examples for the AI feedback loop
+ * (see docs/adr/0010-rag-feedback-and-knowledge.md).
  *
  * <p>When an operator edits an AI draft and sends it, {@link #captureIfEdited} records the pair
  * "AI draft → operator final" against the enquiry the AI saw, embedding the enquiry best-effort
@@ -127,7 +128,7 @@ public class FeedbackLoopService {
 
     /**
      * Retrieves past operator corrections similar to the incoming enquiry, formatted as a few-shot
-     * block for injection into the drafting prompt (Phase 3.1 S2 — the half that improves drafts).
+     * block for injection into the drafting prompt — the half of the loop that improves drafts.
      *
      * <p>Embeds the enquiry best-effort and ranks the current tenant's prior corrections of the same
      * ticket type by pgvector cosine similarity. If the enquiry cannot be embedded (Ollama down /

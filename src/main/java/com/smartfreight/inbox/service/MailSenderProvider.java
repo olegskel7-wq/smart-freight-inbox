@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Resolves the outbound SMTP sender for the CURRENT tenant (Phase 2.2 SMTP close-out).
+ * Resolves the outbound SMTP sender for the CURRENT tenant (see docs/adr/0005-per-tenant-mailboxes-and-llm.md).
  *
  * <p>Mirrors {@link OllamaClientProvider}: a per-tenant override on top of a platform
  * default. Resolution order, first usable wins (usable = enabled with {@code smtp_host} set):
@@ -53,7 +53,7 @@ public class MailSenderProvider {
 
     /**
      * Mailbox id → the sender built from its current config. Keyed by id (ids are global), not by
-     * fingerprint, so an in-place edit (Gate B15) REPLACES the old sender — and the stale decrypted
+     * fingerprint, so an in-place edit REPLACES the old sender — and the stale decrypted
      * password inside it — instead of piling up one entry per rotation. Bounded by the mailbox count.
      */
     private final Map<Long, CachedSender> senders = new ConcurrentHashMap<>();

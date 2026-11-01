@@ -15,8 +15,8 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
- * Manages the per-tenant knowledge base and retrieves it at draft time (Phase 3.9 — Knowledge-base
- * deflection).
+ * Manages the per-tenant knowledge base and retrieves it at draft time
+ * (see docs/adr/0010-rag-feedback-and-knowledge.md).
  *
  * <p>Operators store free-text knowledge ({@link #create}/{@link #update}); each document is embedded
  * best-effort with the same local Ollama ({@code nomic-embed-text}) as the feedback loop, so the
@@ -35,7 +35,7 @@ public class KnowledgeBaseService {
     /** Feature flag — see V33. ON by default: grounding is always operator-reviewed. */
     public static final String FEATURE_KEY = "feature.knowledge-base";
 
-    /** Provenance value for operator text entry (S2 file-upload sets the file name instead). */
+    /** Provenance value for operator text entry (a future file upload would store the file name instead). */
     private static final String SOURCE_MANUAL = "manual";
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseService.class);
@@ -144,7 +144,7 @@ public class KnowledgeBaseService {
 
     /**
      * Retrieves knowledge relevant to the incoming enquiry, formatted as a grounding block for the
-     * drafting prompt (Phase 3.9).
+     * drafting prompt.
      *
      * <p>Embeds the enquiry and ranks this tenant's documents by pgvector cosine within the relevance
      * threshold. Returns "" when the feature is off, the enquiry cannot be embedded, nothing clears the

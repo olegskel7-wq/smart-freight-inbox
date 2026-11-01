@@ -33,13 +33,13 @@ import java.util.function.Supplier;
  *
  * Coordinates the pipeline steps:
  * 0. Relevance + type classification (Qwen 2.5) for RECEIVED tickets — non-freight mail is
- *    parked as IRRELEVANT and never reaches the heavier steps (Phase 1.3 session 3);
- *    relevant mail gets its business type (RFQ/STATUS_UPDATE/…) in the same call (Phase 1.4)
+ *    parked as IRRELEVANT and never reaches the heavier steps;
+ *    relevant mail gets its business type (RFQ/STATUS_UPDATE/…) in the same call
  * 1. Item identifier extraction (Qwen 2.5) from the email body
  * 2. Item lookup via the backend ({@link ItemLookupService})
  * 3. Reply draft generation (Llama 3.1)
  *
- * Executed synchronously in the calling thread — since Phase 1.3 that is the RabbitMQ
+ * Executed synchronously in the calling thread — the RabbitMQ
  * consumer ({@link com.smartfreight.inbox.messaging.TicketEventConsumer}), never the
  * IMAP thread.
  *
@@ -56,7 +56,7 @@ public class TicketProcessingService {
     private static final int MAX_RETRY_ATTEMPTS = 3;
 
     /**
-     * Per-tenant setting (Phase 3.10): the Keycloak user UUID that escalated (HIGH urgency / negative
+     * Per-tenant setting: the Keycloak user UUID that escalated (HIGH urgency / negative
      * sentiment) tickets are auto-assigned to. Blank/unset → no auto-assign (escalation still tightens
      * the SLA + floats the ticket to the top of the queue). Resolved via the standard
      * {@code tenant_setting → app_setting → default} chain.
@@ -178,7 +178,7 @@ public class TicketProcessingService {
             for (int attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
                 try {
                     boolean autoSendEligible = self.processAttempt(ticketId, startTime);
-                    // Phase 1.6: the SMTP send happens strictly AFTER the pipeline transaction
+                    // The SMTP send happens strictly AFTER the pipeline transaction
                     // committed — an optimistic-lock retry of the attempt can therefore never
                     // repeat a send, and a crash here leaves a safe DRAFT_READY ticket.
                     if (autoSendEligible) {
@@ -193,7 +193,7 @@ public class TicketProcessingService {
                         self.markFailed(ticketId);
                     }
                 } catch (CallNotPermittedException e) {
-                    // Phase 1.7: a circuit breaker is OPEN — the dependency (Ollama) is known to
+                    // A circuit breaker is OPEN — the dependency (Ollama) is known to
                     // be down. Park the ticket instead of failing it or serving a degraded
                     // fallback draft: RetryScheduler re-runs the pipeline once the breaker
                     // closes, and the customer gets a proper AI draft, just later. The attempt's
@@ -222,7 +222,7 @@ public class TicketProcessingService {
      * @param ticketId  identifier of the ticket to process
      * @param startTime {@code System.nanoTime()} captured at the start of {@link #process}
      *                  for end-to-end duration measurement
-     * @return whether the ticket reached DRAFT_READY and qualifies for auto-send (Phase 1.6) —
+     * @return whether the ticket reached DRAFT_READY and qualifies for auto-send —
      *         the caller performs the actual send after this transaction commits
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -237,9 +237,9 @@ public class TicketProcessingService {
             return false;
         }
 
-        // Phase 1.3 session 3: classification happens here, off the IMAP thread.
-        // Phase 1.4: the same call also assigns the business type (RFQ/STATUS_UPDATE/…).
-        // Phase 1.7: in typed mode the retry path re-enters classification when ticketType
+        // Classification happens here, off the IMAP thread.
+        // The same call also assigns the business type (RFQ/STATUS_UPDATE/…).
+        // In typed mode the retry path re-enters classification when ticketType
         // is still null — such a ticket never got a verdict (it was parked by an open
         // breaker before step 0 completed, or swept out of RECEIVED). This is a first
         // classification, not a re-judgement: tickets the operator sent back for a redraft
@@ -252,7 +252,7 @@ public class TicketProcessingService {
                     emailClassificationService.classify(ticket.getSubject(), buildAiInput(ticket));
             if (!classification.relevant()) {
                 ticket.setStatus(TicketStatus.IRRELEVANT);
-                // Phase 1.5: spam carries no SLA — drop the provisional deadline set at ingest.
+                // Spam carries no SLA — drop the provisional deadline set at ingest.
                 ticket.setSlaDeadlineAt(null);
                 ticket.setUpdatedAt(LocalDateTime.now());
                 emailTicketRepository.save(ticket);
@@ -261,19 +261,19 @@ public class TicketProcessingService {
             }
             // Persisted together with the PROCESSING transition below — no extra UPDATE.
             ticket.setTicketType(classification.type());
-            // Phase 3.10: smart-routing signals from the same classification call.
+            // Smart-routing signals from the same classification call.
             ticket.setUrgency(classification.urgency());
             ticket.setSentimentNegative(classification.sentimentNegative());
-            // Phase 1.5: refine the provisional (GENERAL) deadline to the per-type window.
+            // Refine the provisional (GENERAL) deadline to the per-type window.
             // Still anchored to createdAt — the customer's clock started at receipt.
-            // Phase 3.10: an escalated ticket (HIGH urgency / negative tone) gets a tighter window.
+            // An escalated ticket (HIGH urgency / negative tone) gets a tighter window.
             if (slaService.isEnabled()) {
                 ticket.setSlaDeadlineAt(slaService.deadlineFor(classification.type(),
                         classification.isEscalated(), ticket.getCreatedAt()));
             }
-            // Phase 3.10: route an escalated, still-unclaimed ticket to the configured escalation operator.
+            // Route an escalated, still-unclaimed ticket to the configured escalation operator.
             applyEscalationRouting(ticket, classification);
-            // Phase 3.5 S2: the customer is booking — notify the CRM. Fires once: a typed ticket is not
+            // The customer is booking — notify the CRM. Fires once: a typed ticket is not
             // re-classified (the retry path only re-enters this block when ticketType is still null), and
             // this runs inside the pipeline transaction so the delivery is queued atomically with the verdict.
             if (classification.type() == TicketType.BOOKING_CONFIRM) {
@@ -286,7 +286,7 @@ public class TicketProcessingService {
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.saveAndFlush(ticket);
 
-        // Phase 1.1: the AI sees the email body plus any parsed attachment text as one input.
+        // The AI sees the email body plus any parsed attachment text as one input.
         String aiInput = buildAiInput(ticket);
 
         log.info("Step 1/3: Extracting item identifier via Qwen 2.5");
@@ -306,11 +306,11 @@ public class TicketProcessingService {
         }
 
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
-        // Phase 1.2: matched carrier rates (if any) let the model quote a real price.
+        // Matched carrier rates (if any) let the model quote a real price.
         String rateContext = rateSheetService.buildRateContext(aiInput);
 
         String draft;
-        // Phase 2.7: a document request takes a dedicated path — determine which document is wanted,
+        // A document request takes a dedicated path — determine which document is wanted,
         // attach it if on file (it then rides the same auto-send/operator gate as any reply), else
         // escalate: draft an acknowledgement and flag the requested type for the operator. The
         // detection call propagates an open-breaker exception, so a parked ticket re-runs cleanly.
@@ -333,28 +333,28 @@ public class TicketProcessingService {
                         requested, identifier);
             }
         } else {
-            // Phase 3.1 S2 + 3.9: both the feedback loop and the knowledge base rank by semantic
+            // Both the feedback loop and the knowledge base rank by semantic
             // similarity to the SAME enquiry, so share ONE memoised embedding supplier — the enquiry is
             // embedded at most once per draft, lazily, and only if a retriever (after its own feature /
             // blank checks) actually needs the vector. Each retriever owns its own feature gate, so the
             // pipeline stays out of that decision.
             Supplier<Optional<float[]>> enquiryEmbedding =
                     memoize(() -> embeddingService.embed(aiInput));
-            // Phase 3.1 S2: inject the most similar past operator corrections (this tenant, this type)
+            // Inject the most similar past operator corrections (this tenant, this type)
             // as few-shot examples so the draft improves as corrections accumulate.
             String exampleContext = feedbackLoopService.retrieveExamples(
                     ticket.getTicketType(), aiInput, enquiryEmbedding);
-            // Phase 3.9: ground the draft with the tenant's knowledge base (FAQs / policies / rules) so
+            // Ground the draft with the tenant's knowledge base (FAQs / policies / rules) so
             // typical "how / where / when" enquiries get a substantive answer even without backend data.
             String knowledgeContext = knowledgeBaseService.retrieveContext(aiInput, enquiryEmbedding);
             draft = aiDraftingService.generateDraft(aiInput, item, rateContext, exampleContext, knowledgeContext);
         }
         ticket.setDraftReply(draft);
-        // Phase 3.1: preserve the unmodified AI draft so the feedback loop can compare it against
+        // Preserve the unmodified AI draft so the feedback loop can compare it against
         // what the operator actually sends. draftReply gets overwritten on edit; this does not.
         ticket.setAiOriginalDraft(draft);
 
-        // Phase 1.6: confidence is computed and stored on every run (even with auto-send off)
+        // Confidence is computed and stored on every run (even with auto-send off)
         // so the score distribution accumulates for threshold tuning.
         ticket.setAiConfidence(autoSendService.confidenceFor(
                 ticket.getTicketType(),
@@ -370,7 +370,7 @@ public class TicketProcessingService {
         processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
         log.info("Ticket processing finished: DRAFT_READY (confidence {})", ticket.getAiConfidence());
 
-        // Phase 2.4: a STATUS_UPDATE enquiry grounded in real backend data becomes a proactive
+        // A STATUS_UPDATE enquiry grounded in real backend data becomes a proactive
         // subscription — StatusWatchScheduler keeps this customer posted about this shipment
         // until it is delivered. Recorded unconditionally (cheap); the scheduler is gated by
         // feature.status-update-automation, so enabling the flag activates recent enquiries at once.
@@ -391,12 +391,12 @@ public class TicketProcessingService {
     }
 
     /**
-     * Auto-assigns an escalated ticket to the tenant's configured escalation operator (Phase 3.10).
+     * Auto-assigns an escalated ticket to the tenant's configured escalation operator.
      *
      * Routing is deliberately deterministic, not LLM-chosen: the classifier only flags HIGH urgency /
      * negative tone (it does not know the tenant's operators), and a tenant opts in by setting
      * {@link #SETTING_ESCALATION_ASSIGNEE} on {@code /settings}. We only ever claim an UNassigned
-     * ticket, so a manual assignment (Phase 3.3) is never overwritten. With no assignee configured the
+     * ticket, so a manual assignment is never overwritten. With no assignee configured the
      * ticket simply stays unclaimed — escalation still tightened the SLA and floats it to the top.
      * Mutating {@code assigneeUserId} fires the existing {@code @PostUpdate} live event for free.
      */
@@ -414,8 +414,8 @@ public class TicketProcessingService {
     }
 
     /**
-     * Builds the text the AI models work on: the email body plus any parsed attachment text
-     * (Phase 1.1). When the email has no attachments this is just the body, preserving the
+     * Builds the text the AI models work on: the email body plus any parsed attachment text.
+     * When the email has no attachments this is just the body, preserving the
      * previous behaviour.
      *
      * @param ticket the ticket being processed
@@ -461,8 +461,8 @@ public class TicketProcessingService {
      * @param ticketId ticket identifier
      */
     /**
-     * Parks a ticket as RETRY_LATER because a circuit breaker rejected a pipeline call
-     * (Phase 1.7). Runs in its own transaction for the same reason as {@link #markFailed}:
+     * Parks a ticket as RETRY_LATER because a circuit breaker rejected a pipeline call.
+     * Runs in its own transaction for the same reason as {@link #markFailed}:
      * the failed attempt's transaction has already rolled back.
      *
      * retryCount is deliberately NOT incremented here — the breaker being open is not the

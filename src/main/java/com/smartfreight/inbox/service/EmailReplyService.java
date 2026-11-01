@@ -85,7 +85,7 @@ public class EmailReplyService {
     public void sendReply(EmailTicket ticket, String operatorName) {
         MailSenderProvider.ResolvedSender resolved = mailSenderProvider.resolve(ticket.getMailboxId());
         JavaMailSender mailSender = resolved.sender();
-        // Phase 2.7: a document-request reply may carry an attachment. Resolve it up front so the
+        // A document-request reply may carry an attachment. Resolve it up front so the
         // helper is multipart ONLY when there is a file — text-only replies keep their exact prior
         // MIME shape. The lookup is RLS-scoped (a tenant context is active at every send site).
         Optional<TenantDocument> attachment = ticket.getAttachedDocumentId() == null
@@ -102,7 +102,7 @@ public class EmailReplyService {
             }
             helper.setFrom(resolved.from());
             helper.setTo(to);
-            // Phase 2.4: a proactive status update is a fresh email, not a reply — its subject
+            // A proactive status update is a fresh email, not a reply — its subject
             // stands on its own and its synthetic Message-ID belongs to no inbound thread, so no
             // "Re:" prefix and no threading headers. Inbound replies keep both.
             String subject = ticket.getSubject() != null ? ticket.getSubject() : "";

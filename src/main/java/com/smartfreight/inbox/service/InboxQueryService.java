@@ -21,14 +21,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * "Ask your inbox" — answers free-text questions about the inbox in natural language (Phase 2.8).
+ * "Ask your inbox" — answers free-text questions about the inbox in natural language
+ * (see docs/adr/0011-nl-query-metric-router.md).
  *
  * <p>This is the metric-router design (decision: not text-to-SQL). A question is answered in two
  * cheap LLM calls around a deterministic core:
  * <ol>
  *   <li><b>Route</b> — the extraction model maps the question to one {@link InboxMetric} from a
  *       fixed catalogue (+ a period and an optional ticket type). It never sees the database.</li>
- *   <li><b>Compute</b> — {@link AnalyticsService} produces the real figures (the same Phase 2.1
+ *   <li><b>Compute</b> — {@link AnalyticsService} produces the real figures (the same dashboard
  *       aggregation, RLS-scoped to the current tenant). The headline sentence built here is already
  *       a correct, complete answer.</li>
  *   <li><b>Phrase</b> — the drafting model rewrites those exact figures into a conversational reply.

@@ -25,7 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Extracts plain text from email attachments (Phase 1.1).
+ * Extracts plain text from email attachments.
  *
  * <p>Most freight RFQs arrive as a short email body plus a PDF or Excel attachment carrying the
  * actual request (container numbers, addresses, rates). Without parsing them the AI pipeline is

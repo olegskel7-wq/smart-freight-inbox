@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Redis cache for the rate-sheet lookup (Phase 2.6).
+ * Redis cache for the rate-sheet lookup.
  *
  * <p>{@link RateSheetService#buildRateContext} runs on every drafting pass and starts by
  * fetching all non-expired rates for the day. That query is identical across enquiries within

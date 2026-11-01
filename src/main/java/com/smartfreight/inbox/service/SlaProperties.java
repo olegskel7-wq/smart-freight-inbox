@@ -10,7 +10,7 @@ import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * SLA windows per ticket type (Phase 1.5), bound from the {@code sla.*} config block.
+ * SLA windows per ticket type, bound from the {@code sla.*} config block.
  *
  * Relaxed binding maps yaml keys like {@code booking-confirm} to {@link TicketType}
  * names. A type missing from the map falls back to {@link #defaultMinutes} — that is
@@ -29,7 +29,7 @@ public class SlaProperties {
     private long defaultMinutes = 480;
 
     /**
-     * Phase 3.10: multiplier applied to the per-type window when a ticket is escalated (HIGH urgency
+     * Multiplier applied to the per-type window when a ticket is escalated (HIGH urgency
      * or negative sentiment). 0.5 = half the time to reply for an urgent/angry email. Must be in (0,1]
      * to tighten (never relax) the deadline; 1.0 disables the bump.
      */

@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 
 /**
- * Maintains proactive status-update subscriptions (Phase 2.4).
+ * Maintains proactive status-update subscriptions.
  *
  * <p>The inbound enquiry is the subscription: when the pipeline classifies a STATUS_UPDATE
  * ticket whose identifier was found in the backend, {@link #upsertFromTicket} records (or

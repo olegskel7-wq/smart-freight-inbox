@@ -9,10 +9,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * CRUD facade for operator accounts used by the self-service UI (Phase 2.2 S2,
- * reworked for Keycloak in Phase 2.3 S2).
+ * CRUD facade for operator accounts used by the self-service UI.
  *
- * <p>Backing store is now <b>Keycloak</b> (decision 2, single realm): users carry a
+ * <p>Backing store is <b>Keycloak</b> (single realm, see docs/adr/0007-keycloak-identity.md): users carry a
  * {@code tenant_id} attribute and a realm role, and passwords live in Keycloak — they never
  * touch our DB. The legacy {@code app_user} table is gone (V27).
  *
@@ -38,7 +37,7 @@ public class UserManagementService {
             + "letter, a lowercase letter and a digit, and it must not be the same as the email.";
 
     /**
-     * Tenant-level roles an admin may hand out (Phase 3.3). SUPER_ADMIN is platform-level and only
+     * Tenant-level roles an admin may hand out. SUPER_ADMIN is platform-level and only
      * granted via the realm seed — it must never be assignable from the tenant self-service UI.
      */
     private static final Set<String> ASSIGNABLE_ROLES = Set.of("OPERATOR", "ADMIN");
@@ -97,7 +96,7 @@ public class UserManagementService {
     }
 
     /**
-     * Changes an operator's tenant role (OPERATOR ↔ ADMIN, Phase 3.3). Refuses to change the
+     * Changes an operator's tenant role (OPERATOR ↔ ADMIN). Refuses to change the
      * caller's own role — an admin demoting themselves could lock the tenant out of its own
      * management surface (mirrors the {@link #deleteUser} self-guard).
      *

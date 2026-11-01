@@ -9,13 +9,13 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import java.util.List;
 
 /**
- * Platform-level tenant administration (Phase 2.2 S2, reworked for Keycloak in Phase 2.3 S2) —
+ * Platform-level tenant administration —
  * used by {@code /admin/tenants}, gated to SUPER_ADMIN in SecurityConfig.
  *
  * <p>The {@code tenant} table carries no RLS (it is the catalogue the policies key on), so the
  * overview is intentionally cross-tenant. Onboarding still creates the {@code tenant} row in our
  * DB — Postgres RLS needs it — but the first operator is now created in <b>Keycloak</b> (the sole
- * identity provider) with a {@code tenant_id} attribute, not in {@code app_user}.
+ * identity provider, see docs/adr/0007-keycloak-identity.md) with a {@code tenant_id} attribute.
  *
  * <p>The tenant row save and the Keycloak user creation span two systems and cannot share one
  * transaction. The method is ordered so the Keycloak call is last and runs inside the DB
@@ -24,13 +24,13 @@ import java.util.List;
  * and surfaced as an error to the admin.)
  *
  * <p>Deletion is deliberately absent: a tenant owns tickets, audit history and rates; removing
- * one is a data-retention decision (Phase 4 GDPR work), not a button.
+ * one is a data-retention (GDPR) decision, not a button.
  */
 @Service
 public class TenantManagementService {
 
     /**
-     * The tenant's first user is its ADMIN (Gate B6): only ADMIN reaches /settings (mailboxes) and
+     * The tenant's first user is its ADMIN: only ADMIN reaches /settings (mailboxes) and
      * /users, so an OPERATOR-only first user left a new tenant with no way to connect its mailbox.
      */
     static final String FIRST_USER_ROLE = "ADMIN";

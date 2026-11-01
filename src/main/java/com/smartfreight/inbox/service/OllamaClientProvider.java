@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Resolves the Ollama endpoint for the CURRENT tenant and hands out the matching
- * {@link WebClient} and {@link CircuitBreaker} (Phase 2.2 S3).
+ * {@link WebClient} and {@link CircuitBreaker}.
  *
  * <p>The endpoint comes through the standard settings override chain
  * ({@code tenant_setting → env default}) under the key {@code ollama.base-url}: a tenant
@@ -42,10 +42,10 @@ import java.util.concurrent.TimeUnit;
  * <p>System context (RetryScheduler's open-breaker check, the health indicator) resolves
  * to the platform URL by construction — SettingsService skips tenant overrides there.
  *
- * <p>Gate B7: {@link #recordUsage} meters every completed call per tenant/model/operation
+ * <p>{@link #recordUsage} meters every completed call per tenant/model/operation
  * ({@code smartfreight_llm_calls_total}, {@code smartfreight_llm_tokens_total}). LLM calls are
  * not stored anywhere else, so these counters are the only source for per-tenant GPU cost and
- * W3 usage metering — unlike the DB analytics, they cannot be rebuilt after the fact.
+ * usage metering — unlike the DB analytics, they cannot be rebuilt after the fact.
  */
 @Service
 public class OllamaClientProvider {
@@ -90,7 +90,7 @@ public class OllamaClientProvider {
     }
 
     /**
-     * Meters one completed Ollama call for the CURRENT tenant (Gate B7). Call it right after
+     * Meters one completed Ollama call for the CURRENT tenant. Call it right after
      * the request returns — a null response still cost a GPU pass. Token counts come from
      * Ollama's {@code prompt_eval_count}/{@code eval_count} ({@code /api/generate} only;
      * {@code /api/embeddings} reports none). Failed/timed-out calls are not counted.

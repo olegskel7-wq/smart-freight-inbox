@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Resolves a DOCUMENT_REQUEST enquiry (Phase 2.7): determines which document the customer is
+ * Resolves a DOCUMENT_REQUEST enquiry: determines which document the customer is
  * asking for, and looks up the matching stored document.
  *
  * <p>Detection mirrors {@link EmailClassificationService}: one short Qwen call against the current
@@ -23,7 +23,7 @@ import java.util.Optional;
  * DocumentType#OTHER} on any error. Like the classifier — and unlike the interactive read-only
  * {@code InboxQueryService} — it is part of the email pipeline, so a {@link
  * CallNotPermittedException} from an OPEN breaker is propagated, letting the pipeline park the
- * ticket as RETRY_LATER (Phase 1.7) rather than mislabelling it.
+ * ticket as RETRY_LATER rather than mislabelling it.
  */
 @Service
 public class DocumentRequestService {

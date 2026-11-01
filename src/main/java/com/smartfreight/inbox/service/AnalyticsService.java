@@ -21,7 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Inbox analytics aggregation (Phase 2.1) — the numbers behind the {@code /analytics} dashboard.
+ * Inbox analytics aggregation — the numbers behind the {@code /analytics} dashboard.
  *
  * Unlike the Prometheus/Grafana stack (operational metrics for whoever runs the system), this
  * is the customer-facing view: "what did the inbox do for me this month". Everything is computed
@@ -36,7 +36,7 @@ import java.util.Map;
 @Service
 public class AnalyticsService {
 
-    /** Feature flag (default ON), see SettingsService.isFeatureEnabled. Plan-gating seam for Phase 2 multi-tenancy. */
+    /** Feature flag (default ON), see SettingsService.isFeatureEnabled. Per-tenant, so it doubles as a plan-gating seam. */
     public static final String FEATURE_KEY = "feature.analytics";
 
     /** Selectable reporting periods, days. Anything else collapses to {@link #DEFAULT_PERIOD_DAYS}. */
@@ -250,7 +250,7 @@ public class AnalyticsService {
             return String.format(Locale.ENGLISH, "%.1f%%", aiAcceptancePct());
         }
 
-        /** Share of sent quotes that turned into a booking — the quote-to-book conversion (Phase 3.6). */
+        /** Share of sent quotes that turned into a booking — the quote-to-book conversion. */
         public double quoteConversionPct() {
             return pct(quotesConverted, quotesSent);
         }
