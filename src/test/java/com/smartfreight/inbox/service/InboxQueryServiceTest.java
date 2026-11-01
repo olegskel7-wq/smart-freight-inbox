@@ -11,6 +11,8 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -172,6 +174,7 @@ class InboxQueryServiceTest {
     // ---- platform independence: the figures never follow the JVM default locale or line separator ----
 
     @Test
+    @ResourceLock(Resources.LOCALE)
     void ask_underNonEnglishDefaultLocale_headlineStillUsesDecimalPoint() {
         when(analyticsService.summarise(30)).thenReturn(summaryWithBacklog(4, 1, 0));
         stubOllamaSequence(
@@ -185,6 +188,20 @@ class InboxQueryServiceTest {
     }
 
     @Test
+    @ResourceLock(Resources.LOCALE)
+    void ask_underNonEnglishDefaultLocale_slaBreachRateUsesDecimalPoint() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithBacklog(5, 0, 1));
+        stubOllamaSequence(
+                Map.of("response", "SLA_BREACHES | 30 | NONE"),
+                Map.of("response", ""));
+
+        InboxAnswer answer = withDefaultLocale(RU, () -> service.ask("how many SLA breaches?"));
+
+        assertThat(answer.answer()).contains("(20.0% of relevant tickets)");
+    }
+
+    @Test
+    @ResourceLock(Resources.LOCALE)
     @SuppressWarnings("unchecked")
     void ask_underNonEnglishDefaultLocale_phrasingPromptFactsUseDecimalPointAndLf() {
         when(analyticsService.summarise(30)).thenReturn(summaryWithBacklog(5, 0, 1));
