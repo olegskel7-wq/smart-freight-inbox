@@ -74,6 +74,11 @@ Branch coverage of the classes the plan touches (clean run):
 
 Tests pin the production behaviour (en_US, LF) so they pass on any machine.
 
+- Node: `pom.xml` (`node.version` v20.18.0) and the Dockerfile (`node:20`) build the SPA on Node 20,
+  below what vite 8 (≥ 20.19) and vitest 5 (≥ 22.12) declare. The build still works (npm only warns,
+  checked on `node:20`), tests run on Node 22 in CI. Moving the build to Node 22 LTS is a separate change.
+- `npm audit --omit=dev`: 2 findings in `react-router` (1 high), present before this work.
+
 ## Plan
 
 **Stage 0 — safety net (no production code changes)**
@@ -95,7 +100,12 @@ Tests pin the production behaviour (en_US, LF) so they pass on any machine.
    prompt substitution, degradation paths). 734 tests, 87 % / 73 % overall. The remaining classes
    (`TicketApiController`, `AiDraftingService`, `SettingsApiController`, `EmailTicketRepository`) get
    theirs as the first commit of their own refactoring step.
-4. Frontend: vitest + Testing Library smoke tests for `SettingsPage`; make lint green and run it in CI.
+4. ✅ Frontend: vitest 5 + Testing Library (`npm test`); `SettingsPage.test.tsx` (6) stubs `fetch`, so
+   the real `useApi` runs and the tests assert method, path, bearer token and JSON body — load,
+   render of every section, load error, auto-send save (+ "no types" warning), AI endpoint
+   save/clear, rejected save. Lint is green: `react-hooks/set-state-in-effect` is a warning (12, the
+   fetch-on-mount pattern on every page — fixed in step 1.3). CI runs lint + tests in a separate
+   `frontend` job on Node 22; deploy waits for it.
 5. Optional: Spotless + Prettier as one format-only commit listed in `.git-blame-ignore-revs`.
 
 **Stage 1 — low risk**

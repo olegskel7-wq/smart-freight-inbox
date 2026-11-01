@@ -8,6 +8,34 @@ on:
     branches: [ main ]
 
 jobs:
+  # Lint и тесты SPA. Отдельный job на Node 22: vitest 5 требует Node ≥ 22.12, а сборка через
+  # frontend-maven-plugin и Dockerfile пока на Node 20 (собирает, но тесты не гоняет).
+  frontend:
+    name: Frontend lint & tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
