@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 /**
- * Access to webhook subscriptions (Phase 3.5).
+ * Access to webhook subscriptions.
  *
  * <p>Tenant-filtered by Hibernate {@code @TenantId}: {@link #findByEnabledTrue()} and the listing
  * methods return only the current tenant's rows. The dispatcher loads a subscription by id under the

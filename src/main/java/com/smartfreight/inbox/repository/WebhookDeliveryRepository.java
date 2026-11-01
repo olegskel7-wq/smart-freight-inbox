@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Access to queued webhook deliveries (Phase 3.5).
+ * Access to queued webhook deliveries.
  *
  * <p>The dispatcher's poll ({@link #lockDueBatch}) runs under the system context, cross-tenant in one
  * pass — exactly like {@code OutboxEventRepository.lockUnpublishedBatch}. The UI log methods run under

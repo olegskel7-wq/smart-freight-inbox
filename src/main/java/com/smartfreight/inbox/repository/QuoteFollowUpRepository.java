@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Access to proactive quote-follow-up subscriptions (Phase 2.5).
+ * Access to proactive quote-follow-up subscriptions.
  *
  * <p>Tenant-filtered by Hibernate {@code @TenantId} — except under the system context, where the
  * filter is off by design: {@code QuoteFollowUpScheduler} reads EVERY tenant's active follow-ups
@@ -24,7 +24,7 @@ public interface QuoteFollowUpRepository extends JpaRepository<QuoteFollowUp, Lo
     Optional<QuoteFollowUp> findByTicketId(Long ticketId);
 
     /**
-     * Quote-to-booking conversion for quotes sent in the period (Phase 3.6). Each sent RFQ quote is
+     * Quote-to-booking conversion for quotes sent in the period. Each sent RFQ quote is
      * a {@code quote_follow_up} row (armed at both send sites regardless of the follow-up flag); a
      * quote counts as converted when an inbound {@code BOOKING_CONFIRM} ticket from the same customer
      * arrived at or after the quote went out. This is the ROI metric "% of quotes that turned into

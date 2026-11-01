@@ -1,7 +1,7 @@
 package com.smartfreight.inbox.repository;
 
 /**
- * Native-query projection: quote-to-booking conversion over a reporting period (Phase 3.6).
+ * Native-query projection: quote-to-booking conversion over a reporting period.
  *
  * Backed by {@link QuoteFollowUpRepository#quoteConversionSince}. {@code quotes} is the number of
  * RFQ quotes sent in the period (one per {@code quote_follow_up} row, armed at every send site);
@@ -10,7 +10,7 @@ package com.smartfreight.inbox.repository;
  *
  * <p>Counting is per-quote (each sent quote is its own row, the natural "did this quote convert"
  * unit) and matching is sender-based (the booking's address must contain the quoted address) —
- * the same address-match limitation accepted for the Phase 2.5 follow-up reply detection.
+ * the same address-match limitation accepted for the quote follow-up reply detection.
  */
 public interface QuoteConversion {
 

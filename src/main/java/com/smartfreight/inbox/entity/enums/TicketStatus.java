@@ -6,11 +6,11 @@ package com.smartfreight.inbox.entity.enums;
  * Transition diagram:
  *   RECEIVED → IRRELEVANT                              (classifier rejected — terminal)
  *   RECEIVED → PROCESSING → DRAFT_READY → CLOSED
- *                                       ↘ AUTO_SENT    (Phase 1.6 — sent without operator)
+ *                                       ↘ AUTO_SENT    (sent without operator)
  *                         ↘ FAILED
  *                         ↘ RETRY_LATER → NEW → PROCESSING (via RetryScheduler)
  *
- * Since Phase 1.3 session 3 a freshly ingested email lands as RECEIVED — persisted but
+ * A freshly ingested email lands as RECEIVED — persisted but
  * not yet classified. The RabbitMQ consumer runs LLM classification off the IMAP thread:
  * IRRELEVANT for non-freight mail, otherwise straight into the AI pipeline (PROCESSING).
  * NEW is the re-entry point for retries — classification already happened (or is
@@ -36,14 +36,14 @@ public enum TicketStatus {
     /** Transient error — retry scheduled. RetryScheduler will automatically pick up the ticket later. */
     RETRY_LATER,
 
-    /** Classifier judged the email non-freight (Phase 1.3 session 3). Terminal; kept for audit/review. */
+    /** Classifier judged the email non-freight. Terminal; kept for audit/review. */
     IRRELEVANT,
 
     /** Ticket closed by the operator — reply sent or issue resolved without a reply. */
     CLOSED,
 
     /**
-     * Reply sent automatically without operator review (Phase 1.6): confidence reached the
+     * Reply sent automatically without operator review: confidence reached the
      * autosend.threshold and the type was in the autosend.types allowlist. Terminal, kept
      * distinct from CLOSED so automated sends stay visible and filterable.
      */

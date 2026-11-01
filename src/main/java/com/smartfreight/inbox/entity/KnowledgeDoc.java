@@ -14,7 +14,7 @@ import org.hibernate.annotations.TenantId;
 import java.time.LocalDateTime;
 
 /**
- * One stored knowledge-base document (Phase 3.9 — Knowledge-base deflection).
+ * One stored knowledge-base document (see docs/adr/0010-rag-feedback-and-knowledge.md).
  *
  * <p>An operator authors free-text knowledge ({@link #title} + {@link #content} — a FAQ answer, a
  * policy, a quoting rule). At draft time the pipeline retrieves the most semantically similar
@@ -52,7 +52,7 @@ public class KnowledgeDoc {
     @Column(name = "content", columnDefinition = "TEXT", nullable = false)
     private String content;
 
-    /** Provenance: {@code "manual"} for operator text entry, or the uploaded file name (S2). */
+    /** Provenance: {@code "manual"} for operator text entry; reserved for a file name once upload exists. */
     @Column(name = "source")
     private String source;
 

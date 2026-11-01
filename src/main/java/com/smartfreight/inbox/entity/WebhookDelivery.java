@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * One queued delivery of a webhook event to a single {@link WebhookSubscription} (Phase 3.5).
+ * One queued delivery of a webhook event to a single {@link WebhookSubscription}.
  *
  * <p>Inserted in the SAME transaction as the business change that produced the event (the
  * transactional-outbox pattern, mirroring {@code outbox_event}): if the business write rolls back the

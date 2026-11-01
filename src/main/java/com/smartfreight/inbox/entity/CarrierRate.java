@@ -17,7 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * One carrier rate for a route (Phase 1.2), uploaded via CSV on the /rates page.
+ * One carrier rate for a route, uploaded via CSV on the /rates page.
  *
  * <p>{@code rate} is the buy price from the carrier's rate sheet; {@code marginPercent} is our
  * markup. The AI prompt only ever sees the resulting {@link #sellPrice()} — the margin itself
@@ -33,14 +33,14 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class CarrierRate implements Serializable {
 
-    // The valid-rates list is JDK-serialized into the Redis cache (Phase 2.6, RateSheetCache).
+    // The valid-rates list is JDK-serialized into the Redis cache (RateSheetCache).
     private static final long serialVersionUID = 1L;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Owning tenant (Phase 2.2) — assigned on insert, filters every entity query. */
+    /** Owning tenant — assigned on insert, filters every entity query. */
     @org.hibernate.annotations.TenantId
     @Column(name = "tenant_id", nullable = false, updatable = false)
     private Long tenantId;
