@@ -120,13 +120,15 @@ Branch coverage of the classes the plan touches (clean run):
    the `smartfreight_document_requests_total` meter description ("Phase 2.7 pipeline"). "Phase A / B"
    in the proactive schedulers is the algorithm's two passes, not a journal tag. 773 tests green,
    frontend lint/test/build green.
-2. ✅ `AiDraftingService` (593 → 130 lines): one `DraftRequest` record instead of four `generateDraft`
+2. ✅ `AiDraftingService` (593 → 130 lines): one `ReplyDraftRequest` record instead of four `generateDraft`
    overloads; prompt templates + substitution + item block in `DraftPrompts`, static fallbacks in
    `DraftFallbacks`, the Ollama call (signature instruction, sign-off strip, breaker, metrics) in the
    `OllamaDraftClient` bean. Branch `refactor/1.2-ai-drafting`; first commit
    `AiDraftingPromptCharacterizationTest` (26) pins every default prompt, the trusted-first
    placeholder order, the append-fallback, truncation, fallbacks and the request/metric shape —
-   branch coverage 77 → 96 %, assertions untouched by the refactor commit. 799 tests green.
+   branch coverage 77 → 96 %, assertions untouched by the refactor commit. 799 tests green; golden set
+   identical to `baseline-1` across 18 scenarios (`-Ignore confidence,watch_armed`: both columns changed
+   format/meaning in `f598761`, after the baselines were taken — re-capture baselines on the next step).
 3. `SettingsPage.tsx` (795 lines) → one component per section + hooks; then `TicketsListPage`,
    `WebhooksPage`.
 

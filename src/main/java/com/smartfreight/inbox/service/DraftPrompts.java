@@ -42,7 +42,7 @@ final class DraftPrompts {
     /**
      * Reply prompt ({@code ai.drafting-prompt}), kept in sync with migration V9. {@code {itemContext}}
      * → the looked-up item data, {@code {email}} → the (truncated) email body, and one slot per
-     * context block of the {@link DraftRequest}.
+     * context block of the {@link ReplyDraftRequest}.
      */
     static final String DEFAULT_DRAFTING_PROMPT = """
             You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
@@ -168,7 +168,7 @@ final class DraftPrompts {
      * @param request     the enquiry and its context blocks
      * @param itemContext the item block from {@link #itemContext}
      */
-    static String reply(String template, DraftRequest request, String itemContext) {
+    static String reply(String template, ReplyDraftRequest request, String itemContext) {
         // Substitute the TRUSTED context placeholders first, while the prompt still holds only template
         // text. The untrusted customer email ({email}) and backend item data ({itemContext}) are inlined
         // LAST (below) — so an email that happens to contain a literal {rateContext}/{exampleContext}/

@@ -95,7 +95,7 @@ class TicketProcessingPipelineTest {
         when(rateSheetService.buildRateContext(anyString())).thenReturn(rateContext);
         when(feedbackLoopService.retrieveExamples(any(), anyString(), any())).thenReturn("");
         when(knowledgeBaseService.retrieveContext(anyString(), any())).thenReturn("");
-        when(aiDraftingService.generateDraft(any(DraftRequest.class)))
+        when(aiDraftingService.generateDraft(any(ReplyDraftRequest.class)))
                 .thenReturn("Dear customer, ...");
         when(autoSendService.confidenceFor(any(), anyBoolean(), anyBoolean(), anyBoolean())).thenReturn(0.5);
     }
@@ -220,7 +220,7 @@ class TicketProcessingPipelineTest {
         assertThat(ticket.getExtractedIdentifier()).isNull();
         verifyNoInteractions(itemLookupService);
         verify(aiDraftingService).generateDraft(argThat(r -> r.item() == null
-                && r.rateContext().isEmpty() && r.exampleContext().isEmpty() && r.knowledgeContext().isEmpty()));
+                && "".equals(r.rateContext()) && "".equals(r.exampleContext()) && "".equals(r.knowledgeContext())));
         verify(autoSendService).confidenceFor(TicketType.GENERAL, false, false, false);
     }
 
@@ -235,8 +235,8 @@ class TicketProcessingPipelineTest {
 
         assertThat(ticket.getExtractedIdentifier()).isEqualTo("MSCU1234567");
         verify(aiDraftingService).generateDraft(argThat(r -> r.item() == item
-                && r.rateContext().equals("Rate: GBP 1200") && r.exampleContext().isEmpty()
-                && r.knowledgeContext().isEmpty()));
+                && "Rate: GBP 1200".equals(r.rateContext()) && "".equals(r.exampleContext())
+                && "".equals(r.knowledgeContext())));
         verify(autoSendService).confidenceFor(TicketType.RFQ, true, true, true);
         assertThat(ticket.getAiConfidence()).isEqualTo(0.5);
         assertThat(ticket.getAiOriginalDraft()).isEqualTo(ticket.getDraftReply());
@@ -303,7 +303,7 @@ class TicketProcessingPipelineTest {
 
         verify(aiExtractionService).extractIdentifier(expected);
         verify(rateSheetService).buildRateContext(expected);
-        verify(aiDraftingService).generateDraft(argThat(r -> r.emailBody().equals(expected)));
+        verify(aiDraftingService).generateDraft(argThat(r -> expected.equals(r.emailBody())));
     }
 
     @Test

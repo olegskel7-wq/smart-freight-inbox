@@ -128,7 +128,7 @@ class AiDraftingPromptCharacterizationTest {
     void replyPrompt_defaultTemplate_noContexts_usesNotesForEverySlot() {
         stubReply("ok");
 
-        service.generateDraft(new DraftRequest("Where is my container?", null, "", "", ""));
+        service.generateDraft(new ReplyDraftRequest("Where is my container?", null, "", "", ""));
 
         assertEquals("""
                 You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
@@ -160,7 +160,7 @@ class AiDraftingPromptCharacterizationTest {
     void replyPrompt_defaultTemplate_contextsAreTrimmedIntoTheirSlots() {
         stubReply("ok");
 
-        service.generateDraft(new DraftRequest("Quote please", item(), "  Rate: GBP 1200\n", "\nEXAMPLES ", " KB "));
+        service.generateDraft(new ReplyDraftRequest("Quote please", item(), "  Rate: GBP 1200\n", "\nEXAMPLES ", " KB "));
 
         assertEquals("""
                 You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
@@ -192,7 +192,7 @@ class AiDraftingPromptCharacterizationTest {
     void replyPrompt_nullContexts_behaveLikeEmpty() {
         stubReply("ok");
 
-        service.generateDraft(new DraftRequest("Hi", null, null, null, null));
+        service.generateDraft(new ReplyDraftRequest("Hi", null, null, null, null));
 
         String prompt = sentPrompt();
         assertTrue(prompt.contains("No rate information available for this enquiry. Do not quote any price."));
@@ -204,7 +204,7 @@ class AiDraftingPromptCharacterizationTest {
     void replyPrompt_requestOf_hasEmptyContexts() {
         stubReply("ok");
 
-        service.generateDraft(DraftRequest.of("Hi", null));
+        service.generateDraft(ReplyDraftRequest.of("Hi", null));
 
         assertTrue(sentPrompt().contains("No rate information available"));
     }
@@ -217,7 +217,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("Item: {itemContext}\nEmail: {email}");
         stubReply("ok");
 
-        service.generateDraft(new DraftRequest("Quote please", null, "RATES", "EXAMPLES", "KB"));
+        service.generateDraft(new ReplyDraftRequest("Quote please", null, "RATES", "EXAMPLES", "KB"));
 
         assertEquals("""
                 Item: Item not found in our system.
@@ -239,7 +239,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("Email: {email}");
         stubReply("ok");
 
-        service.generateDraft(new DraftRequest("Hi", null, "", "  ", null));
+        service.generateDraft(new ReplyDraftRequest("Hi", null, "", "  ", null));
 
         assertEquals("Email: Hi", sentPrompt());
     }
@@ -250,7 +250,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("{rateContext}|{rateContext}|{email}|{email}");
         stubReply("ok");
 
-        service.generateDraft(new DraftRequest("E", null, "R", "", ""));
+        service.generateDraft(new ReplyDraftRequest("E", null, "R", "", ""));
 
         assertEquals("R|R|E|E", sentPrompt());
     }
@@ -262,7 +262,7 @@ class AiDraftingPromptCharacterizationTest {
         stubReply("ok");
         TrackedItem hostile = new TrackedItem("{rateContext}", "AT_PORT", null, null, null);
 
-        service.generateDraft(new DraftRequest("E", hostile, "R", "", ""));
+        service.generateDraft(new ReplyDraftRequest("E", hostile, "R", "", ""));
 
         String prompt = sentPrompt();
         assertTrue(prompt.startsWith("Reference: {rateContext}\n"), "Item data is inlined after trusted slots");
@@ -275,7 +275,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("{email}");
         stubReply("ok");
 
-        service.generateDraft(new DraftRequest("a".repeat(2000) + "b".repeat(500), null, "", "", ""));
+        service.generateDraft(new ReplyDraftRequest("a".repeat(2000) + "b".repeat(500), null, "", "", ""));
 
         assertEquals("a".repeat(2000), sentPrompt());
     }
@@ -450,7 +450,7 @@ class AiDraftingPromptCharacterizationTest {
                 Thank you for your enquiry.
                 Unfortunately, we were unable to locate the reference in our system at this time.
                 Please contact our team for further assistance.
-                """, service.generateDraft(new DraftRequest("Where?", null, "", "", "")));
+                """, service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", "")));
     }
 
     @Test
@@ -465,7 +465,7 @@ class AiDraftingPromptCharacterizationTest {
                 Location: N/A
 
                 Please do not hesitate to contact us if you require further information.
-                """, service.generateDraft(new DraftRequest("Where?",
+                """, service.generateDraft(new ReplyDraftRequest("Where?",
                 new TrackedItem("MSCU1234567", null, null, null, null), "", "", "")));
     }
 
@@ -479,7 +479,7 @@ class AiDraftingPromptCharacterizationTest {
         Map<String, Object> response = Map.of("response", "Draft", "done", true);
         stubOllama(Mono.just(response));
 
-        String draft = service.generateDraft(new DraftRequest("Hi", null, "", "", ""));
+        String draft = service.generateDraft(new ReplyDraftRequest("Hi", null, "", "", ""));
 
         assertEquals("Draft", draft);
         verify(requestBodyUriSpec).uri("/api/generate");
@@ -499,7 +499,7 @@ class AiDraftingPromptCharacterizationTest {
     void ollamaCall_nullResponse_returnsFallback() {
         stubOllama(Mono.empty());
 
-        String draft = service.generateDraft(new DraftRequest("Where?", null, "", "", ""));
+        String draft = service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", ""));
 
         assertTrue(draft.startsWith("Thank you for your enquiry.\nUnfortunately"));
         verify(ollamaClients).recordUsage(eq("drafting"), eq("llama3.1:8b"), isNull());
@@ -511,7 +511,7 @@ class AiDraftingPromptCharacterizationTest {
         noField.put("done", true);
         stubOllama(Mono.just(noField));
 
-        assertTrue(service.generateDraft(new DraftRequest("Where?", null, "", "", ""))
+        assertTrue(service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", ""))
                 .startsWith("Thank you for your enquiry."));
     }
 
@@ -519,7 +519,7 @@ class AiDraftingPromptCharacterizationTest {
     void ollamaCall_onlySignOff_strippedToEmpty_returnsFallback() {
         stubReply("Best regards,\n[Your Name]");
 
-        assertTrue(service.generateDraft(new DraftRequest("Where?", null, "", "", ""))
+        assertTrue(service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", ""))
                 .startsWith("Thank you for your enquiry."));
     }
 
@@ -528,6 +528,6 @@ class AiDraftingPromptCharacterizationTest {
         stubReply("\n  Your container is at port.  \n");
 
         assertEquals("Your container is at port.",
-                service.generateDraft(new DraftRequest("Where?", null, "", "", "")));
+                service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", "")));
     }
 }

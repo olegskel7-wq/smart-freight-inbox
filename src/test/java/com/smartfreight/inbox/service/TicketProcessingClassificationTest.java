@@ -132,7 +132,7 @@ class TicketProcessingClassificationTest {
         when(rateSheetService.buildRateContext(anyString())).thenReturn("");
         when(feedbackLoopService.retrieveExamples(any(), anyString(), any())).thenReturn("");
         when(knowledgeBaseService.retrieveContext(anyString(), any())).thenReturn("");
-        when(aiDraftingService.generateDraft(any(DraftRequest.class)))
+        when(aiDraftingService.generateDraft(any(ReplyDraftRequest.class)))
                 .thenReturn("Dear customer, ...");
     }
 
@@ -461,7 +461,7 @@ class TicketProcessingClassificationTest {
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
         assertThat(ticket.getAttachedDocumentId()).isNull();
-        verify(aiDraftingService).generateDraft(any(DraftRequest.class));
+        verify(aiDraftingService).generateDraft(any(ReplyDraftRequest.class));
         verify(documentRequestService, never()).detectRequestedType(anyString());
     }
 

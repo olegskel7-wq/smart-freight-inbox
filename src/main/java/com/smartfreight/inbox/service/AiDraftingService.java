@@ -51,7 +51,7 @@ public class AiDraftingService {
      * @param request the enquiry and its context blocks
      * @return generated or fallback draft
      */
-    public String generateDraft(DraftRequest request) {
+    public String generateDraft(ReplyDraftRequest request) {
         String itemContext = buildItemContext(request.item());
         String template = settingsService.getString(
                 SettingsService.KEY_DRAFTING_PROMPT, DraftPrompts.DEFAULT_DRAFTING_PROMPT);
