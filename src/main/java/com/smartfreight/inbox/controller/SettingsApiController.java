@@ -32,7 +32,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /settings} page (Phase 3.2). It mirrors {@link SettingsController}
+ * JSON API backing the React {@code /settings} page. It mirrors {@link SettingsController}
  * (the Thymeleaf settings UI) but speaks DTOs over {@code /api/settings} and is secured by the stateless
  * resource-server chain (bearer JWT). The two controllers run side by side during the migration; this one
  * collapses to the only one when Thymeleaf is removed.
@@ -102,7 +102,7 @@ public class SettingsApiController {
     /** Request body for {@code POST /api/settings/notifications}. */
     public record NotificationsRequest(boolean draftEnabled) {}
 
-    /** Request body for {@code POST /api/settings/routing} (Phase 3.10). */
+    /** Request body for {@code POST /api/settings/routing}. */
     public record RoutingRequest(boolean smartRoutingEnabled, String escalationAssignee) {}
 
     /** Request body for {@code POST /api/settings/prompts}. */
@@ -115,7 +115,7 @@ public class SettingsApiController {
     }
 
     /**
-     * POST /api/settings/autosend — updates the Phase 1.6 auto-send gates. The threshold is clamped to
+     * POST /api/settings/autosend — updates the auto-send gates. The threshold is clamped to
      * [0,1]; the type list is normalised against {@link TicketType} (unknown names dropped, mirroring the
      * tolerant read path). Enabling auto-send with no allowed types is saved as-is — the SPA flags it.
      */
@@ -141,7 +141,7 @@ public class SettingsApiController {
     }
 
     /**
-     * POST /api/settings/statusupdate — updates the Phase 2.4 proactive status-update gates. Milestone
+     * POST /api/settings/statusupdate — updates the proactive status-update gates. Milestone
      * names are stored upper-cased and de-blanked; enabling with no milestones is rejected so nothing is
      * silently armed with an empty trigger set.
      */
@@ -158,7 +158,7 @@ public class SettingsApiController {
     }
 
     /**
-     * POST /api/settings/quotefollowup — updates the Phase 2.5 quote-follow-up gates. The delay is a
+     * POST /api/settings/quotefollowup — updates the quote-follow-up gates. The delay is a
      * non-negative whole number of hours; a malformed or negative value is rejected so the stored setting
      * stays parseable by {@link QuoteFollowUpScheduler#delayHours()}.
      */
@@ -180,7 +180,7 @@ public class SettingsApiController {
     }
 
     /**
-     * POST /api/settings/routing — updates the Phase 3.10 smart-routing gate and the escalation assignee.
+     * POST /api/settings/routing — updates the smart-routing gate and the escalation assignee.
      * The assignee is a Keycloak user UUID (the SPA picks it from the operator list) or blank to clear it;
      * it is stored as-is (trimmed) — an unknown id simply never matches a real operator and never gets
      * auto-assigned, so no extra validation is needed here. With the flag off the classifier stops
@@ -196,7 +196,7 @@ public class SettingsApiController {
     }
 
     /**
-     * POST /api/settings/mailboxes — adds a mailbox for the current tenant (Phase 2.2 S3). The reconciler
+     * POST /api/settings/mailboxes — adds a mailbox for the current tenant. The reconciler
      * starts its IMAP adapter within one pass (~30 s) — no restart.
      */
     @PostMapping("/mailboxes")
@@ -214,7 +214,7 @@ public class SettingsApiController {
     }
 
     /**
-     * PUT /api/settings/mailboxes/{id} — edits a mailbox in place (Gate B15): new password, server or SMTP
+     * PUT /api/settings/mailboxes/{id} — edits a mailbox in place: new password, server or SMTP
      * settings without delete + re-add, so open tickets keep their {@code mailbox_id} and keep replying
      * through it. The reconciler rebuilds the adapter within one pass. Unknown/foreign id → 404, invalid
      * input or a re-point without the password → 400, a (host, username) clash with another mailbox or
@@ -261,7 +261,7 @@ public class SettingsApiController {
     }
 
     /**
-     * POST /api/settings/ollama — saves the tenant's Ollama endpoint override (Phase 2.2 S3). Blank =
+     * POST /api/settings/ollama — saves the tenant's Ollama endpoint override. Blank =
      * inherit the platform instance. The URL must be absolute http(s) so the WebClient can build it.
      */
     @PostMapping("/ollama")

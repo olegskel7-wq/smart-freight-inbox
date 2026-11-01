@@ -18,7 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /knowledge} page (Phase 3.9 — Knowledge-base deflection).
+ * JSON API backing the React {@code /knowledge} page — the tenant's knowledge base used to ground
+ * drafts (see docs/adr/0010-rag-feedback-and-knowledge.md).
  * Mirrors the content-page pattern of {@code /rates} / {@code /documents}: snapshot DTOs over
  * {@code /api/knowledge}, secured by the stateless resource-server chain (bearer JWT).
  *

@@ -21,7 +21,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /rates} page (Phase 3.2). It mirrors {@link RateSheetController}
+ * JSON API backing the React {@code /rates} page. It mirrors {@link RateSheetController}
  * (the Thymeleaf rate-sheet UI) but speaks DTOs over {@code /api/rates} and is secured by the stateless
  * resource-server chain (bearer JWT). The two controllers run side by side during the migration; this one
  * collapses to the only one when Thymeleaf is removed.

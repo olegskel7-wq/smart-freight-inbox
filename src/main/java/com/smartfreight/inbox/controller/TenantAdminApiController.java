@@ -17,7 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /admin/tenants} page (Phase 3.2). It mirrors
+ * JSON API backing the React {@code /admin/tenants} page. It mirrors
  * {@link TenantAdminController} (the Thymeleaf onboarding UI) but speaks DTOs over
  * {@code /api/admin/tenants} and is secured by the stateless resource-server chain (bearer JWT).
  * The two controllers run side by side during the migration; this one collapses to the only one

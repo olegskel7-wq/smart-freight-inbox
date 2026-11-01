@@ -55,7 +55,7 @@ public class AdminController {
      * 2. After Ollama recovery, those tickets need to be reprocessed.
      * 3. An operator rejected a draft (RETRY_LATER) and the AI needs to run again.
      *
-     * Algorithm (Phase 1.3, via the transactional outbox):
+     * Algorithm (via the transactional outbox):
      * 1. Bulk FAILED → NEW reset.
      * 2. Retrieve ONLY ticket IDs with NEW and RETRY_LATER statuses (projection).
      * 3. Record a retry event per ticket in the outbox — same transaction as the reset,
@@ -63,7 +63,7 @@ public class AdminController {
      * 4. OutboxRelay → RabbitMQ → TicketEventConsumer does the actual AI work, with
      *    concurrency capped by the consumer (no Ollama stampede however many tickets).
      *
-     * @Transactional is cheap here, unlike the pre-1.3 version: the method only does
+     * @Transactional is cheap here: the method only does
      * two quick DB writes — all LLM waiting happens in the consumer, off this thread.
      *
      * @return 200 OK with the number of queued tickets
@@ -83,9 +83,9 @@ public class AdminController {
         }
 
         log.info("Async reprocessing queued for {} ticket(s) (reset {} from FAILED)", ids.size(), reset);
-        // Phase 2.2: the id query above is tenant-filtered (@TenantId + RLS), so every id
+        // The id query above is tenant-filtered (@TenantId + RLS), so every id
         // belongs to the request's tenant — reprocess is a per-tenant operation now.
-        // S3: authenticated /admin requests always carry a tenant; anything else is a bug.
+        // Authenticated /admin requests always carry a tenant; anything else is a bug.
         Long tenantId = TenantContext.requireTenantId();
         for (Long id : ids) {
             ticketEventPublisher.publishRetryRequested(id, tenantId);

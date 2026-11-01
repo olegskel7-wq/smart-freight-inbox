@@ -5,7 +5,7 @@ import com.smartfreight.inbox.entity.TrainingExample;
 import java.time.LocalDateTime;
 
 /**
- * One captured operator correction for the React {@code /training-examples} table (Phase 3.2).
+ * One captured operator correction for the React {@code /training-examples} table.
  *
  * <p>This is a list page, so — like {@link TicketSummaryDto} — the rows are lean: the three TEXT
  * fields (which hold full email bodies and drafts) are abbreviated server-side to the same widths

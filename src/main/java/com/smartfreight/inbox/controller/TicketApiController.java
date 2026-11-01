@@ -51,11 +51,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * JSON API backing the React {@code /tickets} pages (Phase 3.2). It speaks DTOs over
+ * JSON API backing the React {@code /tickets} pages. It speaks DTOs over
  * {@code /api/tickets} and is secured by the stateless resource-server chain (bearer JWT).
- * Since the Phase 3.2 cutover this is the sole ticket controller — the Thymeleaf
- * {@code TicketViewController} it was migrated from has been removed, and its draft/send
- * orchestration now lives here.
+ * This is the only ticket controller: the draft/send orchestration lives here.
  */
 @RestController
 @RequestMapping("/api/tickets")
@@ -73,7 +71,7 @@ public class TicketApiController {
     private static final int MAX_PAGE_SIZE = 200;
 
     /**
-     * Phase 3.10: escalated tickets (negative tone or HIGH urgency) float to the top of the default
+     * Escalated tickets (negative tone or HIGH urgency) float to the top of the default
      * view. Composed AHEAD of the createdAt sort so the most pressing work is seen first; applied only
      * when the operator hasn't picked an explicit sort column (then their choice wins). urgency is an
      * ORDINAL column (HIGH=2) so {@code DESC} ranks it correctly as a plain column.
@@ -123,12 +121,12 @@ public class TicketApiController {
     /** Request body for {@code POST /api/tickets/{id}/attach-document}: null id detaches. */
     public record AttachRequest(Long documentId) {}
 
-    /** Request body for {@code POST /api/tickets/{id}/assign}: null/blank userId self-claims (Phase 3.3 S2). */
+    /** Request body for {@code POST /api/tickets/{id}/assign}: null/blank userId self-claims. */
     public record AssignRequest(String userId) {}
 
     /**
      * GET /api/tickets — paginated, sorted, optionally status-filtered list. The {@code assignee}
-     * filter (Phase 3.3 S2) scopes the shared queue: {@code mine} = the caller's tickets,
+     * filter scopes the shared queue: {@code mine} = the caller's tickets,
      * {@code unassigned} = unclaimed work, {@code all} (default) = everything.
      */
     @GetMapping
@@ -144,7 +142,7 @@ public class TicketApiController {
 
         // An explicit, valid sort column means the operator picked it (the SPA omits `sort` otherwise);
         // an absent/invalid value is the default view. Only the default view floats escalated tickets up,
-        // so an explicit Date sort really wins — even when it is createdAt itself (Phase 3.10).
+        // so an explicit Date sort really wins — even when it is createdAt itself.
         boolean explicitSort = sort != null && SORTABLE_COLUMNS.contains(sort);
         String safeSort = explicitSort ? sort : DEFAULT_SORT;
         Sort.Direction direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
@@ -159,7 +157,7 @@ public class TicketApiController {
         TicketStatus statusFilter = parseStatusOrNull(status);
         String mode = assignee == null ? "all" : assignee.trim().toLowerCase();
 
-        // A summary-chip drill-down (Phase 3 UI): each `view` reuses the exact set the chip counted,
+        // A summary-chip drill-down: each `view` reuses the exact set the chip counted,
         // so the count and the list it links to can never diverge. It takes precedence over the
         // status/assignee filters (sort still applies via the pageable).
         Page<EmailTicket> viewPage = resolveView(view, pageable);
@@ -189,7 +187,7 @@ public class TicketApiController {
     }
 
     /**
-     * GET /api/tickets/summary — at-a-glance counts for the dashboard strip (Phase 3 UI). Computed
+     * GET /api/tickets/summary — at-a-glance counts for the dashboard strip. Computed
      * on request and tenant-scoped (every count is a {@code @TenantId} derived query). The literal
      * {@code /summary} path is matched ahead of {@code /{id}}, so it never collides with detail.
      */
@@ -262,7 +260,7 @@ public class TicketApiController {
     }
 
     /**
-     * Phase 3.5 S2: queues outbound webhook deliveries after a reply is sent — {@code reply.sent} for
+     * Queues outbound webhook deliveries after a reply is sent — {@code reply.sent} for
      * every reply, plus {@code quote.sent} when the ticket is an RFQ (a price quote went out). Runs inside
      * the send transaction so the deliveries are atomic with the close; best-effort inside the publisher.
      * Mirrors the {@code armFromTicket} RFQ guard — a sent RFQ reply is both a reply and a quote.
@@ -305,7 +303,7 @@ public class TicketApiController {
 
     /**
      * POST /api/tickets/{id}/attach-document — attach an on-file document to the reply, or detach
-     * when {@code documentId} is null (Phase 2.7). Terminal tickets → unchanged detail.
+     * when {@code documentId} is null. Terminal tickets → unchanged detail.
      */
     @Transactional
     @PostMapping("/{id}/attach-document")
@@ -328,7 +326,7 @@ public class TicketApiController {
     }
 
     /**
-     * POST /api/tickets/{id}/assign — claims the ticket (Phase 3.3 S2). A blank/absent {@code userId}
+     * POST /api/tickets/{id}/assign — claims the ticket. A blank/absent {@code userId}
      * self-claims (any operator); assigning to a different operator requires ADMIN (403 otherwise).
      * The {@code @PostUpdate} live event refreshes every operator's list. Independent of status —
      * ownership is orthogonal to the ticket lifecycle.
@@ -356,7 +354,7 @@ public class TicketApiController {
         return buildDetail(ticket);
     }
 
-    /** POST /api/tickets/{id}/unassign — releases the ticket back to the unclaimed queue (Phase 3.3 S2). */
+    /** POST /api/tickets/{id}/unassign — releases the ticket back to the unclaimed queue. */
     @Transactional
     @PostMapping("/{id}/unassign")
     public TicketDetailDto unassign(@PathVariable Long id) {
@@ -379,7 +377,7 @@ public class TicketApiController {
         return ticket.getStatus() == TicketStatus.CLOSED || ticket.getStatus() == TicketStatus.AUTO_SENT;
     }
 
-    /** Builds the detail DTO, resolving the attached document and available documents (Phase 2.7). */
+    /** Builds the detail DTO, resolving the attached document and available documents. */
     private TicketDetailDto buildDetail(EmailTicket ticket) {
         TenantDocument attached = ticket.getAttachedDocumentId() == null
                 ? null
@@ -392,7 +390,7 @@ public class TicketApiController {
     }
 
     /**
-     * Resolves one assigned ticket's owner to a display email (Phase 3.3 S2). Best-effort: a missing
+     * Resolves one assigned ticket's owner to a display email. Best-effort: a missing
      * assignee or an unreachable Keycloak yields null (the UUID is still on the DTO), never an error —
      * showing the ticket must not depend on the identity service being up.
      */
@@ -431,7 +429,7 @@ public class TicketApiController {
         }
     }
 
-    /** True if the bearer carries the ADMIN or SUPER_ADMIN realm role (assign-to-other gate, Phase 3.3 S2). */
+    /** True if the bearer carries the ADMIN or SUPER_ADMIN realm role (assign-to-other gate). */
     private boolean isAdmin(Jwt jwt) {
         if (jwt == null) {
             return false;
@@ -449,7 +447,7 @@ public class TicketApiController {
     }
 
     /**
-     * Resolves a summary-chip drill-down (Phase 3 UI) to a page, or null when no recognised view is
+     * Resolves a summary-chip drill-down to a page, or null when no recognised view is
      * requested (the caller then falls back to the normal status/assignee filtering). Each case
      * reuses the same definition as its counterpart count in {@link #summary()}.
      */
