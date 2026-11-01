@@ -80,7 +80,8 @@ All host ports except nginx's 443/8443 are bound to `127.0.0.1`.
 | Backend tests (Testcontainers — Docker must be running) | `./mvnw -DskipFrontend test` |
 | One test class | `./mvnw -DskipFrontend test -Dtest=TicketProcessingClassificationTest` |
 | Frontend dev server (proxies `/api`, `/ws`) | `cd frontend && npm install && npm run dev` |
-| Frontend build / lint | `npm run build` · `npm run lint` |
+| Frontend build / lint / tests (vitest, Node ≥ 22.12) | `npm run build` · `npm run lint` · `npm test` |
+| Golden-set snapshot (live stack, demo harness on) — see [docs/refactoring.md](docs/refactoring.md) | `powershell -ExecutionPolicy Bypass -File scripts\golden-snapshot.ps1 -Capture` |
 | Rebuild + redeploy the backend after a change | `docker compose build backend && docker compose up -d backend` |
 
 `./mvnw package` also builds the SPA into the jar (`-DskipFrontend` skips it).
@@ -115,6 +116,8 @@ docs/            architecture, decisions, ops runbooks
 3. **[docs/ops/](docs/ops/)** — runbooks: secrets, backups + restore, alerting, data flow (DPA
    annex), tenant erasure.
 4. [ROADMAP.md](ROADMAP.md) — product roadmap and pilot-readiness gates (in Russian).
+5. [docs/refactoring.md](docs/refactoring.md) — the refactoring plan, its rules and the golden-set
+   safety net (`scripts/golden-snapshot.ps1`).
 
 ## Tech stack
 

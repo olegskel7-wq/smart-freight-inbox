@@ -263,6 +263,14 @@
 			<version>4.12.0</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- Architecture rules (ArchitectureTest). Core library with plain @Test methods, not the
+		     archunit-junit5 engine, so it does not depend on the JUnit Platform version. -->
+		<dependency>
+			<groupId>com.tngtech.archunit</groupId>
+			<artifactId>archunit</artifactId>
+			<version>1.4.1</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>

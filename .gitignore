@@ -44,3 +44,6 @@ build/
 ### Claude Code ###
 .claude/
 CLAUDE.md
+
+# Golden-set snapshots (scripts/golden-snapshot.ps1) - local, depend on the live stack and model
+golden-snapshots/

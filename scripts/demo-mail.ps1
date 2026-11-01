@@ -36,6 +36,9 @@ param(
     [int]$DelaySeconds = 2,
     [string]$SmtpHost = 'localhost',
     [int]$SmtpPort = 3025,
+    # Tags each Message-ID as <demo-RUNID-tenant-scenario-guid@...> so golden-snapshot.ps1 can find this run's tickets.
+    [ValidatePattern('^[a-z0-9]*$')]
+    [string]$RunId = '',
     [switch]$List
 )
 
@@ -189,7 +192,8 @@ try {
             $msg.Body = $s.Body
             # System.Net.Mail adds no Message-ID, and ingestion drops mail without one.
             $domain = ($msg.From.Address -split '@')[1]
-            $msg.Headers.Add('Message-ID', "<demo-$([guid]::NewGuid().ToString('N'))@$domain>")
+            $tag = if ($RunId) { "$RunId-$($s.Tenant)-$($s.Name)-" } else { '' }
+            $msg.Headers.Add('Message-ID', "<demo-$tag$([guid]::NewGuid().ToString('N'))@$domain>")
             if ($s.Attachment) {
                 # MailMessage.Dispose() disposes its attachments and their streams too.
                 $stream = New-Object System.IO.MemoryStream(, (New-DemoPdf $s.Attachment.Lines))
