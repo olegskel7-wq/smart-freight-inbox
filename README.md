@@ -115,6 +115,8 @@ docs/            architecture, decisions, ops runbooks
 3. **[docs/ops/](docs/ops/)** — runbooks: secrets, backups + restore, alerting, data flow (DPA
    annex), tenant erasure.
 4. [ROADMAP.md](ROADMAP.md) — product roadmap and pilot-readiness gates (in Russian).
+5. [docs/refactoring.md](docs/refactoring.md) — the refactoring plan, its rules and the golden-set
+   safety net (`scripts/golden-snapshot.ps1`).
 
 ## Tech stack
 
