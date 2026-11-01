@@ -15,7 +15,7 @@ import { groupTickets, queueFromState, queueIds, ticketSla } from '../util/queue
 import { useNow } from '../util/useNow.ts'
 import type { TicketQueue } from '../util/queue.ts'
 
-// Variant C (Phase 3.2 UI): a conversation layout — the customer email and the reply composer in a
+// A conversation layout — the customer email and the reply composer in a
 // centred thread, ticket facts in a right-hand context rail. The composer's action bar is sticky so
 // Send is always reachable; "Send and next" (Ctrl+Enter) walks the queue the list handed over.
 // The route renders this page with key={id}, so prev/next remounts it and no per-ticket state

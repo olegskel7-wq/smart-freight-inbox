@@ -1,4 +1,4 @@
-// "Send and next" plumbing (Phase 3.2 UI, variant C). The list hands the ticket page the ids of the
+// "Send and next" plumbing. The list hands the ticket page the ids of the
 // queue it was opened from, in display order, via router location state — so prev/next and
 // Send-and-next walk exactly what the operator was looking at. History state survives a reload;
 // a deep link without it falls back to the Inbox queue (see TicketDetailPage), grouped the same way.

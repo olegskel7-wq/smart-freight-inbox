@@ -5,9 +5,8 @@ import { useRoles } from '../auth/roles.ts'
 import { initialsOf } from '../util/labels.ts'
 import Icon from './Icon.tsx'
 
-// Shared chrome for the SPA. Phase 3 UI refresh: the old top navbar is now a left sidebar
-// (reads as a product-grade SaaS dashboard). Role gating (Users/Settings = ADMIN, Tenants =
-// SUPER_ADMIN) is unchanged — the API enforces it regardless, this only drives nav visibility.
+// Shared chrome for the SPA: a left sidebar nav (reads as a product-grade SaaS dashboard). Role gating (Users/Settings = ADMIN, Tenants =
+// SUPER_ADMIN) only drives nav visibility — the API enforces it regardless, this only drives nav visibility.
 // Icons are inline SVG (Feather/Tabler paths) so there is no icon-font dependency and no CDN.
 
 // Icon path sets (24×24 stroke).

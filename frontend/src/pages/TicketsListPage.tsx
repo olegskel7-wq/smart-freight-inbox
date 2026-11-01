@@ -12,7 +12,7 @@ import { groupTickets, queueIds } from '../util/queue.ts'
 import type { TicketQueue } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
 
-// Variant C (Phase 3.2 UI): a mail-style list grouped by SLA urgency. The server still decides the
+// A mail-style list grouped by SLA urgency. The server still decides the
 // order (escalated first, then newest — or the operator's explicit sort); the page only buckets each
 // row into Overdue / Due today / Later / Done, keeping server order inside a bucket. Grouping is per
 // page (50 rows), which is what the operator is working through anyway.
@@ -84,7 +84,7 @@ export default function TicketsListPage() {
   const [params, setParams] = useSearchParams()
 
   // `sort` is only sent when the operator explicitly picks an ordering; otherwise the server applies
-  // its default view (escalated-first, then newest) — Phase 3.10.
+  // its default view (escalated-first, then newest).
   const sort = params.get('sort')
   const dir = params.get('dir') ?? 'desc'
   const status = params.get('status') ?? ''
@@ -147,7 +147,7 @@ export default function TicketsListPage() {
     void loadStats()
   }, [loadStats])
 
-  // Live updates (Phase 3.2): the backend pushes a ticket-changed event per tenant; we re-fetch the
+  // Live updates: the backend pushes a ticket-changed event per tenant; we re-fetch the
   // current query (and the summary counts). Refs keep the stream subscription stable across filter
   // changes (no reconnect just because a callback was recreated).
   const loadRef = useRef(load)
@@ -195,7 +195,7 @@ export default function TicketsListPage() {
     }
   }, [api, load])
 
-  // Shared-queue assignment (Phase 3.3 S2): self-claim an unassigned ticket or release one of your
+  // Shared-queue assignment: self-claim an unassigned ticket or release one of your
   // own. Assigning to another operator is a tenant-admin action, done from the ticket page.
   const assignment = async (id: number, action: 'assign' | 'unassign') => {
     setActing(id)

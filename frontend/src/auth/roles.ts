@@ -1,6 +1,6 @@
 import { useAuth } from 'react-oidc-context'
 
-// Reads the tenant role tiers off the Keycloak access token (Phase 3.3). The raw `roles` claim
+// Reads the tenant role tiers off the Keycloak access token. The raw `roles` claim
 // carries only what Keycloak assigned, so the SUPER_ADMIN ⇒ ADMIN implication (applied server-side
 // in KeycloakJwtRoleConverter) is mirrored here explicitly: a platform admin is also a tenant admin.
 // The API enforces these roles regardless — this only drives nav visibility and client-side guards.

@@ -3,7 +3,7 @@ import { useApi } from './useApi.ts'
 import type { User } from '../types.ts'
 
 /**
- * Loads the tenant's operator list for assignee pickers (Phase 3.3 / 3.10). Best-effort: the
+ * Loads the tenant's operator list for assignee pickers (ticket assignment, escalation routing). Best-effort: the
  * `/api/users` endpoint 403s for non-admins, so any failure falls back to an empty list rather than
  * surfacing an error. Pass `enabled=false` to skip the fetch entirely (e.g. a non-admin who can't read it).
  */

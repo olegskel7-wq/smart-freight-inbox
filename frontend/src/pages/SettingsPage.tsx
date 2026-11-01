@@ -117,7 +117,7 @@ function MailboxFields({ value, onChange, editing, error }: {
   )
 }
 
-// React port of settings.html (Phase 3.2). Each card saves its own section through /api/settings/*;
+// Each card saves its own section through /api/settings/*;
 // a successful save returns the refreshed snapshot, which re-seeds the form. The platform SMTP block is
 // read-only (environment-sourced). The old Thymeleaf page stays live until cutover.
 export default function SettingsPage() {
@@ -139,13 +139,13 @@ export default function SettingsPage() {
   const [quoteFollowUpDelayHours, setQuoteFollowUpDelayHours] = useState('48')
   const [smartRoutingEnabled, setSmartRoutingEnabled] = useState(true)
   const [escalationAssignee, setEscalationAssignee] = useState('')
-  // Operator list for the escalation-assignee dropdown (Phase 3.10). Best-effort: a non-admin can't
+  // Operator list for the escalation-assignee dropdown. Best-effort: a non-admin can't
   // read /api/users (403) → the selector just falls back to "no operators".
   const operators = useOperators()
   const [extractionPrompt, setExtractionPrompt] = useState('')
   const [draftingPrompt, setDraftingPrompt] = useState('')
 
-  // New-mailbox form, and the edit-in-place form (Gate B15) for one mailbox at a time (null = closed).
+  // New-mailbox form, and the edit-in-place form for one mailbox at a time (null = closed).
   const [newMailbox, setNewMailbox] = useState<MailboxForm>(EMPTY_MAILBOX)
   const [editing, setEditing] = useState<MailboxEdit | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
@@ -676,7 +676,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Smart Routing (Phase 3.10) */}
+      {/* Smart Routing */}
       <div className="card shadow-sm mb-4">
         <div className="card-header fw-semibold d-flex align-items-center gap-2">
           Smart Routing

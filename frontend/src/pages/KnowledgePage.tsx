@@ -6,7 +6,7 @@ import type { KnowledgeResponse } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
-// Knowledge-base management page (Phase 3.9 — KB deflection). Operators store free-text knowledge
+// Knowledge-base management page (docs/adr/0010-rag-feedback-and-knowledge.md). Operators store free-text knowledge
 // (FAQs / policies / quoting rules); the pipeline retrieves the most relevant documents at draft time
 // and grounds the reply with them. An always-visible card adds a new document; the same card edits an
 // existing one when a row's Edit is clicked. Every mutation returns the refreshed snapshot, which

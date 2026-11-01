@@ -1,7 +1,7 @@
 import { WebStorageStateStore, InMemoryWebStorage } from 'oidc-client-ts'
 import type { AuthProviderProps } from 'react-oidc-context'
 
-// Keycloak OIDC settings for the SPA (Phase 3.2). Authorization-code + PKCE against the
+// Keycloak OIDC settings for the SPA. Authorization-code + PKCE against the
 // `smartfreight-spa` public client; the resulting access token carries tenant_id + roles for
 // the /api resource server. Keycloak is fronted by nginx on the SAME TLS origin as the SPA, so
 // the authority is https://localhost/realms/smartfreight — same scheme/host as the page, no
@@ -21,7 +21,7 @@ export const oidcConfig: AuthProviderProps = {
   post_logout_redirect_uri: `${window.location.origin}/tickets`,
   response_type: 'code',
   scope: 'openid profile email',
-  // XSS mitigation (mandatory, Phase 3.2): tokens live in memory only — never localStorage or
+  // XSS mitigation (mandatory): tokens live in memory only — never localStorage or
   // sessionStorage. A page reload drops them; the SSO cookie at Keycloak then re-issues silently.
   userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
   automaticSilentRenew: true,

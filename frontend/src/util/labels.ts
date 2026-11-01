@@ -1,4 +1,4 @@
-// Human labels for backend enum names and ticket fields (Phase 3.2 UI, variant C). One place, so an
+// Human labels for backend enum names and ticket fields. One place, so an
 // operator never sees `STATUS_UPDATE` / `DRAFT_READY` and every page words things the same way.
 // Unknown values fall back to a de-shouted version of the enum name instead of being hidden.
 
@@ -69,7 +69,7 @@ export function isDone(status: string | null): boolean {
 }
 
 /**
- * The single escalation chip that replaces the stacked Urgent/Angry badges (Phase 3.10 signals):
+ * The single escalation chip that replaces the stacked Urgent/Angry badges (smart-routing signals):
  * "Urgent · upset", "Urgent", "Upset", or null when neither applies.
  */
 export function toneLabel(urgency: string | null, sentimentNegative: boolean): string | null {
@@ -80,7 +80,7 @@ export function toneLabel(urgency: string | null, sentimentNegative: boolean): s
   return null
 }
 
-/** Confidence 0..1 → "90% · high". The heuristic is the Phase 1.6 auto-send score. */
+/** Confidence 0..1 → "90% · high". The heuristic is the auto-send confidence score. */
 export function confidenceLabel(value: number | null): string {
   if (value == null) return '—'
   const band = value >= 0.8 ? 'high' : value >= 0.5 ? 'medium' : 'low'

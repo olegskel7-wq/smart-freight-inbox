@@ -5,7 +5,7 @@ import type { RatesResponse, RateUploadResponse } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
-// React port of rates.html (Phase 3.2). Carrier rate sheets: CSV upload, table, per-row + clear-all
+// Carrier rate sheets: CSV upload, table, per-row + clear-all
 // delete. The sell price and expiry are computed server-side (the margin never reaches the client).
 // Each mutation returns the refreshed snapshot, which re-renders the table. The old Thymeleaf page
 // stays live until cutover.

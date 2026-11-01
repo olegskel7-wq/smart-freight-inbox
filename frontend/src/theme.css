@@ -153,7 +153,7 @@ body {
   border: 0;
 }
 
-/* ---- Sidebar layout (Phase 3 UI refresh) -------------------------------- *
+/* ---- Sidebar layout -------------------------------- *
  * Replaces the old top navbar. Aside is a sticky full-height slate rail; the
  * main column flows and the page scrolls normally. Desktop-first (operators are
  * on laptops); below 768px the aside turns into a wrapping top bar (see the
@@ -317,7 +317,7 @@ body {
   }
 }
 
-/* ---- Page header + summary strip (Phase 3 UI: elevated main panel) ------ */
+/* ---- Page header + summary strip (elevated main panel) ------------------ */
 .sf-pagehead {
   display: flex;
   align-items: flex-start;
@@ -397,7 +397,7 @@ body {
   white-space: nowrap;
 }
 
-/* ---- Operator workspace, variant C (Phase 3.2 UI) ----------------------- *
+/* ---- Operator workspace ----------------------------------- *
  * Mail-style ticket list grouped by SLA urgency + a conversation ticket page
  * with a context rail. Same palette as the rest of this file; nothing is
  * loaded from outside (nginx CSP is self-only). */

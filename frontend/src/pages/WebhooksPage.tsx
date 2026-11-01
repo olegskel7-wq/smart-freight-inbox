@@ -10,7 +10,7 @@ import type {
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
-// React page for Phase 3.5 outbound webhooks: manage subscriptions (where SmartFreight POSTs signed
+// Outbound webhooks: manage subscriptions (where SmartFreight POSTs signed
 // domain events), test an endpoint, and inspect the delivery log. ADMIN-only (the nav link + route are
 // gated; the API enforces the role regardless). Each mutation returns the refreshed snapshot.
 export default function WebhooksPage() {

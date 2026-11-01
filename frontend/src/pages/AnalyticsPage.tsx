@@ -19,7 +19,7 @@ import { statusLabel, typeLabel } from '../util/labels.ts'
 // bundle, never a CDN: the product promise is that data never leaves the server.
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
-// Bucket i covers [i/10, (i+1)/10); 1.0 folds into the top bucket — parity with the template.
+// Bucket i covers [i/10, (i+1)/10); 1.0 folds into the top bucket.
 const CONFIDENCE_LABELS = [
   '0–.1', '.1–.2', '.2–.3', '.3–.4', '.4–.5',
   '.5–.6', '.6–.7', '.7–.8', '.8–.9', '.9–1',
@@ -100,7 +100,7 @@ export default function AnalyticsPage() {
 
       {data.featureEnabled && s && (
         <>
-          {/* Ask your inbox (Phase 2.8) — metric-router over the figures below. */}
+          {/* Ask your inbox — metric-router over the figures below. */}
           {data.queryEnabled && (
             <div className="card shadow-sm mb-4">
               <div className="card-body">
