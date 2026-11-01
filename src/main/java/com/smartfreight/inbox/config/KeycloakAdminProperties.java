@@ -3,7 +3,7 @@ package com.smartfreight.inbox.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Configuration for the Keycloak Admin REST client (Phase 2.3 S2).
+ * Configuration for the Keycloak Admin REST client.
  *
  * <p>Bound from {@code keycloak.admin.*}. The provisioning service account
  * ({@link #clientId}/{@link #clientSecret}) authenticates with the client-credentials grant

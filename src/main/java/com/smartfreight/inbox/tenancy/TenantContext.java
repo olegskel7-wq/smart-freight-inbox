@@ -3,13 +3,13 @@ package com.smartfreight.inbox.tenancy;
 import java.util.function.Supplier;
 
 /**
- * Holds the tenant the current thread is working for (Phase 2.2).
+ * Holds the tenant the current thread is working for.
  *
  * <p>Four states:
  * <ul>
  *   <li><b>tenant</b> — a concrete tenant id. Set by {@code TenantFilter} for web requests
  *       (from the logged-in user's principal), by the RabbitMQ consumer (from the event
- *       payload) and by the per-mailbox IMAP adapters (from the owning mailbox row, S3).</li>
+ *       payload) and by the per-mailbox IMAP adapters (from the owning mailbox row).</li>
  *   <li><b>system</b> — cross-tenant background work: schedulers, outbox relay, DLQ admin,
  *       login lookups. Hibernate disables the {@code @TenantId} filter (root tenant) and
  *       the RLS policy admits all rows via the {@code app.is_system} GUC.</li>
@@ -17,9 +17,9 @@ import java.util.function.Supplier;
  *       (login page, static resources, actuator scrapes). Fail-closed: Hibernate filters
  *       tenant entities to an impossible tenant, RLS sees an empty GUC. Reads of tenant
  *       data return nothing, writes fail on the FK.</li>
- *   <li><b>unset</b> — a bug since S3. {@link TenantIdentifierResolver} throws: every
+ *   <li><b>unset</b> — a bug. {@link TenantIdentifierResolver} throws: every
  *       entry point (web filter, consumer, adapters, schedulers, tests) must declare
- *       its state explicitly. The S1 unset-equals-default compromise is gone.</li>
+ *       its state explicitly; unset never falls back to the default tenant.</li>
  * </ul>
  *
  * <p>Always use the {@code runAs*} helpers rather than raw set/clear — they restore the
@@ -144,7 +144,7 @@ public final class TenantContext {
         return ANONYMOUS.equals(CURRENT.get());
     }
 
-    /** True when the thread never declared a state — a bug under S3 fail-loud semantics. */
+    /** True when the thread never declared a state — a bug under fail-loud semantics. */
     public static boolean isUnset() {
         return CURRENT.get() == null;
     }

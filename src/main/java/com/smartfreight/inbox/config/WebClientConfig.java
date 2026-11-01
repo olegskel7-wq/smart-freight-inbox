@@ -19,7 +19,8 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Holds the {@code portServiceWebClient} bean. Ollama clients are NOT a singleton bean
  * any more — {@link com.smartfreight.inbox.service.OllamaClientProvider} builds and caches
- * one per resolved endpoint (the per-tenant override arrived with Phase 2.2 S3).
+ * one per resolved endpoint, because a tenant may override the Ollama URL
+ * (see docs/adr/0005-per-tenant-mailboxes-and-llm.md).
  */
 @Configuration
 public class WebClientConfig {
@@ -57,7 +58,7 @@ public class WebClientConfig {
     }
 
     /**
-     * WebClient for outbound webhook delivery (Phase 3.5).
+     * WebClient for outbound webhook delivery.
      *
      * <p>No {@code baseUrl} — each delivery targets a different tenant-supplied URL, passed per request
      * by {@link com.smartfreight.inbox.webhook.WebhookDispatcher}. Timeouts are short and bounded: the

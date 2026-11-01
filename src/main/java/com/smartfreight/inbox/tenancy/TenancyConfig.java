@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 import javax.sql.DataSource;
 
 /**
- * Wires the two tenant-isolation layers (Phase 2.2):
+ * Wires the two tenant-isolation layers (docs/adr/0004-two-layer-multitenancy.md):
  *
  * <ol>
  *   <li><b>Hibernate discriminator multi-tenancy</b> — {@link TenantIdentifierResolver}

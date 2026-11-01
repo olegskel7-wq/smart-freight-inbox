@@ -3,7 +3,7 @@ package com.smartfreight.inbox.exception;
 /**
  * Exception thrown when a tracked item is not found in the backend lookup service.
  *
- * Vertical-neutral (Phase 0 universalisation): the reference backend is port-service
+ * Vertical-neutral: the reference backend is port-service
  * (containers), but a different vertical's {@code ItemLookupService} would throw the
  * same exception for its own missing entity.
  *

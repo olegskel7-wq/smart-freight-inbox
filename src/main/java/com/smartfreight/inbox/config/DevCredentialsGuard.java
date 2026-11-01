@@ -11,15 +11,15 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Gate C6: the backend refuses to start on a public deployment that still runs on DEV credentials.
+ * The backend refuses to start on a public deployment that still runs on DEV credentials.
  *
- * <p>{@code scripts/check-prod-env.sh} (Gate C1) already blocks such a {@code .env} + {@code SECRETS_DIR} before
+ * <p>{@code scripts/check-prod-env.sh} already blocks such a {@code .env} + {@code SECRETS_DIR} before
  * {@code docker compose up} — but only when the deploy goes through it. This is the second layer,
  * inside the application: it sees the values Spring actually resolved, whatever started it.
  *
  * <p>"Public" is read from the token issuer, not from the Spring profile: the local compose stack
  * runs the {@code prod} profile too (on dev defaults, by design — a fresh clone needs no
- * {@code .env}), whereas a real deployment must serve Keycloak on its own domain (Gate C3).
+ * {@code .env}), whereas a real deployment must serve Keycloak on its own domain.
  * Issuer on localhost → dev: one WARN listing what is still default. Anything else → startup fails.
  * Only property NAMES are ever logged, never values.
  */
