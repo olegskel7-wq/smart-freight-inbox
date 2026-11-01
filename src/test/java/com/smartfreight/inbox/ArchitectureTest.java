@@ -114,8 +114,18 @@ class ArchitectureTest {
     /** An application class (not a library) that lives outside all of the given packages. */
     private static DescribedPredicate<JavaClass> applicationClassOutside(String... allowed) {
         return DescribedPredicate.describe("application classes outside " + String.join("/", allowed),
-                c -> c.getPackageName().startsWith(ROOT + ".")
-                        && Arrays.stream(allowed).noneMatch(a -> c.getPackageName().startsWith(ROOT + "." + a)));
+                c -> isApplicationPackage(c.getPackageName())
+                        && Arrays.stream(allowed).noneMatch(a -> isInPackage(c.getPackageName(), ROOT + "." + a)));
+    }
+
+    /** The root package itself counts (InboxApplication lives there); a look-alike such as com.smartfreight.inboxx does not. */
+    private static boolean isApplicationPackage(String pkg) {
+        return isInPackage(pkg, ROOT);
+    }
+
+    /** {@code pkg} is {@code base} or one of its sub-packages — "entity" does not also match "entityx". */
+    private static boolean isInPackage(String pkg, String base) {
+        return pkg.equals(base) || pkg.startsWith(base + ".");
     }
 
     private static DescribedPredicate<JavaClass> simpleNameIn(Set<String> names) {

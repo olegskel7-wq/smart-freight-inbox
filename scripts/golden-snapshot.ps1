@@ -76,7 +76,7 @@ SELECT coalesce(json_agg(t ORDER BY t.key), '[]') FROM (
          (SELECT coalesce(string_agg(a.action, ',' ORDER BY a.action), '')
             FROM ticket_audit_log a WHERE a.ticket_id = e.id) AS audit,
          EXISTS (SELECT 1 FROM shipment_watch w WHERE w.tenant_id = e.tenant_id
-                   AND w.identifier = e.extracted_identifier AND w.created_at >= e.created_at) AS watch_armed,
+                   AND w.identifier = e.extracted_identifier AND w.updated_at >= e.created_at) AS watch_armed,
          EXISTS (SELECT 1 FROM quote_follow_up q WHERE q.ticket_id = e.id) AS followup_armed
     FROM email_ticket e LEFT JOIN tenant_mailbox m ON m.id = e.mailbox_id
    WHERE e.message_id LIKE '<demo-$runId-%'
@@ -94,7 +94,10 @@ if ($PSCmdlet.ParameterSetName -eq 'Capture') {
     $runId = 'g' + (Get-Date -Format 'yyyyMMddHHmmss')
     if (-not $Label) { $Label = $runId }
     $path = Join-Path $repo "golden-snapshots\$Label.json"
-    & (Join-Path $PSScriptRoot 'demo-mail.ps1') -RunId $runId
+    # demo-mail.ps1 reports through Write-Host; 6>&1 captures that stream to read back how many it sent.
+    $sendLog = & (Join-Path $PSScriptRoot 'demo-mail.ps1') -RunId $runId 6>&1
+    $sendLog | ForEach-Object { Write-Host $_ }
+    $expected = [int](($sendLog | Select-String 'Sent (\d+) email').Matches[0].Groups[1].Value)
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
     do {
         Start-Sleep -Seconds 10
@@ -103,12 +106,14 @@ SELECT count(*) || ' ' || count(*) FILTER (WHERE status IN ('RECEIVED','NEW','PR
   FROM email_ticket WHERE message_id LIKE '<demo-$runId-%';
 "@) -split ' '
         $total = [int]$counts[0]; $pending = [int]$counts[1]
-        Write-Host ("[{0:HH:mm:ss}] tickets {1}, still in pipeline {2}" -f (Get-Date), $total, $pending)
-    } while (($total -eq 0 -or $pending -gt 0) -and (Get-Date) -lt $deadline)
+        Write-Host ("[{0:HH:mm:ss}] tickets {1}/{2}, still in pipeline {3}" -f (Get-Date), $total, $expected, $pending)
+    } while (($total -lt $expected -or $pending -gt 0) -and (Get-Date) -lt $deadline)
     # Auto-send leaves DRAFT_READY only after the pipeline TX commits - give it a moment.
     Start-Sleep -Seconds 15
     $rows = Save-Snapshot $runId $path
-    if ($pending -gt 0) { Write-Warning "Timed out with $pending ticket(s) still in the pipeline - snapshot is partial." }
+    if ($total -lt $expected -or $pending -gt 0) {
+        Write-Warning "Timed out: $total of $expected ticket(s) ingested, $pending still in the pipeline - snapshot is partial."
+    }
     Write-Host "`nSaved $($rows.Count) ticket(s) of run $runId to $path"
     $rows | Format-Table key, status, type, urgency, angry, identifier, audit -AutoSize
     return

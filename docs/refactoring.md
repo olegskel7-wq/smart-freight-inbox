@@ -30,7 +30,7 @@ powershell -ExecutionPolicy Bypass -File scripts\golden-snapshot.ps1 -Compare go
 ```
 
 Ollama samples with its default temperature, so outcomes are not fully deterministic. Two baseline runs
-on main `d81a2c4` differed in **1 field out of 18 × 15**: `felixstowe-invoice` urgency 1 ↔ 2. A
+on main `d81a2c4` differed in **1 field out of 18 × 16**: `felixstowe-invoice` urgency 1 ↔ 2. A
 difference there is noise; any other difference is a regression until proven otherwise (re-capture once
 to rule out noise).
 

@@ -22,6 +22,7 @@ export default defineConfig([
       // Every page loads its data with `useEffect(() => { void load() }, [load])`, and load() resets
       // its error state synchronously. Kept visible as a warning, not an error, until the pages are
       // split and the fetch-on-mount pattern is replaced (docs/refactoring.md, Stage 1.3).
+      // `npm run lint` caps warnings at 12 (package.json), so a new occurrence still fails CI.
       'react-hooks/set-state-in-effect': 'warn',
     },
   },
