@@ -70,9 +70,11 @@ Branch coverage of the classes the plan touches (clean run):
   JVM default locale (`20,0%` on a ru-RU machine) and built the figures block with `%n` (CRLF on
   Windows). They now use `Locale.ENGLISH` and `\n`; ru-RU tests guard it.
 
-- Node: `pom.xml` (`node.version` v20.18.0) and the Dockerfile (`node:20`) build the SPA on Node 20,
-  below what vite 8 (≥ 20.19) and vitest 5 (≥ 22.12) declare. The build still works (npm only warns,
-  checked on `node:20`), tests run on Node 22 in CI. Moving the build to Node 22 LTS is a separate change.
+- ✅ CI had never passed: `mvnw` was committed without the executable bit (exit 126 on every run since
+  the first commit). Fixed in `93b4441`; the first real run then passed all 737 tests on Linux and
+  failed in `frontend-maven-plugin` — Node 20.18 is below vite 8's 20.19, so npm skipped rolldown's
+  native binding. `node.version` is now v22.14.0. The Dockerfile's `node:20` resolves to 20.20 and
+  builds fine; moving it to `node:22` is optional.
 - `npm audit --omit=dev`: 2 findings in `react-router` (1 high), present before this work.
 - About 20 `toUpperCase()` / `toLowerCase()` calls take no `Locale`, several of them before an
   enum `valueOf(...)`. Under a Turkish default locale (`i` → `İ`) those parses fail. Not reachable in

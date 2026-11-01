@@ -8,8 +8,8 @@ on:
     branches: [ main ]
 
 jobs:
-  # Lint и тесты SPA. Отдельный job на Node 22: vitest 5 требует Node ≥ 22.12, а сборка через
-  # frontend-maven-plugin и Dockerfile пока на Node 20 (собирает, но тесты не гоняет).
+  # Lint и тесты SPA отдельным job на Node 22 (vitest 5 требует Node ≥ 22.12). Сборка SPA внутри
+  # ./mvnw verify идёт через frontend-maven-plugin (node.version в pom.xml) и тестов не гоняет.
   frontend:
     name: Frontend lint & tests
     runs-on: ubuntu-latest

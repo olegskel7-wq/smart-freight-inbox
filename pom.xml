@@ -41,7 +41,9 @@
 		     also passed in the Dockerfile, which builds the SPA in a dedicated node stage). -->
 		<skipFrontend>false</skipFrontend>
 		<frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
-		<node.version>v20.18.0</node.version>
+		<!-- vite 8 needs Node 20.19+ / 22.12+: on 20.18 npm skips rolldown's native binding and the
+		     build fails. Same major as the CI frontend job. -->
+		<node.version>v22.14.0</node.version>
 	</properties>
 	<dependencies>
 		<dependency>
