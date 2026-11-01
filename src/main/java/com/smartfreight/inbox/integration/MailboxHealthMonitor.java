@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * Answers "can we actually log in to this mailbox right now?" (Gate B4/B13).
+ * Answers "can we actually log in to this mailbox right now?".
  *
  * <p>{@code smartfreight_imap_adapters_active} and "running" on /settings only mean an adapter is
  * REGISTERED: a mailbox with a revoked app password or a broken certificate counts as running while
@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
  * outcome:
  * <ul>
  *   <li>{@code smartfreight_mailbox_up{tenant,mailbox}} 1/0 — alert {@code MailboxDown} says whose
- *       mailbox died (B13: tenant A's incident must not look like a platform outage);</li>
+ *       mailbox died (tenant A's incident must not look like a platform outage);</li>
  *   <li>{@code smartfreight_mailbox_last_success_timestamp_seconds{tenant,mailbox}};</li>
  *   <li>the last error, address-masked, for the badge on /settings.</li>
  * </ul>
@@ -151,7 +151,7 @@ public class MailboxHealthMonitor {
     }
 
     /**
-     * One IMAP login with the adapter's own config, then catch-up (Gate B5) on the same connection.
+     * One IMAP login with the adapter's own config, then catch-up on the same connection.
      * Only the login decides the verdict — a catch-up failure is logged, the mailbox stays "up".
      * Overridden in tests.
      */

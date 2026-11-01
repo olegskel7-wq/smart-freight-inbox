@@ -10,7 +10,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Operator tooling for the pipeline dead-letter queue (Phase 1.3, session 2).
+ * Operator tooling for the pipeline dead-letter queue.
  *
  * Messages land in {@link RabbitConfig#PROCESS_DLQ} only after the consumer's retry
  * advice gave up (3 attempts) — i.e. poison payloads or a bug. They need a human

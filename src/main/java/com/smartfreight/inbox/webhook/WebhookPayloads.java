@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Builds the {@code data} block of a ticket-related webhook envelope (Phase 3.5).
+ * Builds the {@code data} block of a ticket-related webhook envelope.
  *
  * <p>One shared shape across every ticket event ({@code ticket.created}, {@code reply.sent},
  * {@code quote.sent}, {@code booking.confirmed}) so a subscriber sees the same fields regardless of which

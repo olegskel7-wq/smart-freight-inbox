@@ -6,8 +6,8 @@ import jakarta.persistence.PostRemove;
 import jakarta.persistence.PostUpdate;
 
 /**
- * JPA lifecycle listener that turns every {@link EmailTicket} write into a real-time broadcast
- * (Phase 3.2). Registered via {@code @EntityListeners} on the entity.
+ * JPA lifecycle listener that turns every {@link EmailTicket} write into a real-time broadcast.
+ * Registered via {@code @EntityListeners} on the entity.
  *
  * <p>One hook covers the whole surface — ingest ({@code @PostPersist}), the AI pipeline and operator
  * actions ({@code @PostUpdate}) and soft-delete (Hibernate's {@code @SQLDelete} issues an UPDATE, but

@@ -33,7 +33,7 @@ import java.io.IOException;
  *
  * Invoked by the per-mailbox IMAP IDLE adapters ({@link MailboxImapAdapterManager}) for
  * every arriving message, already wrapped in the owning tenant's {@code TenantContext}
- * (Phase 2.2 S3 — one dynamic adapter per tenant_mailbox row, not a static channel).
+ * (one dynamic adapter per tenant_mailbox row, see docs/adr/0002-imap-idle-dynamic-adapters.md).
  *
  * Processing pipeline:
  * 1. The message is copied into memory (guard against FolderClosedException).
@@ -42,15 +42,15 @@ import java.io.IOException;
  *    locally (PDFBox/POI — CPU-bound, no network, so it stays on this thread).
  * 4. Duplicate check by Message-ID — IMAP may deliver the same message twice.
  * 5. A ticket is persisted with status RECEIVED, and a "ticket.created" event is written
- *    to the transactional outbox IN THE SAME transaction (Phase 1.3).
+ *    to the transactional outbox IN THE SAME transaction.
  * 6. OutboxRelay publishes the event to RabbitMQ; TicketEventConsumer classifies the email
  *    (Qwen) and runs the AI pipeline. A broker or Ollama outage therefore never blocks
- *    ingestion — events wait in the outbox, tickets wait in RECEIVED.
+ *    ingestion — events wait in the outbox, tickets wait in RECEIVED
+ *    (see docs/adr/0003-transactional-outbox-rabbitmq.md).
  *
- * Phase 1.3 session 3: NO LLM call happens on this thread anymore. Classification used to
- * run here (blocking IMAP IDLE for up to 30 s per email, losing mail when Ollama was down);
- * it now lives in the consumer, and non-freight emails get a persisted IRRELEVANT ticket
- * instead of vanishing without trace.
+ * NO LLM call happens on this thread. Classifying here would block IMAP IDLE for up to 30 s
+ * per email and lose mail when Ollama is down; in the consumer, non-freight emails get a
+ * persisted IRRELEVANT ticket instead of vanishing without trace.
  */
 @Service
 public class EmailIngestionService {
@@ -61,8 +61,8 @@ public class EmailIngestionService {
     static final int MAX_EMAIL_BYTES = 10 * 1024 * 1024;
 
     /**
-     * Feature flag for attachment parsing (Phase 1.1). Plan-based gating seam: today a global
-     * {@code app_setting} row, per-tenant under multi-tenancy (Phase 2). Missing row = enabled.
+     * Feature flag for attachment parsing. Plan-based gating seam: resolved per tenant
+     * through {@link SettingsService}. Missing row = enabled.
      */
     private static final String FEATURE_ATTACHMENT_PARSING = "feature.attachment-parsing";
 
@@ -95,7 +95,7 @@ public class EmailIngestionService {
     /**
      * Processes an incoming email: validates, persists a ticket, and starts the AI pipeline.
      *
-     * Caller contract (S3): the thread must already be bound to the mailbox's tenant —
+     * Caller contract: the thread must already be bound to the mailbox's tenant —
      * the adapter flows in {@link MailboxImapAdapterManager} do this. The fail-loud
      * TenantContext makes an unbound call throw at the first DB touch.
      *
@@ -143,7 +143,7 @@ public class EmailIngestionService {
             String body = extractBody(mimeMessage);
             String subject = mimeMessage.getSubject() != null ? mimeMessage.getSubject() : "";
 
-            // Phase 1.1: pull text from PDF/Excel attachments. Persisted alongside the body so the
+            // Pull text from PDF/Excel attachments. Persisted alongside the body so the
             // consumer-side classifier judges an RFQ whose body is just "please see attached" on the
             // attachment. Behind a feature flag (plan-gating seam) — disabled tenants skip parsing.
             String attachmentText = settingsService.isFeatureEnabled(FEATURE_ATTACHMENT_PARSING, true)
@@ -172,7 +172,7 @@ public class EmailIngestionService {
                     .status(TicketStatus.RECEIVED)
                     .build();
 
-            // Phase 1.5: provisional SLA deadline with the GENERAL window — the type is not
+            // Provisional SLA deadline with the GENERAL window — the type is not
             // known yet (no LLM here) and the customer's clock starts now, not at
             // classification. The consumer refines it to the per-type window in step 0.
             if (slaService.isEnabled()) {
@@ -187,12 +187,12 @@ public class EmailIngestionService {
 
                 // Same transaction as the ticket insert: either both become durable or neither.
                 // Tenant: the adapter bound the mailbox's tenant before this transaction
-                // opened (S3), so Hibernate stamped it on the ticket and the event carries it.
+                // opened, so Hibernate stamped it on the ticket and the event carries it.
                 ticketEventPublisher.publishTicketCreated(saved.getId(), saved.getTenantId());
 
-                // Phase 3.5: queue outbound webhook deliveries in the same transaction (best-effort —
+                // Queue outbound webhook deliveries in the same transaction (best-effort —
                 // a webhook failure must never affect ingestion). Fires for every inbound, pre-classification;
-                // richer semantic events (reply.sent etc.) arrive in S2. No-op when no subscription matches.
+                // the semantic events (reply.sent etc.) fire later in the pipeline. No-op when no subscription matches.
                 webhookEventPublisher.publish(WebhookEventType.TICKET_CREATED, saved.getTenantId(),
                         WebhookPayloads.ticketData(saved));
 

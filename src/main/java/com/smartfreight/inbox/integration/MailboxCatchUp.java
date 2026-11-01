@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Re-finds emails the IDLE adapter never turned into tickets (Gate B5) and ingests them.
+ * Re-finds emails the IDLE adapter never turned into tickets and ingests them.
  *
  * <p>The adapter is at-most-once: Spring Integration flags a message (\Seen or its own flag) when it
  * FETCHES it, before our handler persists it — so a DB outage, a crash or a redeploy mid-ingest loses

@@ -1,7 +1,7 @@
 package com.smartfreight.inbox.messaging;
 
 /**
- * Lightweight real-time notification that a ticket changed (Phase 3.2), broadcast to the per-tenant
+ * Lightweight real-time notification that a ticket changed, broadcast to the per-tenant
  * topic {@code /topic/tickets/{tenantId}} and consumed by the React {@code /tickets} list.
  *
  * <p>Deliberately minimal: it carries the ticket id and its new status only, as a signal. The SPA

@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Wires the demo tenants to the fake mail servers (Phase 4.8 S2 — demo mail harness).
+ * Wires the demo tenants to the fake mail servers of the demo mail harness.
  *
  * <p>Demo mailboxes cannot be seeded by SQL: {@code password_enc} is AES-GCM under the
  * deployment's own {@code MAILBOX_ENCRYPTION_KEY}. So they are upserted here, at startup,
@@ -99,7 +99,7 @@ public class DemoMailboxBootstrap implements ApplicationRunner {
 
     /**
      * Removes every mailbox of a demo tenant that points at the fake IMAP server — matched by host,
-     * not by the configured address, so a demo inbox renamed on /settings (Gate B15) is still found
+     * not by the configured address, so a demo inbox renamed on /settings is still found
      * and never left behind pointing at a stopped GreenMail. No tenant-existence check: under RLS the
      * lookup for a missing tenant is simply empty.
      */
