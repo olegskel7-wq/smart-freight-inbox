@@ -8,9 +8,13 @@ import com.smartfreight.inbox.service.InboxQueryService.InboxAnswer;
 import com.smartfreight.inbox.service.InboxQueryService.QueryIntent;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -18,6 +22,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,17 +55,29 @@ class InboxQueryServiceTest {
 
     private InboxQueryService service;
     private CircuitBreaker circuitBreaker;
+    private SimpleMeterRegistry meterRegistry;
+    private Locale defaultLocale;
 
     @BeforeEach
     void setUp() {
+        // Most headlines format percentages with the JVM default locale; pin the production one
+        // (the eclipse-temurin image runs en_US) so the expected strings hold on any dev machine.
+        defaultLocale = Locale.getDefault();
+        Locale.setDefault(Locale.US);
         // Resolve every prompt to the code-level default (arg 1) — un-customised tenant.
         lenient().when(settingsService.getString(anyString(), anyString()))
                 .thenAnswer(inv -> inv.getArgument(1));
         circuitBreaker = CircuitBreaker.ofDefaults("inbox-query-test");
         lenient().when(ollamaClients.client()).thenReturn(webClient);
         lenient().when(ollamaClients.circuitBreaker()).thenReturn(circuitBreaker);
+        meterRegistry = new SimpleMeterRegistry();
         service = new InboxQueryService(analyticsService, settingsService, ollamaClients,
-                new SimpleMeterRegistry(), "qwen2.5:7b", "llama3.1:8b");
+                meterRegistry, "qwen2.5:7b", "llama3.1:8b");
+    }
+
+    @AfterEach
+    void restoreLocale() {
+        Locale.setDefault(defaultLocale);
     }
 
     // ---- parseIntent: tolerant of small-model formatting drift ----
@@ -198,7 +215,168 @@ class InboxQueryServiceTest {
         assertThat(service.isEnabled()).isTrue();
     }
 
+    // ---- characterisation: the deterministic headline of every metric ----
+    // Phrasing returns nothing here, so the answer is exactly the headline sentence the service builds.
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', textBlock = """
+            EMAILS_RECEIVED  | You received 20 emails in the last 30 days (16 relevant, 4 junk).
+            RELEVANT_COUNT   | You received 16 relevant business emails in the last 30 days (junk excluded).
+            JUNK_COUNT       | 4 junk emails were filtered out in the last 30 days (20.0% of all mail).
+            TYPE_COUNT RFQ   | You received 5 RFQ emails in the last 30 days.
+            TYPE_BREAKDOWN   | Relevant emails by type over the last 30 days — RFQ: 5, STATUS_UPDATE: 3, Unclassified: 2.
+            STATUS_BREAKDOWN | Tickets by status over the last 30 days — RECEIVED: 1, NEW: 0, PROCESSING: 0, DRAFT_READY: 6, FAILED: 2, RETRY_LATER: 0, IRRELEVANT: 4, CLOSED: 5, AUTO_SENT: 2.
+            REPLIES_SENT     | You sent 8 replies in the last 30 days (6 by an operator, 2 automatically).
+            AUTOMATION_RATE  | 25.0% of replies were sent automatically in the last 30 days (2 of 8).
+            AVG_RESPONSE_TIME| Your average first-response time over the last 30 days was 1h 30m.
+            SLA_BREACHES     | 2 tickets breached their SLA in the last 30 days (12.5% of relevant tickets).
+            QUOTE_CONVERSION | 40.0% of quotes turned into bookings in the last 30 days (4 of 10 quotes booked).
+            BOTTLENECKS      | Over the last 30 days the biggest backlog is 6 ticket(s) at the DRAFT_READY stage; 2 SLA breaches.
+            """)
+    void ask_everyMetric_headlineFromTheRealFigures(String route, String expectedHeadline) {
+        when(analyticsService.summarise(30)).thenReturn(richSummary());
+        stubOllamaSequence(Map.of("response", route + " | 30"), Map.of("response", ""));
+
+        InboxAnswer answer = service.ask("question");
+
+        assertThat(answer.answer()).isEqualTo(expectedHeadline);
+        assertThat(answer.periodDays()).isEqualTo(30);
+    }
+
+    @Test
+    void ask_bottlenecks_nothingOpen_saysNothingIsBackedUp() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithType(TicketType.RFQ, 0));
+        stubOllamaSequence(Map.of("response", "BOTTLENECKS | 30"), Map.of("response", ""));
+
+        InboxAnswer answer = service.ask("where are we stuck?");
+
+        assertThat(answer.answer()).isEqualTo(
+                "Over the last 30 days nothing is backed up — no open tickets are piling up at any stage.");
+    }
+
+    @Test
+    void ask_phrasingPromptCarriesTheQuestionAndTheFigures() {
+        when(analyticsService.summarise(30)).thenReturn(richSummary());
+        stubOllamaSequence(Map.of("response", "BOTTLENECKS | 30"), Map.of("response", "Mostly drafts waiting."));
+
+        InboxAnswer answer = service.ask("  where are we stuck?  ");
+
+        assertThat(answer.answer()).isEqualTo("Mostly drafts waiting.");
+        List<Map<String, Object>> bodies = capturedBodies(2);
+        assertThat(bodies.get(0)).containsEntry("model", "qwen2.5:7b").containsEntry("stream", false);
+        assertThat(bodies.get(1)).containsEntry("model", "llama3.1:8b");
+        // The figures block is built with %n (the platform line separator) — compare as on Linux.
+        assertThat(((String) bodies.get(1).get("prompt")).replace("\r\n", "\n"))
+                .contains("Question: where are we stuck?\n")
+                .contains("""
+                        Backlog by open stage (newest work first):
+                          RECEIVED: 1
+                          NEW: 0
+                          PROCESSING: 0
+                          DRAFT_READY (awaiting operator): 6
+                          RETRY_LATER: 0
+                          FAILED: 2
+                        SLA breaches: 2 (12.5% of relevant)
+                        Average first-response time: 1h 30m""");
+    }
+
+    @Test
+    void ask_tenantRoutingPrompt_getsCatalogueAndStrippedQuestion() {
+        when(settingsService.getString(eq(InboxQueryService.KEY_QUERY_PROMPT), anyString()))
+                .thenReturn("Q={question} C={catalogue}");
+        stubOllamaSequence(Map.of("response", "UNKNOWN"));
+
+        service.ask("  how many?  ");
+
+        assertThat(capturedBodies(1).get(0))
+                .containsEntry("prompt", "Q=how many? C=" + InboxMetric.catalogue());
+    }
+
+    @Test
+    void ask_countsEveryRoutedQuestionByMetric() {
+        stubOllamaSequence(Map.of("response", "UNKNOWN"));
+
+        service.ask("what is the meaning of life?");
+
+        assertThat(meterRegistry.get("smartfreight_inbox_queries_total").tag("metric", "UNKNOWN")
+                .counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void ask_blankQuestion_isNotCounted() {
+        service.ask("");
+
+        assertThat(meterRegistry.find("smartfreight_inbox_queries_total").counter()).isNull();
+    }
+
+    @Test
+    void parseIntent_periodOutsideTheAllowedSet_fallsBackToDefault() {
+        assertThat(InboxQueryService.parseIntent("EMAILS_RECEIVED | 14 | NONE").periodDays())
+                .isEqualTo(AnalyticsService.DEFAULT_PERIOD_DAYS);
+        assertThat(InboxQueryService.parseIntent("EMAILS_RECEIVED | 90 | NONE").periodDays()).isEqualTo(90);
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void ask_modelReturnsNoBody_degradesToGuidance() {
+        stubOllamaChain();
+        when(responseSpec.bodyToMono(Map.class)).thenReturn((Mono) Mono.empty());
+
+        InboxAnswer answer = service.ask("how many RFQs?");
+
+        assertThat(answer.matched()).isFalse();
+        assertThat(answer.answer()).contains("I can answer questions about your inbox");
+    }
+
+    @Test
+    void ask_modelCallFails_degradesToGuidance() {
+        stubOllamaChain();
+        when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.error(new IllegalStateException("connection refused")));
+
+        InboxAnswer answer = service.ask("how many RFQs?");
+
+        assertThat(answer.matched()).isFalse();
+        assertThat(answer.answer()).contains("I can answer questions about your inbox");
+    }
+
     // ---- helpers ----
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void stubOllamaChain() {
+        when(webClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
+        when(requestBodySpec.bodyValue(any())).thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpec);
+        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> capturedBodies(int calls) {
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(requestBodySpec, times(calls)).bodyValue(captor.capture());
+        return captor.getAllValues().stream().map(b -> (Map<String, Object>) b).toList();
+    }
+
+    /**
+     * 20 tickets (4 junk), 8 replies (2 automatic), 2 SLA breaches, 90 min average response,
+     * 4 of 10 quotes booked — round figures, so every headline above can be checked by hand.
+     */
+    private static AnalyticsSummary richSummary() {
+        Map<TicketStatus, Long> byStatus = new EnumMap<>(TicketStatus.class);
+        for (TicketStatus s : TicketStatus.values()) {
+            byStatus.put(s, 0L);
+        }
+        byStatus.put(TicketStatus.RECEIVED, 1L);
+        byStatus.put(TicketStatus.DRAFT_READY, 6L);
+        byStatus.put(TicketStatus.FAILED, 2L);
+        byStatus.put(TicketStatus.IRRELEVANT, 4L);
+        byStatus.put(TicketStatus.CLOSED, 5L);
+        byStatus.put(TicketStatus.AUTO_SENT, 2L);
+        Map<TicketType, Long> byType = new EnumMap<>(TicketType.class);
+        byType.put(TicketType.RFQ, 5L);
+        byType.put(TicketType.STATUS_UPDATE, 3L);
+        return new AnalyticsSummary(30, byStatus, byType, 2L, 6L, 2L, 2L, 5400.0,
+                List.<DayVolume>of(), List.<Long>of(), 0L, 0L, 10L, 4L);
+    }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     @SafeVarargs

@@ -64,6 +64,16 @@ Branch coverage of the classes the plan touches (clean run):
 | `TicketProcessingService` | 69 % | 21 |
 | `AiDraftingService` | 77 % | 15 |
 
+## Found while writing the safety net (not fixed — behaviour changes, separate branches)
+
+- `InboxQueryService` headlines format percentages with the JVM default locale
+  (`"%.1f%%".formatted(...)`): `20.0%` in the container (en_US), `20,0%` on a ru-RU machine. The
+  quote-conversion figure already uses `Locale.ENGLISH`; the rest should too.
+- The same class builds the figures block with `%n`, so the phrasing prompt has CRLF on Windows and
+  LF in the container. Harmless for the model, but `\n` would make it platform-independent.
+
+Tests pin the production behaviour (en_US, LF) so they pass on any machine.
+
 ## Plan
 
 **Stage 0 — safety net (no production code changes)**
@@ -77,9 +87,14 @@ Branch coverage of the classes the plan touches (clean run):
    directly (`AdminController`, `DocumentApiController`, `RateApiController`, `TicketApiController`,
    `TrainingExampleApiController`). Package cycles exist today (service ↔ config, service ↔ webhook,
    service ↔ startup, entity ↔ messaging), so a no-cycles rule waits for the package-by-feature step.
-3. Characterisation tests up to ~70 % branch coverage for each class before it is refactored — first
-   `TicketProcessingService.processAttempt` (every outcome: irrelevant, KB-grounded, rate-quoted,
-   escalated, Ollama down → retry, breaker open) and `InboxQueryService`.
+3. Characterisation tests up to ~70 % branch coverage for each class before it is refactored.
+   ✅ `TicketProcessingService` 69 → **97 %** branches (`TicketProcessingPipelineTest`: retry loop,
+   auto-send after the attempt, optimistic-lock retries, unexpected errors, empty identifier,
+   confidence inputs, shipment watch, attachment text, bulk reset) and `InboxQueryService`
+   46 → **89 %** (every metric's headline pinned to exact text, the facts sent for phrasing, tenant
+   prompt substitution, degradation paths). 734 tests, 87 % / 73 % overall. The remaining classes
+   (`TicketApiController`, `AiDraftingService`, `SettingsApiController`, `EmailTicketRepository`) get
+   theirs as the first commit of their own refactoring step.
 4. Frontend: vitest + Testing Library smoke tests for `SettingsPage`; make lint green and run it in CI.
 5. Optional: Spotless + Prettier as one format-only commit listed in `.git-blame-ignore-revs`.
 
