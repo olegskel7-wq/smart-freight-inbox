@@ -40,6 +40,14 @@ class WebhookTenantIsolationTest {
     private static final long DEFAULT_TENANT = 1L;
     private static final String MARK = "iso.test";
 
+    /**
+     * The real {@code WebhookDispatcher} polls every 5 s in this shared context. A delivery due by the
+     * wall clock gets locked by it, its subscription updated, and the cleanup's cascade DELETE then
+     * deadlocks with it (seen in CI). Test deliveries are therefore scheduled a day ahead, and
+     * {@code lockDueBatch} is asked about that moment — the dispatcher never sees them.
+     */
+    private static final LocalDateTime POLL_AT = LocalDateTime.now().plusDays(1);
+
     @Autowired
     private WebhookSubscriptionRepository subscriptions;
 
@@ -126,16 +134,16 @@ class WebhookTenantIsolationTest {
         Long sub2 = createSubscription(secondTenant);
 
         UUID dueTenant1 = createDelivery(DEFAULT_TENANT, sub1,
-                WebhookDeliveryStatus.PENDING, LocalDateTime.now().minusMinutes(1));
+                WebhookDeliveryStatus.PENDING, POLL_AT.minusMinutes(1));
         UUID dueTenant2 = createDelivery(secondTenant, sub2,
-                WebhookDeliveryStatus.PENDING, LocalDateTime.now().minusMinutes(1));
+                WebhookDeliveryStatus.PENDING, POLL_AT.minusMinutes(1));
         UUID alreadyDelivered = createDelivery(secondTenant, sub2,
-                WebhookDeliveryStatus.DELIVERED, LocalDateTime.now().minusMinutes(1));
+                WebhookDeliveryStatus.DELIVERED, POLL_AT.minusMinutes(1));
         UUID notYetDue = createDelivery(secondTenant, sub2,
-                WebhookDeliveryStatus.PENDING, LocalDateTime.now().plusHours(1));
+                WebhookDeliveryStatus.PENDING, POLL_AT.plusHours(1));
 
         List<UUID> picked = TenantContext.callAsSystem(
-                () -> deliveries.lockDueBatch(LocalDateTime.now(), 100).stream()
+                () -> deliveries.lockDueBatch(POLL_AT, 100).stream()
                         .map(WebhookDelivery::getEventId).toList());
 
         // The dispatcher works cross-tenant under the system context...
@@ -147,7 +155,7 @@ class WebhookTenantIsolationTest {
     @Test
     void delivery_isInvisibleToOtherTenants_viaEntityQuery() {
         Long sub2 = createSubscription(secondTenant);
-        createDelivery(secondTenant, sub2, WebhookDeliveryStatus.PENDING, LocalDateTime.now());
+        createDelivery(secondTenant, sub2, WebhookDeliveryStatus.PENDING, POLL_AT);
 
         long tenant1Count = TenantContext.callAs(DEFAULT_TENANT,
                 () -> deliveries.findBySubscriptionIdOrderByIdDesc(sub2,
