@@ -68,8 +68,15 @@ Branch coverage of the classes the plan touches (clean run):
 
 **Stage 0 — safety net (no production code changes)**
 1. ✅ Baseline above + golden-set snapshot script.
-2. ArchUnit rules for what holds today: controllers do not use repositories directly, tenancy rules,
-   no package cycles.
+2. ✅ ArchUnit rules for what holds today (`src/test/java/com/smartfreight/inbox/ArchitectureTest.java`):
+   repositories depend only on entities; nothing outside `controller` depends on it; services do not
+   depend on entry points (controller / messaging / integration / scheduler); `tenancy`, `util`,
+   `exception` depend on no other application package; entities depend only on entities (+ the live
+   event listener); every `@Entity` has a `@TenantId` field except `Tenant`, `AppSetting`, `OutboxEvent`.
+   Known exceptions are listed by name and may only shrink: 5 controllers still use repositories
+   directly (`AdminController`, `DocumentApiController`, `RateApiController`, `TicketApiController`,
+   `TrainingExampleApiController`). Package cycles exist today (service ↔ config, service ↔ webhook,
+   service ↔ startup, entity ↔ messaging), so a no-cycles rule waits for the package-by-feature step.
 3. Characterisation tests up to ~70 % branch coverage for each class before it is refactored — first
    `TicketProcessingService.processAttempt` (every outcome: irrelevant, KB-grounded, rate-quoted,
    escalated, Ollama down → retry, breaker open) and `InboxQueryService`.
