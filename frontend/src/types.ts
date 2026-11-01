@@ -1,4 +1,4 @@
-// Mirrors the backend DTOs in com.smartfreight.inbox.controller.dto (Phase 3.2).
+// Mirrors the backend DTOs in com.smartfreight.inbox.controller.dto.
 
 export interface TicketSummary {
   id: number
@@ -67,7 +67,7 @@ export interface TicketDetail {
   updatedAt: string
 }
 
-// Documents DTOs — mirror com.smartfreight.inbox.controller.dto.DocumentsResponse (Phase 3.2).
+// Documents DTOs — mirror com.smartfreight.inbox.controller.dto.DocumentsResponse.
 export interface DocTypeOption {
   value: string
   label: string
@@ -92,7 +92,7 @@ export const TICKET_STATUSES = [
   'RETRY_LATER', 'IRRELEVANT', 'CLOSED', 'AUTO_SENT',
 ] as const
 
-// Analytics DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2).
+// Analytics DTOs — mirror com.smartfreight.inbox.controller.dto.
 
 export interface TypeCount {
   type: string
@@ -155,7 +155,7 @@ export interface InboxAnswer {
   matched: boolean
 }
 
-// Settings DTOs — mirror com.smartfreight.inbox.controller.dto.SettingsResponse (Phase 3.2).
+// Settings DTOs — mirror com.smartfreight.inbox.controller.dto.SettingsResponse.
 
 export interface MailboxRow {
   id: number
@@ -165,18 +165,18 @@ export interface MailboxRow {
   sendsAs: string | null
   enabled: boolean
   running: boolean
-  // Gate B4: last IMAP login probe — null until the first probe (every ~5 min). "Running" only
+  // Last IMAP login probe — null until the first probe (every ~5 min). "Running" only
   // means the adapter is registered; this says whether we can actually log in.
   loginOk: boolean | null
   lastLoginOkAt: string | null
   loginError: string | null
-  // Raw SMTP config — seeds the edit form (Gate B15). The password is never returned.
+  // Raw SMTP config — seeds the edit form. The password is never returned.
   smtpHost: string | null
   smtpPort: number | null
   fromAddress: string | null
 }
 
-// Rates DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2). Monetary fields are
+// Rates DTOs — mirror com.smartfreight.inbox.controller.dto. Monetary fields are
 // strings (exact BigDecimal text); sellPrice and expired are computed server-side.
 export interface Rate {
   id: number
@@ -204,7 +204,7 @@ export interface RateUploadResponse {
   snapshot: RatesResponse
 }
 
-// Users DTO — mirrors com.smartfreight.inbox.controller.dto.UserDto (Phase 3.2). role may be null
+// Users DTO — mirrors com.smartfreight.inbox.controller.dto.UserDto. role may be null
 // (the page falls back to "OPERATOR"); id is the Keycloak user UUID.
 export interface User {
   id: string
@@ -212,7 +212,7 @@ export interface User {
   role: string | null
 }
 
-// Tenant DTO — mirrors com.smartfreight.inbox.controller.dto.TenantSummaryDto (Phase 3.2).
+// Tenant DTO — mirrors com.smartfreight.inbox.controller.dto.TenantSummaryDto.
 // Platform admin (SUPER_ADMIN) view: one client organisation + its Keycloak operator count.
 export interface Tenant {
   id: number
@@ -221,7 +221,7 @@ export interface Tenant {
   createdAt: string
 }
 
-// Training-examples DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.2). The text
+// Training-examples DTOs — mirror com.smartfreight.inbox.controller.dto. The text
 // fields are previews abbreviated server-side; ticketType is the enum name or null (Unclassified).
 export interface TrainingExample {
   id: number
@@ -237,7 +237,7 @@ export interface TrainingExamplesResponse {
   examples: TrainingExample[]
 }
 
-// Knowledge-base DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.9). Full content is
+// Knowledge-base DTOs — mirror com.smartfreight.inbox.controller.dto. Full content is
 // shipped (not a preview) because the page edits documents inline.
 export interface KnowledgeDoc {
   id: number
@@ -276,7 +276,7 @@ export interface Settings {
   mailboxes: MailboxRow[]
 }
 
-// Webhook DTOs — mirror com.smartfreight.inbox.controller.dto (Phase 3.5). The signing secret is
+// Webhook DTOs — mirror com.smartfreight.inbox.controller.dto. The signing secret is
 // never returned except once in CreateWebhookResponse at creation time.
 export interface WebhookSubscription {
   id: number

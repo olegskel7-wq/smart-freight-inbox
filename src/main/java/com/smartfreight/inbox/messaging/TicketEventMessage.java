@@ -9,9 +9,10 @@ import java.time.Instant;
  * from the DB, so the message can never carry stale ticket state.
  *
  * @param ticketId   id of the ticket to process
- * @param tenantId   tenant the ticket belongs to (Phase 2.2) — the consumer binds its
+ * @param tenantId   tenant the ticket belongs to — the consumer binds its
  *                   TenantContext to it before processing, so the reload itself is
- *                   tenant-scoped. Null on pre-2.2 in-flight messages → default tenant.
+ *                   tenant-scoped. Null on messages recorded before
+ *                   multi-tenancy → default tenant.
  * @param eventType  one of the {@code TYPE_*} constants; doubles as the routing key
  * @param occurredAt when the event was recorded (business-transaction time)
  */

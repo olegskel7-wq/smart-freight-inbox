@@ -17,7 +17,7 @@ import java.util.Base64;
 import java.util.List;
 
 /**
- * Tenant-facing management of webhook subscriptions (Phase 3.5).
+ * Tenant-facing management of webhook subscriptions.
  *
  * <p>Owns the rules the {@code /api/webhooks} controller enforces: the signing secret is encrypted at
  * rest ({@link SecretCipher}, like mailbox passwords) and only ever returned to the operator once — at
@@ -108,7 +108,7 @@ public class WebhookManagementService {
         subscription.setEventTypes(normaliseEventTypes(eventTypes));
         subscription.setDescription(blankToNull(description));
         subscription.setEnabled(enabled);
-        // Phase 3.5 S2: an operator action clears the auto-disable state. Re-enabling gives the endpoint a
+        // An operator action clears the auto-disable state. Re-enabling gives the endpoint a
         // clean slate (reset the failure run); a manual disable is not an auto-disable, so drop the reason.
         subscription.setDisabledReason(null);
         if (enabled) {

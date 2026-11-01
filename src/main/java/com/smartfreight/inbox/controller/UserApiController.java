@@ -20,13 +20,13 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /users} page (Phase 3.2). It mirrors
+ * JSON API backing the React {@code /users} page. It mirrors
  * {@link UserManagementController} (the Thymeleaf operator-management UI) but speaks DTOs over
  * {@code /api/users} and is secured by the stateless resource-server chain (bearer JWT). The two
  * controllers run side by side during the migration; this one collapses to the only one when
  * Thymeleaf is removed.
  *
- * <p>Operators are Keycloak realm users (Phase 2.3); {@link UserManagementService} scopes every
+ * <p>Operators are Keycloak realm users; {@link UserManagementService} scopes every
  * call to the caller's tenant and owns the validation (password length, duplicate email, self-delete
  * guard) — a rejected value surfaces here as {@link IllegalArgumentException} → {@code 400} with the
  * message, exactly the text the Thymeleaf page showed as a flash error. Every mutation returns the
@@ -48,13 +48,13 @@ public class UserApiController {
         this.userManagementService = userManagementService;
     }
 
-    /** New-operator payload (role defaults to OPERATOR when blank; OPERATOR/ADMIN accepted, Phase 3.3). */
+    /** New-operator payload (role defaults to OPERATOR when blank; OPERATOR/ADMIN accepted). */
     public record CreateUserRequest(String email, String firstName, String lastName, String password, String role) {}
 
     /** Password-reset payload for an existing operator. */
     public record ChangePasswordRequest(String newPassword) {}
 
-    /** Role-change payload (OPERATOR ↔ ADMIN, Phase 3.3). */
+    /** Role-change payload (OPERATOR ↔ ADMIN). */
     public record ChangeRoleRequest(String role) {}
 
     /** GET /api/users — the caller's tenant operators. */
@@ -84,7 +84,7 @@ public class UserApiController {
     }
 
     /**
-     * POST /api/users/{id}/role — changes an operator's tenant role (OPERATOR ↔ ADMIN, Phase 3.3).
+     * POST /api/users/{id}/role — changes an operator's tenant role (OPERATOR ↔ ADMIN).
      * The caller's email comes off the JWT; the service refuses a self-role-change to avoid an admin
      * locking the tenant out of its own management surface. An invalid role / cross-tenant target /
      * self-target answers {@code 400} with the message.

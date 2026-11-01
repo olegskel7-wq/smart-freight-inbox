@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * JPA entity mapped to the {@code outbox_event} table (Phase 1.3, transactional outbox).
+ * JPA entity mapped to the {@code outbox_event} table (transactional outbox).
  *
  * One row = one domain event awaiting publication to RabbitMQ. The row is inserted
  * in the SAME transaction as the business change it describes (e.g. a new ticket),
@@ -32,7 +32,7 @@ public class OutboxEvent {
     private Long id;
 
     /**
-     * Owning tenant (Phase 2.2). Deliberately NOT {@code @TenantId}: events are also
+     * Owning tenant. Deliberately NOT {@code @TenantId}: events are also
      * recorded from the system context (RetryScheduler re-enqueueing tickets of many
      * tenants in one run), where Hibernate has no tenant to auto-assign. The publisher
      * sets it explicitly; RLS still guards the table.

@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Records outbound webhook deliveries when a domain event fires (Phase 3.5).
+ * Records outbound webhook deliveries when a domain event fires.
  *
  * <p>"Publishing" is an INSERT into {@code webhook_delivery} within the CALLER's transaction — the same
  * transactional-outbox discipline as {@code OutboxTicketEventPublisher}: if the business change rolls

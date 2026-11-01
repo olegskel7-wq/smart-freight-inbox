@@ -6,7 +6,7 @@ package com.smartfreight.inbox.service;
  * <p>The name is customer-facing: {@link ReplySignatureService} signs every reply with the sending
  * operator's name from their token ("Kind regards, Dana Price"). An account created without it falls
  * back to "Customer Service Team", and Keycloak's user profile (firstName/lastName required) stops the
- * user at an "Update Account Information" form on first login (Gate B6).
+ * user at an "Update Account Information" form on first login.
  */
 public record OperatorName(String firstName, String lastName) {
 

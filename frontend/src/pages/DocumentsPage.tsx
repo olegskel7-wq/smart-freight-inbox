@@ -10,7 +10,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`
 }
 
-// React port of documents.html (Phase 3.2). Per-tenant document store: upload a file against a
+// Per-tenant document store: upload a file against a
 // shipment identifier + type, download (bearer-authenticated blob), delete. Each mutation returns the
 // refreshed snapshot, which re-renders the table. The old Thymeleaf page stays live until cutover.
 export default function DocumentsPage() {

@@ -3,7 +3,7 @@ package com.smartfreight.inbox.controller.dto;
 import com.smartfreight.inbox.service.InboxQueryService.InboxAnswer;
 
 /**
- * POST {@code /api/analytics/ask} payload (Phase 3.2) — the "Ask your inbox" answer (Phase 2.8).
+ * POST {@code /api/analytics/ask} payload — the "Ask your inbox" answer.
  * {@code matched} drives the alert styling (primary when a metric was resolved, secondary for the
  * guidance fallback); {@code metric} is the routed {@code InboxMetric} name for the caption.
  */

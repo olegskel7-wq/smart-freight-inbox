@@ -41,7 +41,7 @@ public final class EmailAddressUtils {
 
     /**
      * Masks the local part of every email address in free text: {@code "550 <sue@acme.com>"} →
-     * {@code "550 <***@acme.com>"}. For logging mail errors (Gate B3): SMTP/JavaMail exception
+     * {@code "550 <***@acme.com>"}. For logging mail errors: SMTP/JavaMail exception
      * messages carry the recipient address, which is customer PII. {@code null} passes through.
      */
     public static String maskAddresses(String text) {

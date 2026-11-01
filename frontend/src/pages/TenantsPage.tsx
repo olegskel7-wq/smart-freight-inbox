@@ -6,7 +6,7 @@ import type { Tenant } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
-// React port of admin-tenants.html (Phase 3.2). Platform admin (SUPER_ADMIN only — enforced by the
+// Platform admin (SUPER_ADMIN only — enforced by the
 // /api/admin/tenants/** matcher) for tenant onboarding: list every client organisation with its
 // operator count, and create a new tenant + its first operator in one call. The Bootstrap modal is
 // replaced with an always-visible "Add tenant" card. Create returns the refreshed list, which

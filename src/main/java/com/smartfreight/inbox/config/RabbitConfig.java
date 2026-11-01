@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * RabbitMQ topology and consumer tuning for the async AI pipeline (Phase 1.3).
+ * RabbitMQ topology and consumer tuning for the async AI pipeline.
  *
  * Topology:
  * <pre>
@@ -96,7 +96,7 @@ public class RabbitConfig {
         // previous one — fair dispatch for jobs that run tens of seconds each.
         factory.setPrefetchCount(1);
         factory.setDefaultRequeueRejected(false);
-        // Gate B5: on shutdown let an in-flight pipeline run (tens of seconds of LLM calls) finish
+        // On shutdown let an in-flight pipeline run (tens of seconds of LLM calls) finish
         // instead of the 5 s default. One that still overruns stays unacked and is redelivered
         // after the restart — the consumer is idempotent (status guard), so nothing is lost or doubled.
         factory.setContainerCustomizer(container -> container.setShutdownTimeout(40_000));

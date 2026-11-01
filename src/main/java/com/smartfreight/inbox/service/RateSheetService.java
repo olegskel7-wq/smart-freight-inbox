@@ -24,7 +24,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Carrier rate sheets (Phase 1.2): CSV import and rate lookup for the drafting prompt.
+ * Carrier rate sheets: CSV import and rate lookup for the drafting prompt.
  *
  * <p>Expected CSV header: {@code carrier,origin,destination,rate,currency,margin_percent,valid_until}.
  * {@code currency} (default GBP), {@code margin_percent} (default 0) and {@code valid_until}
@@ -33,7 +33,7 @@ import java.util.regex.Pattern;
  *
  * <p>Lookup is deterministic: a rate matches when both its origin and destination appear as
  * whole words in the email text. AI-based route extraction is deliberately out of scope here —
- * it belongs to extended classification (Phase 1.4).
+ * it belongs to extended classification.
  */
 @Service
 public class RateSheetService {

@@ -5,7 +5,7 @@ import com.smartfreight.inbox.service.TenantManagementService.TenantSummary;
 import java.time.LocalDateTime;
 
 /**
- * One tenant row for the React {@code /admin/tenants} table (Phase 3.2). Flattens the
+ * One tenant row for the React {@code /admin/tenants} table. Flattens the
  * {@link TenantSummary} projection (the {@link com.smartfreight.inbox.entity.Tenant} entity plus its
  * Keycloak operator count) into the four columns the page renders, so the entity itself never crosses
  * the wire.

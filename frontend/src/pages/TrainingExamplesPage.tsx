@@ -7,7 +7,7 @@ import type { TrainingExamplesResponse } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
-// React port of training-examples.html (Phase 3.2). Captured operator corrections (the AI feedback
+// Captured operator corrections (the AI feedback
 // loop): list + delete for dataset curation. The text previews are abbreviated server-side. Delete
 // returns the refreshed snapshot, which re-renders the table. The old Thymeleaf page stays live
 // until cutover.

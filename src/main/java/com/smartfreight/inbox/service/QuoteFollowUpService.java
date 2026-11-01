@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 
 /**
- * Maintains proactive quote-follow-up subscriptions (Phase 2.5).
+ * Maintains proactive quote-follow-up subscriptions.
  *
  * <p>The sent quote is the subscription: when an RFQ reply is actually sent (operator send →
  * CLOSED, or auto-send → AUTO_SENT), {@link #armFromTicket} records (or refreshes) a
@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
  *
  * <p>Armed unconditionally (regardless of {@code feature.quote-followup}) — the row is cheap and
  * the scheduler is what's gated, so enabling the flag activates recently-quoted tickets at once,
- * mirroring how Phase 2.4 records shipment watches.
+ * mirroring how {@link ShipmentWatchService} records shipment watches.
  */
 @Service
 public class QuoteFollowUpService {

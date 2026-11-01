@@ -9,7 +9,7 @@ const DEBOUNCE_MS = 400
 
 /**
  * Subscribes to this tenant's live ticket topic over STOMP and invokes `onEvent` (debounced) on each
- * push (Phase 3.2). Returns whether the stream is currently connected, for a UI indicator.
+ * push. Returns whether the stream is currently connected, for a UI indicator.
  *
  * The browser WebSocket handshake cannot carry an Authorization header, so the Keycloak access token
  * rides on the STOMP CONNECT frame instead; the backend validates it and only lets the client join

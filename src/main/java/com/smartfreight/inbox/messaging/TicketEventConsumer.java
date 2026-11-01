@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * RabbitMQ consumer that runs the AI pipeline for ticket events (Phase 1.3).
+ * RabbitMQ consumer that runs the AI pipeline for ticket events.
  *
  * Replaces the old in-JVM hand-off (TaskExecutor in EmailIngestionService /
  * RetryScheduler). Concurrency and backpressure live in the listener factory
@@ -51,10 +51,10 @@ public class TicketEventConsumer {
         log.info("Consuming {} for ticket {} (tenant {})",
                 message.eventType(), message.ticketId(), message.tenantId());
 
-        // Phase 2.2: the whole pipeline run is bound to the event's tenant — every ticket
+        // The whole pipeline run is bound to the event's tenant — every ticket
         // reload, audit row and settings read below is tenant-scoped. The context must be
         // set HERE, before process() opens its transaction: Hibernate fixes the session's
-        // tenant at session open. Pre-2.2 in-flight messages carry no tenantId → default.
+        // tenant at session open. Messages recorded before multi-tenancy carry no tenantId → default.
         Long tenantId = message.tenantId() != null ? message.tenantId() : tenancyProperties.getDefaultId();
         TenantContext.runAs(tenantId, () -> ticketProcessingService.process(message.ticketId()));
     }

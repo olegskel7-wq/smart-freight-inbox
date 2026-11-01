@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Full ticket view for the detail API (Phase 3.2): the metadata, the email/attachment text, the
+ * Full ticket view for the detail API: the metadata, the email/attachment text, the
  * editable draft, and — for DOCUMENT_REQUEST tickets — the attached document plus the documents on
  * file for this shipment that the operator can attach. Bytes are never included (see
  * {@link DocumentRefDto}).

@@ -3,7 +3,7 @@ package com.smartfreight.inbox.tenancy;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
- * Reads the {@code tenant_id} claim off a Keycloak bearer JWT (Phase 3.2).
+ * Reads the {@code tenant_id} claim off a Keycloak bearer JWT.
  *
  * <p>Shared by {@link TenantFilter} (the {@code /api/**} request thread) and
  * {@code StompAuthChannelInterceptor} (the WebSocket CONNECT/SUBSCRIBE frames) so both resolve the

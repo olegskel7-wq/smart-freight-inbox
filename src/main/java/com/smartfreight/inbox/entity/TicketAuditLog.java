@@ -42,7 +42,7 @@ public class TicketAuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Owning tenant (Phase 2.2) — assigned on insert, filters every entity query. */
+    /** Owning tenant — assigned on insert, filters every entity query. */
     @org.hibernate.annotations.TenantId
     @Column(name = "tenant_id", nullable = false, updatable = false)
     private Long tenantId;

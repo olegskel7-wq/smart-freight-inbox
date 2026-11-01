@@ -15,7 +15,7 @@ import TenantsPage from './pages/TenantsPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
 import WebhooksPage from './pages/WebhooksPage.tsx'
 
-// Client-side guard for tenant-admin pages (Phase 3.3): an operator who deep-links to /users or
+// Client-side guard for tenant-admin pages: an operator who deep-links to /users or
 // /settings is bounced to /tickets. The API enforces the ADMIN role regardless — this just avoids
 // rendering a page whose every call would 403.
 function RequireAdmin({ children }: { children: ReactElement }) {
@@ -24,7 +24,7 @@ function RequireAdmin({ children }: { children: ReactElement }) {
 }
 
 // One ticket page instance per ticket: prev/next and Send-and-next remount it, so no per-ticket
-// state (draft, pickers, notices) carries over to the next ticket (Phase 3.2 UI, variant C).
+// state (draft, pickers, notices) carries over to the next ticket.
 function TicketDetailKeyed() {
   const { id } = useParams()
   return <TicketDetailPage key={id} />

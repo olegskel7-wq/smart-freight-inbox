@@ -74,7 +74,7 @@ export interface SlaInfo {
 }
 
 /**
- * Relative SLA for an open ticket (variant C list grouping). Overdue = flagged breached by the
+ * Relative SLA for an open ticket (ticket list grouping). Overdue = flagged breached by the
  * SlaBreachScheduler OR already past its deadline (the scheduler runs once a minute). "Due today"
  * ends at local midnight; anything later, or with no deadline, is "Later".
  */

@@ -110,7 +110,7 @@ public class AiDraftingService {
             + "(use only if relevant to the customer's question; do not invent):";
 
     /**
-     * Fallback prompt for proactive status updates (Phase 2.4) when the DB-backed
+     * Fallback prompt for proactive status updates when the DB-backed
      * {@code ai.status-update-prompt} row is missing or blank. Kept in sync with migration V22.
      * {@code {itemContext}} → the looked-up shipment data, {@code {previousStatus}} → the status
      * the customer was last told about.
@@ -129,7 +129,7 @@ public class AiDraftingService {
             Write only the email body (no subject line). Keep it to a few sentences.""";
 
     /**
-     * Fallback prompt for proactive quote follow-ups (Phase 2.5) when the DB-backed
+     * Fallback prompt for proactive quote follow-ups when the DB-backed
      * {@code ai.quote-followup-prompt} row is missing or blank. Kept in sync with migration V24.
      * {@code {originalEnquiry}} → the customer's original RFQ text.
      */
@@ -146,7 +146,7 @@ public class AiDraftingService {
             Write only the email body (no subject line). Keep it to a few sentences.""";
 
     /**
-     * Fallback prompt for document-request replies (Phase 2.7) when the DB-backed
+     * Fallback prompt for document-request replies when the DB-backed
      * {@code ai.document-cover-prompt} row is missing or blank. Kept in sync with migration V26.
      * {@code {documentType}} → the requested document, {@code {documentStatus}} → whether it is
      * attached or being retrieved, {@code {itemContext}} → shipment data, {@code {email}} → enquiry.
@@ -243,7 +243,7 @@ public class AiDraftingService {
     }
 
     /**
-     * Generates a reply draft with carrier rate context (Phase 1.2).
+     * Generates a reply draft with carrier rate context.
      *
      * <p>Rate placement is defensive about prompt history: the {@code ai.drafting-prompt} row
      * seeded by V9 predates {@code {rateContext}}, so when the stored template lacks the
@@ -260,8 +260,8 @@ public class AiDraftingService {
     }
 
     /**
-     * Generates a reply draft with carrier rate context (Phase 1.2) and few-shot examples of past
-     * operator corrections (Phase 3.1 S2 — the AI Feedback Loop).
+     * Generates a reply draft with carrier rate context and few-shot examples of past
+     * operator corrections (the AI feedback loop, see docs/adr/0010-rag-feedback-and-knowledge.md).
      *
      * <p>Both contexts are defensive about prompt history: when the stored {@code ai.drafting-prompt}
      * template lacks the {@code {rateContext}} / {@code {exampleContext}} placeholder (it was seeded
@@ -279,9 +279,8 @@ public class AiDraftingService {
     }
 
     /**
-     * Generates a reply draft with carrier rate context (Phase 1.2), few-shot examples of past operator
-     * corrections (Phase 3.1 S2) and grounding from the tenant's knowledge base (Phase 3.9 — KB
-     * deflection).
+     * Generates a reply draft with carrier rate context, few-shot examples of past operator
+     * corrections and grounding from the tenant's knowledge base.
      *
      * <p>All three contexts are defensive about prompt history: when the stored {@code ai.drafting-prompt}
      * template lacks the {@code {rateContext}} / {@code {exampleContext}} / {@code {knowledgeContext}}
@@ -342,7 +341,7 @@ public class AiDraftingService {
     }
 
     /**
-     * Generates a proactive status-update notification (Phase 2.4).
+     * Generates a proactive status-update notification.
      *
      * <p>Unlike {@link #generateDraft}, this is not a reply to an inbound email — it is composed
      * when a watched shipment reaches a milestone, so it uses the dedicated
@@ -368,7 +367,7 @@ public class AiDraftingService {
     }
 
     /**
-     * Generates a proactive quote follow-up nudge (Phase 2.5).
+     * Generates a proactive quote follow-up nudge.
      *
      * <p>Composed when a sent quote has gone unanswered for the configured delay — it is not a
      * reply to inbound mail, so it uses the dedicated {@code ai.quote-followup-prompt} template
@@ -391,7 +390,7 @@ public class AiDraftingService {
     }
 
     /**
-     * Generates a reply to a document request (Phase 2.7).
+     * Generates a reply to a document request.
      *
      * <p>Uses the dedicated {@code ai.document-cover-prompt} template — the same shared {@link
      * #callOllama} path, per-tenant endpoint, breaker and fallback as the reply path. The {@code
@@ -441,7 +440,7 @@ public class AiDraftingService {
     }
 
     /**
-     * Sends a generate request to Ollama for the CURRENT tenant's endpoint (Phase 2.2 S3) and
+     * Sends a generate request to Ollama for the CURRENT tenant's endpoint and
      * returns the response text, falling back to a static draft on an empty/failed call.
      *
      * @param prompt        the fully substituted prompt
@@ -463,7 +462,7 @@ public class AiDraftingService {
             log.debug("Sending drafting request to Ollama model {}", draftingModel);
 
             long start = System.nanoTime();
-            // Phase 2.2 S3: client + breaker resolved per call for the CURRENT tenant's endpoint.
+            // Client + breaker resolved per call for the CURRENT tenant's endpoint.
             WebClient ollamaWebClient = ollamaClients.client();
             @SuppressWarnings("unchecked")
             Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
@@ -493,7 +492,7 @@ public class AiDraftingService {
 
         } catch (CallNotPermittedException e) {
             // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
-            // ticket as RETRY_LATER (Phase 1.7) instead of serving the static fallback draft.
+            // ticket as RETRY_LATER instead of serving the static fallback draft.
             log.warn("Ollama circuit breaker is open — drafting call not attempted");
             throw e;
         } catch (Exception e) {

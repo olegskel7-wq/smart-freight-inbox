@@ -5,11 +5,10 @@ import type { User } from '../types.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
-// React port of users.html (Phase 3.2). Operator management backed by Keycloak: list, add, reset
-// password, delete (the API blocks deleting your own account). The Bootstrap modals are replaced
-// with inline forms — an always-visible "Add operator" card and a per-row password field toggled
-// open. Each mutation returns the refreshed list, which re-renders the table. The old Thymeleaf
-// page stays live until cutover.
+// Operator management backed by Keycloak: list, add, reset
+// password, delete (the API blocks deleting your own account). Inline forms instead of modals —
+// an always-visible "Add operator" card and a per-row password field toggled
+// open. Each mutation returns the refreshed list, which re-renders the table.
 export default function UsersPage() {
   const api = useApi()
 

@@ -25,7 +25,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /documents} page (Phase 3.2). It mirrors {@link DocumentController}
+ * JSON API backing the React {@code /documents} page. It mirrors {@link DocumentController}
  * (the Thymeleaf document-store UI) but speaks DTOs over {@code /api/documents} and is secured by the
  * stateless resource-server chain (bearer JWT). The two controllers run side by side during the
  * migration; this one collapses to the only one when Thymeleaf is removed.

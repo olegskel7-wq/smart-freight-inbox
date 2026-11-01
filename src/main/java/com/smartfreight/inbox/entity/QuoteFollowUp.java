@@ -14,7 +14,7 @@ import org.hibernate.annotations.TenantId;
 import java.time.LocalDateTime;
 
 /**
- * A proactive quote follow-up subscription (Phase 2.5).
+ * A proactive quote follow-up subscription.
  *
  * <p>The product is reactive by default — a customer emails an RFQ, the AI replies with a quote,
  * and there it ends. A follow-up turns that single quote into a one-shot nudge: once an RFQ

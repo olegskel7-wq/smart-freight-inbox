@@ -1,7 +1,7 @@
 package com.smartfreight.inbox.entity.enums;
 
 /**
- * How time-critical an incoming email is (Phase 3.10 — smart routing).
+ * How time-critical an incoming email is (smart routing, see docs/adr/0012-smart-routing.md).
  *
  * Assigned by the AI classifier in the same Qwen call that decides relevance and type:
  * one call now returns {@code TYPE|URGENCY|SENTIMENT}. Urgency drives prioritisation —

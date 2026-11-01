@@ -13,7 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 
 /**
- * Stores and removes per-tenant freight documents (Phase 2.7).
+ * Stores and removes per-tenant freight documents.
  *
  * <p>Keeps {@link com.smartfreight.inbox.controller.DocumentController} thin — the same split as
  * {@link RateSheetService} behind the rate-sheet controller. Persistence is tenant-scoped by

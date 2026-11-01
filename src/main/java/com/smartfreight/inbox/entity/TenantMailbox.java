@@ -13,11 +13,11 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * One IMAP inbox watched for a tenant (Phase 2.2 S3).
+ * One IMAP inbox watched for a tenant.
  *
  * <p>Every enabled row gets its own IMAP IDLE adapter, registered at runtime by the
  * {@code MailboxReconciler}; mail arriving on it is ingested inside the owning tenant's
- * {@code TenantContext}. Several rows per tenant are allowed (Phase 3.3 multi-inbox),
+ * {@code TenantContext}. Several rows per tenant are allowed (multi-inbox),
  * the same (host, username) per tenant is not — V21 unique constraint, because a second
  * adapter on the same account would double-ingest every message.
  *

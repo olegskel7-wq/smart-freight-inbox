@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.function.Function;
 
 /**
- * Stable JSON shape for a page of results (Phase 3.2 API). We map Spring Data's {@link Page} to
+ * Stable JSON shape for a page of results. We map Spring Data's {@link Page} to
  * this record rather than serialising {@code PageImpl} directly — the latter's JSON is internal
  * and Spring warns against relying on it.
  */

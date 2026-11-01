@@ -8,7 +8,7 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 /**
- * STOMP-over-WebSocket configuration for real-time ticket updates (Phase 3.2 — React migration).
+ * STOMP-over-WebSocket configuration for real-time ticket updates in the React SPA.
  *
  * <p>The backend pushes a lightweight {@code TicketLiveEvent} to a per-tenant topic
  * ({@code /topic/tickets/{tenantId}}) whenever a ticket is created, updated or soft-deleted (see
@@ -27,8 +27,8 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
  *
  * <p>A {@link org.springframework.messaging.simp.config.MessageBrokerRegistry#enableSimpleBroker
  * simple in-memory broker} is enough: a single backend instance fans events out to connected
- * operators. (A multi-instance deploy would need a broker relay or a Redis-backed relay — deferred,
- * same horizontal-scaling note as the rest of Phase 2/3.)
+ * operators. (A multi-instance deploy would need a broker relay or a Redis-backed relay — deferred
+ * until the backend runs more than one instance.)
  */
 @Configuration
 @EnableWebSocketMessageBroker

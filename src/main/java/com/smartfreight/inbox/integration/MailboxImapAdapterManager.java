@@ -29,7 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Owns the fleet of dynamic IMAP IDLE adapters — one per enabled {@link TenantMailbox}
- * (Phase 2.2 S3).
+ * (see docs/adr/0002-imap-idle-dynamic-adapters.md).
  *
  * <p>Replaces the single env-configured adapter from the old {@code ImapConfig}: flows are
  * registered at runtime through {@link IntegrationFlowContext}, so onboarding a tenant's
@@ -40,8 +40,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code TenantContext.runAs(tenantId, ...)} wraps the
  * {@link EmailIngestionService#processIncomingEmail} call, so the ticket insert, the
  * per-tenant message-id dedup and the outbox event are all attributed to the mailbox's
- * tenant. This closes the S1 gap where ingestion ran unset (= default tenant) — under S3
- * fail-loud semantics an unbound ingestion would throw at the first DB touch. The mailbox
+ * tenant. An unbound ingestion would throw at the first DB touch (an unset
+ * {@code TenantContext} fails loud). The mailbox
  * id is passed along too and stored on the ticket, so the reply goes out through the inbox
  * the enquiry came in on.
  *
@@ -57,7 +57,7 @@ public class MailboxImapAdapterManager {
 
     private static final String FLOW_ID_PREFIX = "imap-mailbox-";
 
-    /** Tolerance for the mail server's clock vs ours on the connection cut-off (Gate B6). */
+    /** Tolerance for the mail server's clock vs ours on the connection cut-off. */
     static final Duration CLOCK_SKEW_GRACE = Duration.ofMinutes(15);
 
     private final IntegrationFlowContext flowContext;
@@ -191,7 +191,7 @@ public class MailboxImapAdapterManager {
     /**
      * One arrived message → ticket, inside the mailbox's tenant and attributed to the mailbox.
      *
-     * <p>Never throws (Gate B5). An exception escaping into the IDLE adapter that is not a
+     * <p>Never throws. An exception escaping into the IDLE adapter that is not a
      * {@code MessagingException} (e.g. the DB is briefly down) makes Spring Integration end the
      * IDLE loop for good — the mailbox stayed "running" and passed its login probe while it
      * ingested nothing until a restart. The message the library already flagged is not lost:
@@ -211,7 +211,7 @@ public class MailboxImapAdapterManager {
     }
 
     /**
-     * Gate B6: IDLE takes only mail received since the mailbox was connected. On first connect the
+     * IDLE takes only mail received since the mailbox was connected. On first connect the
      * adapter would otherwise turn EVERY unread email in the client's INBOX into a ticket, however
      * old — years of unread newsletters and handled enquiries. A rejected message is left exactly as
      * it was: the adapter fetches only its envelope (no body → no implicit \Seen) and flags only the
@@ -233,7 +233,7 @@ public class MailboxImapAdapterManager {
     }
 
     /**
-     * When the mailbox was connected (its row created; edit in place keeps it, Gate B15), minus
+     * When the mailbox was connected (its row created; edit in place keeps it), minus
      * {@link #CLOCK_SKEW_GRACE}: the cut-off compares the mail server's INTERNALDATE with OUR clock,
      * and a server running a few minutes behind must not make IDLE and catch-up both silently drop
      * the first enquiries after onboarding.

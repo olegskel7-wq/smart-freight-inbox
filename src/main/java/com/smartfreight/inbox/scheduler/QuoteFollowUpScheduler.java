@@ -28,7 +28,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Proactive quote-follow-up poller (Phase 2.5).
+ * Proactive quote-follow-up poller (see docs/adr/0009-proactive-emails.md).
  *
  * <p>The reactive pipeline answers an RFQ and stops; this scheduler chases the silence. For every
  * active {@link QuoteFollowUp} (armed when a quote reply was actually sent) it waits
@@ -39,7 +39,7 @@ import java.util.stream.Collectors;
  * active follow-ups in the SYSTEM state; phase B processes each tenant inside its own
  * {@link TenantContext} scope (per-tenant flag, Ollama endpoint, RLS, ticket stamping). The nudge is
  * delivered as an outbound {@link EmailTicket} routed through the {@link AutoSendService} gate
- * (Phase 1.6) — auto-sent only if the operator allow-listed RFQ for auto-send, otherwise left as a
+ * — auto-sent only if the operator allow-listed RFQ for auto-send, otherwise left as a
  * DRAFT_READY for review. The SMTP send happens AFTER the DB transaction commits.
  *
  * <p>Reply detection is sender-based: a fresh inbound from the same address since the quote went out

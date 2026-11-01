@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Second half of the transactional outbox (Phase 1.3): polls {@code outbox_event}
+ * Second half of the transactional outbox (docs/adr/0003-transactional-outbox-rabbitmq.md): polls {@code outbox_event}
  * for unpublished rows and relays them to RabbitMQ.
  *
  * Reliability model:
@@ -71,7 +71,7 @@ public class OutboxRelay {
      * fixedDelay (not fixedRate): the next poll starts only after the previous one
      * finished, so a slow broker cannot pile up overlapping relay runs.
      *
-     * Phase 2.2: SYSTEM tenant state — the relay drains every tenant's events in one
+     * SYSTEM tenant state — the relay drains every tenant's events in one
      * id-ordered pass (tenant isolation happens at consumption, not transport).
      * Context wraps the transaction (see RetryScheduler for why not @Transactional).
      */

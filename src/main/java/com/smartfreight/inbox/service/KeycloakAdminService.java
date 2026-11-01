@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Thin Keycloak Admin REST client (Phase 2.3 S2).
+ * Thin Keycloak Admin REST client.
  *
  * <p>A deliberately small WebClient wrapper rather than the {@code keycloak-admin-client}
  * library — same standing call the project made for resilience4j (core over a Boot-3-targeted
@@ -45,7 +45,7 @@ public class KeycloakAdminService {
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 
     /**
-     * Tenant-level app roles this service hands out and swaps (Phase 3.3). {@link #setRealmRole}
+     * Tenant-level app roles this service hands out and swaps. {@link #setRealmRole}
      * strips only these before assigning a new one — SUPER_ADMIN and Keycloak's own default
      * mappings (offline_access, uma_authorization, …) are left untouched.
      */
@@ -161,7 +161,7 @@ public class KeycloakAdminService {
     }
 
     /**
-     * Swaps a user's tenant-level app role (Phase 3.3): strips any currently-mapped
+     * Swaps a user's tenant-level app role: strips any currently-mapped
      * {@link #MANAGED_APP_ROLES} (OPERATOR/ADMIN) then assigns {@code role}. SUPER_ADMIN and
      * Keycloak's own default mappings are left in place — only the OPERATOR↔ADMIN pair moves.
      */
@@ -248,7 +248,7 @@ public class KeycloakAdminService {
 
     /**
      * Maps each operator's Keycloak id to their email for one tenant in a single Admin call (no
-     * per-user role lookups). Used to resolve ticket assignees to a display email (Phase 3.3 S2) —
+     * per-user role lookups). Used to resolve ticket assignees to a display email —
      * the ticket only stores the UUID, the UI shows who.
      */
     public Map<String, String> userEmailsByTenant(Long tenantId) {
@@ -298,7 +298,7 @@ public class KeycloakAdminService {
 
     /**
      * Reduces a user's realm-role mappings to one display role by precedence
-     * SUPER_ADMIN &gt; ADMIN &gt; OPERATOR (Phase 3.3 added the tenant-level ADMIN tier).
+     * SUPER_ADMIN &gt; ADMIN &gt; OPERATOR.
      */
     private String displayRole(String userId) {
         List<Map<String, Object>> roles = web.get()

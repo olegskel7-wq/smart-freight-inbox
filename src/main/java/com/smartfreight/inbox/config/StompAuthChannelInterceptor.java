@@ -17,7 +17,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 
 /**
- * Authenticates and authorizes STOMP frames on the inbound channel (Phase 3.2).
+ * Authenticates and authorizes STOMP frames on the inbound channel.
  *
  * <p>The browser WebSocket handshake cannot send an {@code Authorization} header, so the {@code /ws}
  * handshake is {@code permitAll} at the HTTP layer and identity is established here on the STOMP

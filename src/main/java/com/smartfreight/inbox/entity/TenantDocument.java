@@ -19,7 +19,7 @@ import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 
 /**
- * A freight document held on behalf of a tenant (Phase 2.7).
+ * A freight document held on behalf of a tenant.
  *
  * <p>Operators upload documents (a POD, bill of lading, customs paper, …) keyed by the shipment
  * {@code identifier} they relate to. When a DOCUMENT_REQUEST enquiry arrives, the pipeline

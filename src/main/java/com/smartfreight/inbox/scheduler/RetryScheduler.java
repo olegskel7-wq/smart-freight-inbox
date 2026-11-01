@@ -23,7 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Scheduler for reprocessing stuck tickets.
  *
  * Periodically (every 2 minutes) searches for tickets with RETRY_LATER status
- * and re-enqueues them for the AI pipeline via the transactional outbox (Phase 1.3).
+ * and re-enqueues them for the AI pipeline via the transactional outbox.
  *
  * Use cases:
  * — Automatic retry on transient Ollama errors
@@ -91,7 +91,7 @@ public class RetryScheduler {
      * and vice versa. The method itself is fast (no LLM calls) — heavy lifting
      * happens in the RabbitMQ consumer.
      *
-     * Phase 2.2: runs in the SYSTEM tenant state — one run re-enqueues tickets of
+     * Runs in the SYSTEM tenant state — one run re-enqueues tickets of
      * every tenant (each event still carries its ticket's own tenantId). The context
      * must wrap the transaction (TransactionTemplate inside runAsSystem, not
      * {@code @Transactional}): Hibernate fixes the session's tenant at session open,
@@ -99,7 +99,7 @@ public class RetryScheduler {
      */
     @Scheduled(fixedDelay = 120_000, initialDelay = 60_000)
     public void retryFailedTickets() {
-        // Phase 1.7: while the Ollama breaker is OPEN every pipeline run would be parked
+        // While the Ollama breaker is OPEN every pipeline run would be parked
         // straight back to RETRY_LATER. Skipping the whole run keeps retryCount intact —
         // the retry budget is spent on real attempts, not on a dependency known to be down.
         // In HALF_OPEN the run proceeds: the first re-enqueued ticket is the probe call.
@@ -113,7 +113,7 @@ public class RetryScheduler {
     }
 
     private void reenqueueBatch() {
-        // Phase 1.8: the batch limit lives in the SQL (LIMIT batchSize), not in a subList
+        // The batch limit lives in the SQL (LIMIT batchSize), not in a subList
         // over fully loaded entities — body/draft_reply TEXT columns can reach 10 MB each.
         // Oldest updatedAt first: tickets parked earliest are retried first (FIFO), so a
         // burst of fresh parkings cannot starve older ones. totalElements still reports

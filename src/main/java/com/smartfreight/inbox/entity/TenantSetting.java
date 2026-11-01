@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Per-tenant override of an {@link AppSetting} key (Phase 2.2 S2).
+ * Per-tenant override of an {@link AppSetting} key.
  *
  * <p>Resolution order lives in {@link com.smartfreight.inbox.service.SettingsService}:
  * tenant_setting (current tenant) → app_setting (platform default) → code default.

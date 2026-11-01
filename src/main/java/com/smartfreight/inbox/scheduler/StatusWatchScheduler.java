@@ -31,7 +31,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Proactive status-update poller (Phase 2.4).
+ * Proactive status-update poller (see docs/adr/0009-proactive-emails.md).
  *
  * <p>The product's default flow is reactive (a customer emails, the AI replies). This scheduler
  * adds the proactive direction: it polls the backend for every {@link ShipmentWatch} (a
@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
  * stamped with the right tenant. The context wraps the transaction (TransactionTemplate inside
  * runAs, not {@code @Transactional}) — Hibernate fixes the session tenant at session open.
  *
- * <p>Send policy reuses the auto-send gate (Phase 1.6): a proactive update is delivered as an
+ * <p>Send policy reuses the auto-send gate: a proactive update is delivered as an
  * outbound {@link EmailTicket} routed through {@link AutoSendService} exactly like an inbound
  * draft — auto-sent when the operator has enabled auto-send for STATUS_UPDATE, otherwise left as
  * a DRAFT_READY for review. The SMTP send happens AFTER the DB transaction commits (same

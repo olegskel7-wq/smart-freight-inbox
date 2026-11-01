@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 
 /**
- * SLA deadline calculator (Phase 1.5).
+ * SLA deadline calculator.
  *
  * The deadline always counts from when the email was RECEIVED (ticket createdAt), not
  * from when it was classified or picked up — the customer's clock starts at send time.
@@ -52,7 +52,7 @@ public class SlaService {
     }
 
     /**
-     * Reply-by deadline for a ticket, tightened when the AI classifier escalated it (Phase 3.10).
+     * Reply-by deadline for a ticket, tightened when the AI classifier escalated it.
      *
      * An escalated ticket (HIGH urgency or negative sentiment — see
      * {@link EmailClassificationService.ClassificationResult#isEscalated()}) gets the per-type window

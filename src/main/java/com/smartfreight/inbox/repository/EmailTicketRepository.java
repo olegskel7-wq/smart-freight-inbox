@@ -34,7 +34,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     Optional<EmailTicket> findByMessageId(String messageId);
 
     /**
-     * Which of these Message-IDs already have a ticket — mailbox catch-up (Gate B5) ingests only
+     * Which of these Message-IDs already have a ticket — mailbox catch-up ingests only
      * the rest. Native on purpose: it must see soft-deleted tickets too (the JPQL path's
      * {@code @SQLRestriction} hides them), or an email whose ticket an operator deleted would be
      * re-ingested on every pass. RLS still scopes it to the current tenant — call inside one.
@@ -53,7 +53,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     Page<EmailTicket> findByStatus(TicketStatus status, Pageable pageable);
 
     /**
-     * Tickets assigned to one operator (Phase 3.3 S2), with an optional status filter. Backs the
+     * Tickets assigned to one operator, with an optional status filter. Backs the
      * "Mine" filter on the shared queue. The {@code :status IS NULL} guard makes the status
      * predicate optional in a single query (Hibernate binds the typed enum parameter).
      *
@@ -70,7 +70,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
                                      Pageable pageable);
 
     /**
-     * Unclaimed tickets (Phase 3.3 S2), with an optional status filter. Backs the "Unassigned"
+     * Unclaimed tickets, with an optional status filter. Backs the "Unassigned"
      * filter on the shared queue — the work nobody has picked up yet.
      *
      * @param status   status to filter by, or null for any status
@@ -92,7 +92,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     long countByStatus(TicketStatus status);
 
     /**
-     * Counts tickets in any of the given statuses (Phase 3 UI: the /tickets summary strip).
+     * Counts tickets in any of the given statuses (the /tickets summary strip).
      * Backs the "Open" chip — the actionable backlog (everything outside the terminal
      * CLOSED/AUTO_SENT/IRRELEVANT states). Tenant-scoped via {@code @TenantId} like every
      * derived query on this entity; {@code @SQLRestriction} adds {@code deleted = false}.
@@ -103,7 +103,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     long countByStatusIn(Collection<TicketStatus> statuses);
 
     /**
-     * Counts open, SLA-breached tickets (Phase 3 UI: the /tickets summary strip). The breach flag
+     * Counts open, SLA-breached tickets (the /tickets summary strip). The breach flag
      * is never reset, so the status filter keeps the "SLA breached" chip to work still on the
      * board rather than a growing historical total.
      *
@@ -113,7 +113,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     long countByStatusInAndSlaBreachedTrue(Collection<TicketStatus> statuses);
 
     /**
-     * Counts tickets in a status whose updatedAt is at or after the cutoff (Phase 3 UI: the
+     * Counts tickets in a status whose updatedAt is at or after the cutoff (the
      * "Auto-sent today" chip uses status AUTO_SENT + start-of-day). AUTO_SENT is terminal and
      * stamped at send time, so updatedAt approximates when the reply went out.
      *
@@ -124,20 +124,20 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     long countByStatusAndUpdatedAtGreaterThanEqual(TicketStatus status, java.time.LocalDateTime since);
 
     /**
-     * Paginated list of tickets in any of the given statuses (Phase 3 UI: the "Open" summary chip
+     * Paginated list of tickets in any of the given statuses (the "Open" summary chip
      * drills down here). Shares {@code OPEN_STATUSES} with {@link #countByStatusIn} so the chip's
      * count and this list are defined identically. Tenant-scoped via {@code @TenantId}.
      */
     Page<EmailTicket> findByStatusIn(Collection<TicketStatus> statuses, Pageable pageable);
 
     /**
-     * Paginated list of open, SLA-breached tickets (Phase 3 UI: the "SLA breached" chip drill-down).
+     * Paginated list of open, SLA-breached tickets (the "SLA breached" chip drill-down).
      * Mirrors {@link #countByStatusInAndSlaBreachedTrue}.
      */
     Page<EmailTicket> findByStatusInAndSlaBreachedTrue(Collection<TicketStatus> statuses, Pageable pageable);
 
     /**
-     * Paginated list of tickets in a status updated at/after the cutoff (Phase 3 UI: the
+     * Paginated list of tickets in a status updated at/after the cutoff (the
      * "Auto-sent today" chip drill-down, AUTO_SENT + start-of-day). Mirrors
      * {@link #countByStatusAndUpdatedAtGreaterThanEqual}.
      */
@@ -150,7 +150,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
      * RetryScheduler uses this to find tickets eligible for reprocessing.
      * The maxRetries parameter protects against infinite retry loops.
      *
-     * Paginated (Phase 1.8): the scheduler only ever re-enqueues one batch per run,
+     * Paginated: the scheduler only ever re-enqueues one batch per run,
      * so the batch limit belongs in the SQL (LIMIT) — not in a subList over fully
      * loaded entities with their TEXT columns (body/draft_reply up to 10 MB each).
      *
@@ -245,7 +245,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
                                   @Param("cutoff") java.time.LocalDateTime cutoff);
 
     /**
-     * Ticket counts grouped by status for tickets created on or after the cutoff (Phase 2.1).
+     * Ticket counts grouped by status for tickets created on or after the cutoff.
      * One GROUP BY query feeds every per-status KPI on the analytics dashboard — statuses
      * with no tickets in the period are simply absent from the result.
      *
@@ -260,7 +260,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
 
     /**
      * Ticket counts grouped by business type for tickets created on or after the cutoff
-     * (Phase 2.1 per-type breakdown). IRRELEVANT tickets are excluded — junk never carries
+     * (analytics per-type breakdown). IRRELEVANT tickets are excluded — junk never carries
      * a type, and including it would inflate the "unclassified" bucket; the breakdown
      * answers "what kinds of work arrived", so its denominator is the relevant tickets.
      * A null type groups tickets that never received a classification verdict.
@@ -278,7 +278,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
                                      @Param("excluded") TicketStatus excluded);
 
     /**
-     * Per-day intake counts for the analytics volume chart (Phase 2.1).
+     * Per-day intake counts for the analytics volume chart.
      *
      * Native SQL: JPQL has no FILTER clause and no date truncation. Because the query is
      * native, Hibernate's {@code @SQLRestriction} on the entity does NOT apply — the
@@ -300,8 +300,8 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     List<DailyVolume> dailyVolumeSince(@Param("since") java.time.LocalDateTime since);
 
     /**
-     * AI-confidence histogram over drafts created in the period (Phase 2.1): how the
-     * deterministic heuristic (Phase 1.6) distributes — the operator reads this against
+     * AI-confidence histogram over drafts created in the period: how the
+     * deterministic heuristic distributes — the operator reads this against
      * the auto-send threshold to judge how much would go out automatically.
      *
      * Counts every ticket with a stored confidence (it is written on each draft regardless
@@ -324,7 +324,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     List<ConfidenceBucket> confidenceHistogramSince(@Param("since") java.time.LocalDateTime since);
 
     /**
-     * How many tickets created on or after the cutoff breached their SLA deadline (Phase 2.1).
+     * How many tickets created on or after the cutoff breached their SLA deadline.
      * The breach flag is never reset (see {@link #markSlaBreached}), so this is a stable
      * historical count, not a snapshot of currently-overdue tickets.
      *
@@ -334,7 +334,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     long countByCreatedAtGreaterThanEqualAndSlaBreachedTrue(java.time.LocalDateTime since);
 
     /**
-     * AI-draft acceptance for tickets first answered in the period (Phase 3.1 S3): of the replies
+     * AI-draft acceptance for tickets first answered in the period: of the replies
      * that went out, how many matched the AI's original draft exactly versus were edited first.
      * This is the feedback loop's headline learning signal — acceptance should trend up as captured
      * corrections improve later drafts.
@@ -364,7 +364,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
     AiDraftAcceptance aiDraftAcceptanceSince(@Param("since") java.time.LocalDateTime since);
 
     /**
-     * Flags open tickets whose SLA deadline has passed (Phase 1.5). Used by
+     * Flags open tickets whose SLA deadline has passed. Used by
      * {@link com.smartfreight.inbox.scheduler.SlaBreachScheduler}.
      *
      * Deliberately does NOT touch updatedAt: the breach flag is reporting metadata,
@@ -386,7 +386,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
                         @Param("exemptStatuses") Collection<TicketStatus> exemptStatuses);
 
     /**
-     * Whether the customer has sent any inbound mail since their quote went out (Phase 2.5).
+     * Whether the customer has sent any inbound mail since their quote went out.
      *
      * Sender-based reply detection for {@link com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler}:
      * a fresh inbound ticket from the same address after {@code since} means the customer engaged,
@@ -408,7 +408,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
 
     /**
      * Whether any (non-deleted) ticket arrived on — and so replies through — this mailbox (V37).
-     * Guards renaming the mailbox's account (Gate B15). Tenant-scoped like every entity query.
+     * Guards renaming the mailbox's account. Tenant-scoped like every entity query.
      */
     boolean existsByMailboxId(Long mailboxId);
 }

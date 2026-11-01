@@ -14,7 +14,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * Circuit breakers for the two external dependencies (Phase 1.7).
+ * Circuit breakers for the two external dependencies.
  *
  * Resilience4j is used programmatically (no Spring starter — it targets Boot 3) and the
  * breakers are exposed as named beans. Both protect the pipeline from hammering a dead

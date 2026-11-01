@@ -110,8 +110,13 @@ Branch coverage of the classes the plan touches (clean run):
 5. Optional: Spotless + Prettier as one format-only commit listed in `.git-blame-ignore-revs`.
 
 **Stage 1 — low risk**
-1. Replace the "Phase X / Gate Y" journal comments (≈365 in Java, 45 in the frontend) with what/why
-   comments and ADR links.
+1. ✅ Replace the "Phase X / Gate Y" journal comments (≈365 in Java, 45 in the frontend) with what/why
+   comments and ADR links. Branch `refactor/1.1-journal-comments`: one commit per package group,
+   every changed line is a comment line (checked over `git diff -U0`). Left as is on purpose — they
+   are runtime strings, not comments: the `DevCredentialsGuard` startup message ("Gate C1/C5/C6") and
+   the `smartfreight_document_requests_total` meter description ("Phase 2.7 pipeline"). "Phase A / B"
+   in the proactive schedulers is the algorithm's two passes, not a journal tag. 773 tests green,
+   frontend lint/test/build green.
 2. `AiDraftingService`: one `DraftRequest` instead of four `generateDraft` overloads; the Ollama call
    and fallbacks, and the prompt templates, in their own classes.
 3. `SettingsPage.tsx` (795 lines) → one component per section + hooks; then `TicketsListPage`,

@@ -16,7 +16,7 @@ import java.util.Properties;
  * must upgrade with STARTTLS ({@code starttls.required}) — opportunistic STARTTLS alone lets a
  * MITM strip the upgrade and receive AUTH in cleartext.
  *
- * <p>The ONLY relaxation is for the demo harness's own fake servers (Phase 4.8 S2), and only
+ * <p>The ONLY relaxation is for the demo harness's own fake servers, and only
  * while the harness is on: GreenMail's certificate is self-signed and minted at start (it still
  * names the host, so the hostname check stays), Mailpit has no TLS at all. The match is exact on
  * the configured demo host, so it is scoped per mailbox — a real mailbox is never relaxed, and

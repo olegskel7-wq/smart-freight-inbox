@@ -3,7 +3,7 @@ package com.smartfreight.inbox.repository;
 import java.time.LocalDate;
 
 /**
- * Native-query projection: ticket intake for one calendar day (Phase 2.1 volume chart).
+ * Native-query projection: ticket intake for one calendar day (analytics volume chart).
  *
  * Backed by {@link EmailTicketRepository#dailyVolumeSince} — Spring Data maps the aliased
  * columns onto the getters and converts {@code java.sql.Date} to {@link LocalDate}.

@@ -12,8 +12,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * CRUD facade for the current tenant's mailboxes, used by the {@code /settings} UI
- * (Phase 2.2 S3).
+ * CRUD facade for the current tenant's mailboxes, used by the {@code /settings} UI.
  *
  * <p>All reads and writes run inside the caller's tenant scope — {@code @TenantId}
  * filters queries and stamps inserts, RLS (V21) backs it up below the ORM. Passwords
@@ -68,7 +67,7 @@ public class MailboxManagementService {
     }
 
     /**
-     * Edits a mailbox in place (Gate B15) — the row keeps its id, so tickets that arrived on it
+     * Edits a mailbox in place — the row keeps its id, so tickets that arrived on it
      * ({@code email_ticket.mailbox_id}, V37) keep replying through it after a password rotation.
      * Delete + re-add would null that link ({@code ON DELETE SET NULL}).
      *
@@ -76,8 +75,8 @@ public class MailboxManagementService {
      * form never shows it) — but only while the password keeps going where it went before: any
      * change to the IMAP host/port/username, or pointing SMTP at a new host/port, needs the password
      * re-entered. Otherwise a caller who never knew the password could re-point the mailbox at a
-     * server they control and the adapter would log in there with the decrypted stored one (security
-     * review of B15). Dropping SMTP or changing only the from-address stays password-free. A blank
+     * server they control and the adapter would log in there with the decrypted stored one (found in
+     * security review). Dropping SMTP or changing only the from-address stays password-free. A blank
      * {@code smtpHost} makes the mailbox inbound-only again. The enabled flag is untouched — pausing
      * is {@link #setEnabled}. The IMAP adapter and the cached SMTP sender each remember the config
      * fingerprint they were built from, so both rebuild on their own.

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * JSON API backing the React {@code /analytics} page (Phase 3.2). It mirrors
+ * JSON API backing the React {@code /analytics} page. It mirrors
  * {@link AnalyticsController} (the Thymeleaf dashboard) but speaks DTOs over {@code /api/analytics}
  * and is secured by the stateless resource-server chain (bearer JWT). The two controllers run side
  * by side during the migration; this one collapses to the only one when Thymeleaf is removed.
@@ -52,7 +52,7 @@ public class AnalyticsApiController {
     }
 
     /**
-     * POST /api/analytics/ask — answers a free-text question about the inbox (Phase 2.8). The
+     * POST /api/analytics/ask — answers a free-text question about the inbox. The
      * period lives in the routed answer (the service picks it from the question), so unlike the
      * Thymeleaf form there is no dashboard period to preserve here. 404 when the feature is off,
      * 400 on a blank question.

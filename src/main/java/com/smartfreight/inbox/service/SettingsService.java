@@ -13,14 +13,13 @@ import java.util.Optional;
 /**
  * Reads and writes runtime-mutable application settings.
  *
- * <p>Phase 2.2 S2 — settings are resolved per tenant with a uniform override chain:
+ * <p>Settings are resolved per tenant with a uniform override chain:
  * <ol>
  *   <li>{@code tenant_setting} — the current tenant's override (written by {@code /settings})</li>
  *   <li>{@code app_setting} — the platform-wide default (seeded by migrations)</li>
  *   <li>the code-level {@code defaultValue} passed by the caller</li>
  * </ol>
- * Call sites are unchanged from the global-settings era: the tenant dimension comes from
- * {@link TenantContext}, exactly as the Phase 1 feature-flag convention promised.
+ * Call sites never pass a tenant: the tenant dimension comes from {@link TenantContext}.
  *
  * <p><b>System context</b> (schedulers, outbox relay, metrics) skips step 1 — cross-tenant
  * work has no single tenant to read an override for, so it sees platform defaults only.
@@ -43,25 +42,25 @@ public class SettingsService {
 
     /**
      * Proactive status-update prompt template ({@code {itemContext}}, {@code {previousStatus}}
-     * placeholders) for Phase 2.4 milestone notifications. Seeded by migration V22.
+     * placeholders) for milestone notifications. Seeded by migration V22.
      */
     public static final String KEY_STATUS_UPDATE_PROMPT = "ai.status-update-prompt";
 
     /**
      * Proactive quote-follow-up prompt template ({@code {originalEnquiry}} placeholder) for
-     * Phase 2.5 nudges on silent quotes. Seeded by migration V24.
+     * nudges on silent quotes. Seeded by migration V24.
      */
     public static final String KEY_QUOTE_FOLLOWUP_PROMPT = "ai.quote-followup-prompt";
 
     /**
      * Document-request detection prompt ({@code {email}} placeholder) — routes a DOCUMENT_REQUEST
-     * enquiry to one document type (Phase 2.7). Seeded by migration V26.
+     * enquiry to one document type. Seeded by migration V26.
      */
     public static final String KEY_DOCUMENT_DETECT_PROMPT = "ai.document-detect-prompt";
 
     /**
      * Document-request reply prompt ({@code {email}}, {@code {documentType}}, {@code {itemContext}},
-     * {@code {documentStatus}} placeholders) for Phase 2.7. Seeded by migration V26.
+     * {@code {documentStatus}} placeholders). Seeded by migration V26.
      */
     public static final String KEY_DOCUMENT_COVER_PROMPT = "ai.document-cover-prompt";
 
@@ -109,8 +108,7 @@ public class SettingsService {
      * Generic feature-flag check. Resolves a boolean {@code feature.*} setting through the
      * override chain, treating an absent or blank value as {@code defaultValue}.
      *
-     * <p>This is the seam the Phase 1 flag convention was built for: the same keys call
-     * sites used globally now carry a tenant dimension — a tenant toggling a flag on
+     * <p>The keys are global, the resolution is per tenant — a tenant toggling a flag on
      * {@code /settings} affects only their own pipeline. Plan-based gating (which flags a
      * subscription tier may even touch) is a later layer on top of this resolution.
      *

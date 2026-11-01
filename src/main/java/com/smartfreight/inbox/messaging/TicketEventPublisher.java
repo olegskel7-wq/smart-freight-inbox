@@ -1,7 +1,7 @@
 package com.smartfreight.inbox.messaging;
 
 /**
- * Seam between the business pipeline and the messaging infrastructure (Phase 1.3).
+ * Seam between the business pipeline and the messaging infrastructure.
  *
  * Call sites (ingestion, retry scheduler) depend on this interface only — they do not
  * know whether events travel through a transactional outbox + RabbitMQ (current
@@ -12,7 +12,7 @@ package com.smartfreight.inbox.messaging;
  * Contract: implementations must be called INSIDE an active transaction, so that
  * the event becomes durable atomically with the business change that caused it.
  *
- * Tenant id travels with every event (Phase 2.2): callers always know it — ingestion
+ * Tenant id travels with every event: callers always know it — ingestion
  * reads it off the saved ticket, RetryScheduler off the loaded entity — and the
  * consumer needs it to bind its TenantContext before reloading the ticket.
  */

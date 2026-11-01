@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /training-examples} page (Phase 3.2). It mirrors
+ * JSON API backing the React {@code /training-examples} page. It mirrors
  * {@link TrainingExampleController} (the Thymeleaf curation UI) but speaks DTOs over
  * {@code /api/training-examples} and is secured by the stateless resource-server chain (bearer JWT).
  * The two controllers run side by side during the migration; this one collapses to the only one when

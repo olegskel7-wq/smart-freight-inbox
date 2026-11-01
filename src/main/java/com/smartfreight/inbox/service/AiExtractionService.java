@@ -130,7 +130,7 @@ public class AiExtractionService {
             log.debug("Sending extraction request to Ollama model {}", extractionModel);
 
             long start = System.nanoTime();
-            // Phase 2.2 S3: client + breaker resolved per call for the CURRENT tenant's endpoint.
+            // Client + breaker resolved per call for the CURRENT tenant's endpoint.
             WebClient ollamaWebClient = ollamaClients.client();
             @SuppressWarnings("unchecked")
             Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
@@ -167,7 +167,7 @@ public class AiExtractionService {
 
         } catch (CallNotPermittedException e) {
             // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
-            // ticket as RETRY_LATER (Phase 1.7) instead of producing a degraded regex result.
+            // ticket as RETRY_LATER instead of producing a degraded regex result.
             log.warn("Ollama circuit breaker is open — extraction call not attempted");
             throw e;
         } catch (Exception e) {
