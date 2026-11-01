@@ -78,6 +78,9 @@ Tests pin the production behaviour (en_US, LF) so they pass on any machine.
   below what vite 8 (≥ 20.19) and vitest 5 (≥ 22.12) declare. The build still works (npm only warns,
   checked on `node:20`), tests run on Node 22 in CI. Moving the build to Node 22 LTS is a separate change.
 - `npm audit --omit=dev`: 2 findings in `react-router` (1 high), present before this work.
+- About 20 `toUpperCase()` / `toLowerCase()` calls take no `Locale`, several of them before an
+  enum `valueOf(...)`. Under a Turkish default locale (`i` → `İ`) those parses fail. Not reachable in
+  the en_US container; a separate small fix (`Locale.ROOT`) after the classes involved are refactored.
 
 ## Plan
 
