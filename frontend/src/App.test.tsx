@@ -21,6 +21,7 @@ function authWith(state: AuthState, signinRedirect = vi.fn(async () => {})) {
 const renderApp = () => render(<MemoryRouter initialEntries={['/tickets']}><App /></MemoryRouter>)
 
 afterEach(() => {
+  window.history.replaceState(null, '', '/')
   vi.restoreAllMocks()
 })
 
@@ -44,7 +45,6 @@ describe('App — auth gate', () => {
     renderApp()
 
     expect(signinRedirect).toHaveBeenCalledWith({ state: { returnTo: '/analytics?days=7' } })
-    window.history.replaceState(null, '', '/')
   })
 
   it('starts the redirect once under StrictMode, which runs the effect twice', () => {
