@@ -8,12 +8,11 @@ import SettingsPage from './SettingsPage.tsx'
 // splitting it into section components (docs/refactoring.md, Stage 1.3). fetch is stubbed, so the
 // real useApi runs: these assert the actual method, path, bearer token and JSON body.
 
-// One stable object, like the real context value: a fresh one per render would rebuild useApi's
-// client, re-run the page's load effect and wipe what the test has typed.
-vi.mock('react-oidc-context', () => {
-  const auth = { user: { access_token: 'test-token' }, signinRedirect: vi.fn() }
-  return { useAuth: () => auth }
-})
+// One stable object, like the real context value. A test swaps it for a new one to act out a silent
+// token renewal, which hands the page a new context value with a new access token.
+const SIGNED_IN = { user: { access_token: 'test-token' }, signinRedirect: () => {} }
+const oidc = vi.hoisted(() => ({ auth: null as unknown }))
+vi.mock('react-oidc-context', () => ({ useAuth: () => oidc.auth }))
 
 const SETTINGS: Settings = {
   cipherConfigured: true,
@@ -53,6 +52,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 beforeEach(() => {
+  oidc.auth = SIGNED_IN
   calls = []
   respond = (method, url) => {
     if (url === '/api/users') return json([{ id: 'u1', email: 'op@example.com', role: 'OPERATOR' }])
@@ -481,5 +481,22 @@ describe('SettingsPage mailboxes', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }))
 
     expect(await screen.findByText('Mailbox not found')).toHaveClass('alert-danger')
+  })
+
+  it('keeps an unsaved edit through a silent token renewal and saves with the renewed token', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<SettingsPage />)
+    const prompt = await screen.findByLabelText('Extraction prompt')
+    await user.type(prompt, ' and the job ref')
+
+    oidc.auth = { ...SIGNED_IN, user: { access_token: 'renewed-token' } }
+    rerender(<SettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Save prompts' }))
+
+    expect(await screen.findByText('AI prompts saved.')).toBeInTheDocument()
+    expect(calls.filter((c) => c.method === 'GET' && c.url === '/api/settings')).toHaveLength(1)
+    const save = posts('/api/settings/prompts')[0]
+    expect(save.auth).toBe('Bearer renewed-token')
+    expect(save.body).toMatchObject({ extractionPrompt: 'Extract {email} and the job ref' })
   })
 })

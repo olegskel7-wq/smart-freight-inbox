@@ -146,10 +146,11 @@ Branch coverage of the classes the plan touches (clean run):
    `pageLoading.test.tsx` (27) pins every page's request, Loading…, load error, filter refetch, live
    and post-mutation reload; the review added 2 (load error dropped on a tab change; a failed-send
    error survives a silent token renewal — the ticket page keeps action errors apart from the load's).
-   Found, not fixed here (behaviour changes): a silent token renewal rebuilds `useApi`, re-runs every
-   page load and re-seeds the ticket draft / settings form, wiping unsaved typing — make `useApi`
-   stable (token from a ref); an older load resolving after a newer one overwrites the data — guard in
-   `usePageData`. Still open in this step: `TicketsListPage`, `WebhooksPage`.
+   Found there and fixed in its own branch `fix/token-renewal-and-stale-loads` (behaviour changes, not
+   refactoring): a silent token renewal rebuilt `useApi`, re-ran every page load and re-seeded the
+   ticket draft / settings form, wiping unsaved typing — `useApi` is now stable and reads the auth
+   context through a ref; an older load answering after a newer one overwrote the data —
+   `usePageData` drops it. Still open in this step: `TicketsListPage`, `WebhooksPage`.
 
 **Stage 2 — pipeline core, medium risk**
 1. `TicketProcessingService.processAttempt` (~174 lines, 23 dependencies) → steps (classify, extract,
