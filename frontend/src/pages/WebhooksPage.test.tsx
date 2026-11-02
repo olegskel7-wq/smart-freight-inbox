@@ -568,6 +568,43 @@ describe('WebhooksPage — log loading and in-flight guards', () => {
     expect(gets('/api/webhooks/1/deliveries')).toHaveLength(1)
   })
 
+  it('does not reload a log hidden while its test was in flight', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([])
+    const test = held(() => json(SNAPSHOT))
+    routes['POST /api/webhooks/1/test'] = test.route
+    await renderPage()
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('No deliveries yet.')
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Test' }))
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Hide log' }))
+    await test.release()
+
+    expect(await screen.findByText('Test event queued.')).toBeInTheDocument()
+    expect(gets('/api/webhooks/1/deliveries')).toHaveLength(1)
+  })
+
+  it('reloads a log reopened while its test was in flight, once the test is queued', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([])
+    const test = held(() => json(SNAPSHOT))
+    routes['POST /api/webhooks/1/test'] = test.route
+    await renderPage()
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('No deliveries yet.')
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Test' }))
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Hide log' }))
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('No deliveries yet.')
+    routes['GET /api/webhooks/1/deliveries'] = () => json([delivery(10, 'PENDING', { eventType: 'test', deliveredAt: null })])
+    await test.release()
+
+    expect(await screen.findByText('test', { selector: 'code' })).toBeInTheDocument()
+    expect(gets('/api/webhooks/1/deliveries')).toHaveLength(3)
+  })
+
   it.each([
     { name: 'a test of another webhook', other: true, answer: () => json(SNAPSHOT) },
     { name: 'a failed test', other: false, answer: failure('Subscription not found') },

@@ -35,6 +35,8 @@ export default function WebhooksPage() {
   const [openLog, setOpenLog] = useState<number | null>(null)
   const [deliveries, setDeliveries] = useState<WebhookDelivery[] | null>(null)
   const logRun = useRef(0)
+  // The open log as of now, for handlers that resume after an await (state in their closure is stale).
+  const openLogNow = useRef<number | null>(null)
 
   const load = useCallback(() => api.get<WebhooksResponse>('/api/webhooks'), [api])
   const { data, setData, error } = usePageData(load, 'Failed to load webhooks')
@@ -96,22 +98,22 @@ export default function WebhooksPage() {
     if (run === logRun.current) setDeliveries(rows)
   }
 
-  // The queued test delivery shows up in that webhook's log if it is open — and still the newest log
-  // load once the test is queued (another log opened meanwhile has taken the slot).
+  // The queued test delivery shows up in that webhook's log if it is open once the test is queued.
   const sendTest = async (id: number) => {
-    const logBefore = openLog === id ? logRun.current : null
     const queued = await mutate(
       () => api.post<WebhooksResponse>(`/api/webhooks/${id}/test`, {}),
       'Test event queued.',
     )
-    if (queued && logBefore === logRun.current) await loadLog(id)
+    if (queued && openLogNow.current === id) await loadLog(id)
   }
 
   const showLog = async (id: number) => {
     if (openLog === id) {
+      openLogNow.current = null
       setOpenLog(null)
       return
     }
+    openLogNow.current = id
     setOpenLog(id)
     setDeliveries(null)
     await loadLog(id)
