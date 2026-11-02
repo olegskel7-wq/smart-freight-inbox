@@ -157,8 +157,10 @@ Branch coverage of the classes the plan touches (clean run):
    and title for 17 URLs, tab links, chips, filter and sort changes (the address bar they leave, under a
    real `BrowserRouter`), paging, row rendering and grouping, the queue handed to the ticket page, Claim /
    Release bodies and Reprocess; five mutations of the page each fail it. The load keeps its per-field
-   deps, so it reloads exactly when it did before. Found and left for a fix branch (behaviour changes):
-   `?page=abc` is sent as `page=NaN`; `?view=constructor` resolves the title through `Object.prototype`.
+   deps, so it reloads exactly when it did before. Found there and fixed in its own branch
+   `fix/tickets-url-parsing` (behaviour changes): `?page=abc` was sent as `page=NaN`; `?view=constructor` /
+   `?status=toString` resolved the title through `Object.prototype` — label maps are now read by own key
+   (`ownLabel` in `util/labels.ts`).
    Still open in this step: `WebhooksPage`.
 
 **Stage 2 — pipeline core, medium risk**
