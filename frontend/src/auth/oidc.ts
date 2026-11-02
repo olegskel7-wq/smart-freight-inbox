@@ -49,7 +49,9 @@ export function signinState() {
 export function returnPathOf(state: unknown): string | null {
   const returnTo = (state as { returnTo?: unknown } | null | undefined)?.returnTo
   if (typeof returnTo !== 'string' || !returnTo.startsWith('/')) return null
-  // "//host" and "/\host" parse as another host; resolving against this origin catches both.
+  // "//host" and "/\host" parse as another host; resolving against this origin catches both. Dot
+  // segments ("/.//host") can still normalise to a "//" path, which replaceState would read as a host.
   const url = new URL(returnTo, window.location.origin)
-  return url.origin === window.location.origin ? url.pathname + url.search + url.hash : null
+  if (url.origin !== window.location.origin || url.pathname.startsWith('//')) return null
+  return url.pathname + url.search + url.hash
 }

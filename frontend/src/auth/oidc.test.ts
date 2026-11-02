@@ -34,6 +34,9 @@ describe('returnPathOf', () => {
   it.each([
     ['a protocol-relative URL', '//evil.example.com/tickets'],
     ['a backslash host', '/\\evil.example.com'],
+    ['a tab before the host', '/\t/evil.example.com'],
+    ['dot segments that normalise to //', '/.//evil.example.com'],
+    ['a parent segment that normalises to //', '/a/..//evil.example.com'],
     ['an absolute URL', 'https://evil.example.com/tickets'],
     ['a javascript: URL', 'javascript:alert(1)'],
     ['a relative path', 'tickets'],
