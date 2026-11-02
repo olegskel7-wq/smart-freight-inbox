@@ -38,19 +38,15 @@ export default function App() {
   const auth = useAuth()
 
   // The redirect runs after the render: it updates AuthProvider's state, which React refuses while
-  // App is rendering. Started once while signed out — re-renders don't restart it; a failed redirect
-  // surfaces as auth.error, after which signing out again starts a new one.
+  // App is rendering. Started once per signed-out spell (the ref covers StrictMode's second effect
+  // run); a failed redirect surfaces as auth.error, after which signing out again starts a new one.
+  // Not the library's useAutoSignin: it tries once per mount and redirects over the error screen.
   const needsSignIn = !auth.isLoading && !auth.error && !auth.isAuthenticated
   const { signinRedirect } = auth
   const redirectStarted = useRef(false)
   useEffect(() => {
-    if (!needsSignIn) {
-      redirectStarted.current = false
-      return
-    }
-    if (redirectStarted.current) return
-    redirectStarted.current = true
-    void signinRedirect()
+    if (needsSignIn && !redirectStarted.current) void signinRedirect()
+    redirectStarted.current = needsSignIn
   }, [needsSignIn, signinRedirect])
 
   if (auth.isLoading) {

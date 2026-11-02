@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -36,13 +37,10 @@ describe('App — auth gate', () => {
     expect(onScreen).toEqual([true])
   })
 
-  it('starts the redirect once, however often the gate re-renders while signed out', () => {
+  it('starts the redirect once under StrictMode, which runs the effect twice', () => {
     const signinRedirect = authWith({})
-    const { rerender } = renderApp()
 
-    authWith({}, signinRedirect)
-    rerender(<MemoryRouter initialEntries={['/tickets']}><App /></MemoryRouter>)
-    rerender(<MemoryRouter initialEntries={['/tickets']}><App /></MemoryRouter>)
+    render(<StrictMode><MemoryRouter initialEntries={['/tickets']}><App /></MemoryRouter></StrictMode>)
 
     expect(signinRedirect).toHaveBeenCalledOnce()
   })
