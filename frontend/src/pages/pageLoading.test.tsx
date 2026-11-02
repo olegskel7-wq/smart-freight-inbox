@@ -25,7 +25,7 @@ import WebhooksPage from './WebhooksPage.tsx'
 
 // One stable object, like the real context value (see SettingsPage.test.tsx). A test swaps it for a
 // new one to act out a silent token renewal, which rebuilds useApi's client.
-const SIGNED_IN = { user: { access_token: 'test-token', profile: { sub: 'me' } }, signinRedirect: () => {} }
+const SIGNED_IN = { user: { access_token: 'test-token', profile: { sub: 'me' } }, signinRedirect: vi.fn() }
 const oidc = vi.hoisted(() => ({ auth: null as unknown }))
 vi.mock('react-oidc-context', () => ({ useAuth: () => oidc.auth }))
 
@@ -152,6 +152,17 @@ describe('DocumentsPage', () => {
 })
 
 describe('TrainingExamplesPage', () => {
+  it('sends the user to sign in when the load answers 401', async () => {
+    const signedOut = { ...SIGNED_IN, signinRedirect: vi.fn() }
+    oidc.auth = signedOut
+    routes['GET /api/training-examples'] = () => new Response(null, { status: 401 })
+
+    renderAt(<TrainingExamplesPage />)
+
+    expect(await screen.findByText('Unauthorized')).toHaveClass('alert-danger')
+    expect(signedOut.signinRedirect).toHaveBeenCalledOnce()
+  })
+
   it('re-renders from the snapshot a delete returns, without reloading', async () => {
     const user = userEvent.setup()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -205,6 +216,25 @@ describe('AnalyticsPage', () => {
     renderAt(<AnalyticsPage />, '/analytics?days=90')
 
     expect(await screen.findByText('Analytics unavailable')).toHaveClass('alert-danger')
+  })
+
+  it('ignores an older period that answers after the newer one', async () => {
+    const user = userEvent.setup()
+    const slow = held(() => json(analytics(7, 11)))
+    routes['GET /api/analytics?days=30'] = () => json(analytics(30, 42))
+    routes['GET /api/analytics?days=7'] = slow.route
+    routes['GET /api/analytics?days=90'] = () => json(analytics(90, 99))
+
+    renderAt(<AnalyticsPage />, '/analytics')
+    await screen.findByText('42')
+    await user.click(screen.getByRole('button', { name: '7 days' }))
+    await user.click(screen.getByRole('button', { name: '90 days' }))
+    expect(await screen.findByText('99')).toBeInTheDocument()
+
+    await slow.release()
+
+    expect(screen.getByText('99')).toBeInTheDocument()
+    expect(screen.queryByText('11')).not.toBeInTheDocument()
   })
 
   it('a failed question replaces the page with the error, like a failed load', async () => {
@@ -375,20 +405,25 @@ describe('TicketDetailPage', () => {
     expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
   })
 
-  it('keeps a failed-send error through a silent token renewal, which refetches the ticket', async () => {
+  it('keeps the typed reply and a failed-send error through a silent token renewal', async () => {
     const user = userEvent.setup()
     routes['GET /api/tickets/7'] = () => json(DETAIL)
     routes['POST /api/tickets/7/draft'] = () => json({ error: 'Bad Gateway', message: 'SMTP refused' }, 502)
 
     const { rerender } = renderTicket()
-    await user.click(await screen.findByRole('button', { name: 'Send' }))
+    await user.type(await screen.findByDisplayValue('Your container is at port.'), ' It clears customs today.')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
     const sendError = 'Failed to send email — the message was not delivered.'
     expect(await screen.findByText(sendError)).toHaveClass('alert-danger')
 
     oidc.auth = { ...SIGNED_IN, user: { ...SIGNED_IN.user, access_token: 'renewed-token' } }
     rerender(ticketTree())
+    await user.click(screen.getByRole('button', { name: 'Send' }))
 
-    await waitFor(() => expect(calls).toContainEqual({ method: 'GET', url: '/api/tickets/7', auth: 'Bearer renewed-token' }))
+    await waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toHaveLength(2))
+    expect(calls.filter((c) => c.method === 'POST')[1].auth).toBe('Bearer renewed-token')
+    expect(gets('/api/tickets/7')).toHaveLength(1)
+    expect(screen.getByDisplayValue('Your container is at port. It clears customs today.')).toBeInTheDocument()
     expect(screen.getByText(sendError)).toBeInTheDocument()
   })
 })
