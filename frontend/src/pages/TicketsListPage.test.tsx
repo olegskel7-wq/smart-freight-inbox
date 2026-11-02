@@ -103,6 +103,11 @@ describe('TicketsListPage — URL, request and title', () => {
     { path: '/tickets?sort=slaDeadlineAt', request: 'page=0&sort=slaDeadlineAt&dir=desc&view=open', title: 'Inbox', tab: 'Inbox' },
     { path: '/tickets?page=2&assignee=unassigned', request: 'page=2&assignee=unassigned', title: 'Tickets', tab: null },
     { path: '/tickets?page=-3', request: 'page=0&view=open', title: 'Inbox', tab: 'Inbox' },
+    { path: '/tickets?page=abc', request: 'page=0&view=open', title: 'Inbox', tab: 'Inbox' },
+    { path: '/tickets?page=1.7', request: 'page=1&view=open', title: 'Inbox', tab: 'Inbox' },
+    { path: '/tickets?page=Infinity', request: 'page=0&view=open', title: 'Inbox', tab: 'Inbox' },
+    { path: '/tickets?view=constructor', request: 'page=0&view=constructor', title: 'Tickets', tab: null },
+    { path: '/tickets?status=toString', request: 'page=0&status=toString', title: 'Tostring', tab: null },
   ])('$path → GET /api/tickets?$request, titled "$title"', async ({ path, request, title, tab }) => {
     routes[`GET /api/tickets?${request}`] = () => json(page([ticket(1, 'Some enquiry')]))
 
@@ -261,6 +266,19 @@ describe('TicketsListPage — paging', () => {
     expect(await screen.findByText('First page')).toBeInTheDocument()
     expect(window.location.search).toBe('?status=CLOSED&page=0')
     expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
+  })
+
+  it('pages on from the first page when the URL page is not a number', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/tickets?page=0&view=open'] = () => json(page([ticket(1, 'First page')], 0, 3, 120))
+    routes['GET /api/tickets?page=1&view=open'] = () => json(page([ticket(2, 'Second page')], 1, 3, 120))
+
+    renderAt('/tickets?page=abc')
+    await screen.findByText('First page')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+
+    expect(await screen.findByText('Second page')).toBeInTheDocument()
+    expect(window.location.search).toBe('?page=1')
   })
 
   it('hides the pager when everything fits on one page', async () => {

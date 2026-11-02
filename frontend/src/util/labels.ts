@@ -40,19 +40,27 @@ function humanise(value: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+/**
+ * A label map lookup by own key only. Keys can come from the URL (`?status=…`), and a plain index
+ * would hand back an inherited Object member for `constructor` / `toString` instead of undefined.
+ */
+export function ownLabel(labels: Record<string, string>, key: string): string | undefined {
+  return Object.hasOwn(labels, key) ? labels[key] : undefined
+}
+
 export function typeLabel(type: string | null): string {
   if (!type) return 'Unclassified'
-  return TYPE_LABELS[type] ?? humanise(type)
+  return ownLabel(TYPE_LABELS, type) ?? humanise(type)
 }
 
 export function statusLabel(status: string | null): string {
   if (!status) return '—'
-  return STATUS_LABELS[status] ?? humanise(status)
+  return ownLabel(STATUS_LABELS, status) ?? humanise(status)
 }
 
 export function docTypeLabel(docType: string | null): string {
   if (!docType) return 'Document'
-  return DOC_TYPE_LABELS[docType] ?? humanise(docType)
+  return ownLabel(DOC_TYPE_LABELS, docType) ?? humanise(docType)
 }
 
 /** A reply went out or the ticket was closed: the composer is read-only. */

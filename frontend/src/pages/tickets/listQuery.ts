@@ -1,4 +1,4 @@
-import { statusLabel } from '../../util/labels.ts'
+import { ownLabel, statusLabel } from '../../util/labels.ts'
 
 // What the ticket list's URL asks for: the queue tabs, the Sort options, and how the query string
 // maps to the /api/tickets request and the page title.
@@ -61,8 +61,14 @@ export function readListQuery(params: URLSearchParams): ListQuery {
     assignee,
     view: unfiltered ? 'open' : (params.get('view') ?? ''),
     viewInUrl,
-    page: Math.max(0, Number(params.get('page') ?? '0')),
+    page: pageOf(params.get('page')),
   }
+}
+
+/** A zero-based page from the URL; anything but a non-negative number (`abc`, `-3`, `Infinity`) is the first page. */
+function pageOf(value: string | null): number {
+  const page = Math.floor(Number(value ?? '0'))
+  return Number.isFinite(page) && page > 0 ? page : 0
 }
 
 /** The /api/tickets request for a query. */
@@ -91,6 +97,6 @@ export function activeQueueOf(params: URLSearchParams, { status, assignee, view 
 }
 
 export function listTitle(activeQueue: Queue | undefined, { status, view }: ListQuery): string {
-  return activeQueue?.label ?? VIEW_LABELS[view]
+  return activeQueue?.label ?? ownLabel(VIEW_LABELS, view)
     ?? (status ? statusLabel(status) : 'Tickets')
 }
