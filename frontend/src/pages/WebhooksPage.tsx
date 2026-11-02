@@ -96,13 +96,15 @@ export default function WebhooksPage() {
     if (run === logRun.current) setDeliveries(rows)
   }
 
-  // The queued test delivery shows up in that webhook's log if it is open.
+  // The queued test delivery shows up in that webhook's log if it is open — and still the newest log
+  // load once the test is queued (another log opened meanwhile has taken the slot).
   const sendTest = async (id: number) => {
+    const logBefore = openLog === id ? logRun.current : null
     const queued = await mutate(
       () => api.post<WebhooksResponse>(`/api/webhooks/${id}/test`, {}),
       'Test event queued.',
     )
-    if (queued && openLog === id) await loadLog(id)
+    if (queued && logBefore === logRun.current) await loadLog(id)
   }
 
   const showLog = async (id: number) => {

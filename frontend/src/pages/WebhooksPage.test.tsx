@@ -547,6 +547,27 @@ describe('WebhooksPage — log loading and in-flight guards', () => {
     expect(screen.getByText('Test event queued.')).toBeInTheDocument()
   })
 
+  it('does not fill a log opened while a test of another webhook was in flight', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([delivery(10, 'PENDING', { eventType: 'reply.sent' })])
+    routes['GET /api/webhooks/3/deliveries'] = () => json([delivery(20, 'DEAD', { eventType: 'quote.sent' })])
+    const test = held(() => json(SNAPSHOT))
+    routes['POST /api/webhooks/1/test'] = test.route
+    await renderPage()
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('reply.sent', { selector: 'code' })
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Test' }))
+    await user.click(inRow(OFF.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('quote.sent', { selector: 'code' })
+    await test.release()
+
+    expect(await screen.findByText('Test event queued.')).toBeInTheDocument()
+    expect(screen.getByText('quote.sent', { selector: 'code' })).toBeInTheDocument()
+    expect(logRowOf('reply.sent')).not.toBeInTheDocument()
+    expect(gets('/api/webhooks/1/deliveries')).toHaveLength(1)
+  })
+
   it.each([
     { name: 'a test of another webhook', other: true, answer: () => json(SNAPSHOT) },
     { name: 'a failed test', other: false, answer: failure('Subscription not found') },
