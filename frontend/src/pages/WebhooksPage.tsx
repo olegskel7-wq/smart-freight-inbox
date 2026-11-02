@@ -142,19 +142,22 @@ export default function WebhooksPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.subscriptions.map((sub) => (
-                  <Fragment key={sub.id}>
-                    <SubscriptionRow
-                      sub={sub}
-                      logOpen={openLog === sub.id}
-                      onTest={() => void sendTest(sub.id)}
-                      onToggleLog={() => void showLog(sub.id)}
-                      onToggleEnabled={() => void toggleEnabled(sub)}
-                      onDelete={() => remove(sub.id)}
-                    />
-                    {openLog === sub.id && <DeliveryLog deliveries={deliveries} />}
-                  </Fragment>
-                ))}
+                {data.subscriptions.map((sub) => {
+                  const logOpen = openLog === sub.id
+                  return (
+                    <Fragment key={sub.id}>
+                      <SubscriptionRow
+                        sub={sub}
+                        logOpen={logOpen}
+                        onTest={() => void sendTest(sub.id)}
+                        onToggleLog={() => void showLog(sub.id)}
+                        onToggleEnabled={() => void toggleEnabled(sub)}
+                        onDelete={() => remove(sub.id)}
+                      />
+                      {logOpen && <DeliveryLog deliveries={deliveries} />}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           )}
