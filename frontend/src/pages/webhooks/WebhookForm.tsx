@@ -36,19 +36,13 @@ export default function WebhookForm({ availableEventTypes, secretConfigured, onC
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (submitting) return
     setSubmitting(true)
-    let created: boolean
-    try {
-      created = await onCreate({
-        url,
-        eventTypes: allEvents ? ['*'] : selectedTypes,
-        description: description || null,
-        secret: secret || null,
-      })
-    } finally {
-      setSubmitting(false)
-    }
+    const created = await onCreate({
+      url,
+      eventTypes: allEvents ? ['*'] : selectedTypes,
+      description: description || null,
+      secret: secret || null,
+    }).finally(() => setSubmitting(false))
     if (!created) return
     setUrl('')
     setDescription('')

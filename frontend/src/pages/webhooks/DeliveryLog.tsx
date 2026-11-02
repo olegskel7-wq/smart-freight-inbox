@@ -1,11 +1,33 @@
+import { useCallback } from 'react'
+import { useApi } from '../../api/useApi.ts'
+import { usePageData } from '../../api/usePageData.ts'
 import type { WebhookDelivery } from '../../types.ts'
 import { formatDateTime } from '../../util/format.ts'
 
 const deliveryBadge = (status: string) =>
   status === 'DELIVERED' ? 'text-bg-success' : status === 'DEAD' ? 'text-bg-danger' : 'text-bg-warning'
 
-/** One subscription's delivery attempts (null while they load), shown in a full-width row under it. */
-export default function DeliveryLog({ deliveries }: { deliveries: WebhookDelivery[] | null }) {
+/**
+ * One subscription's delivery attempts, shown in a full-width row under it. Mounted only while the
+ * log is open, so every open loads afresh and an answer for a log closed meanwhile is dropped; a
+ * failed load reads as an empty log. A new `refreshKey` (a test queued for this webhook) reloads it.
+ */
+export default function DeliveryLog({ subscriptionId, refreshKey }: {
+  subscriptionId: number
+  refreshKey: number
+}) {
+  const api = useApi()
+  const load = useCallback(
+    () => {
+      void refreshKey // a dependency on purpose: a new key is a new load, which usePageData runs
+      return api
+        .get<WebhookDelivery[]>(`/api/webhooks/${subscriptionId}/deliveries`)
+        .catch((): WebhookDelivery[] => [])
+    },
+    [api, subscriptionId, refreshKey],
+  )
+  const { data: deliveries } = usePageData(load, 'Failed to load deliveries')
+
   return (
     <tr>
       <td colSpan={4} className="bg-light">

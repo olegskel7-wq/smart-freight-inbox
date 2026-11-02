@@ -1,10 +1,9 @@
-import { Fragment, useCallback, useRef, useState } from 'react'
+import { Fragment, useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
 import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type {
   CreateWebhookResponse,
-  WebhookDelivery,
   WebhookSubscription,
   WebhooksResponse,
 } from '../types.ts'
@@ -29,14 +28,10 @@ export default function WebhooksPage() {
   // The freshly-created secret, shown once for the operator to copy.
   const [newSecret, setNewSecret] = useState<string | null>(null)
 
-  // The one subscription whose delivery log is open, and its rows (null while they load — loaded on
-  // every open). Each load is numbered and only the newest may fill the log, so a slow answer for a
-  // log opened earlier never shows under another subscription.
+  // The one subscription whose delivery log is open (the log loads its own rows), and how many tests
+  // each webhook has queued — a new count reloads that webhook's log if it is open.
   const [openLog, setOpenLog] = useState<number | null>(null)
-  const [deliveries, setDeliveries] = useState<WebhookDelivery[] | null>(null)
-  const logRun = useRef(0)
-  // The open log as of now, for handlers that resume after an await (state in their closure is stale).
-  const openLogNow = useRef<number | null>(null)
+  const [testsQueued, setTestsQueued] = useState<Record<number, number>>({})
 
   const load = useCallback(() => api.get<WebhooksResponse>('/api/webhooks'), [api])
   const { data, setData, error } = usePageData(load, 'Failed to load webhooks')
@@ -87,37 +82,15 @@ export default function WebhooksPage() {
     void mutate(() => api.del<WebhooksResponse>(`/api/webhooks/${id}`), 'Webhook deleted.')
   }
 
-  const loadLog = async (id: number) => {
-    const run = ++logRun.current
-    let rows: WebhookDelivery[]
-    try {
-      rows = await api.get<WebhookDelivery[]>(`/api/webhooks/${id}/deliveries`)
-    } catch {
-      rows = []
-    }
-    if (run === logRun.current) setDeliveries(rows)
-  }
-
-  // The queued test delivery shows up in that webhook's log if it is open once the test is queued.
   const sendTest = async (id: number) => {
     const queued = await mutate(
       () => api.post<WebhooksResponse>(`/api/webhooks/${id}/test`, {}),
       'Test event queued.',
     )
-    if (queued && openLogNow.current === id) await loadLog(id)
+    if (queued) setTestsQueued((counts) => ({ ...counts, [id]: (counts[id] ?? 0) + 1 }))
   }
 
-  const showLog = async (id: number) => {
-    if (openLog === id) {
-      openLogNow.current = null
-      setOpenLog(null)
-      return
-    }
-    openLogNow.current = id
-    setOpenLog(id)
-    setDeliveries(null)
-    await loadLog(id)
-  }
+  const toggleLog = (id: number) => setOpenLog(openLog === id ? null : id)
 
   if (error) return <div className="alert alert-danger">{error}</div>
   if (!data) return <div className="text-muted">Loading…</div>
@@ -174,11 +147,11 @@ export default function WebhooksPage() {
                         sub={sub}
                         logOpen={logOpen}
                         onTest={() => void sendTest(sub.id)}
-                        onToggleLog={() => void showLog(sub.id)}
+                        onToggleLog={() => toggleLog(sub.id)}
                         onToggleEnabled={() => void toggleEnabled(sub)}
                         onDelete={() => remove(sub.id)}
                       />
-                      {logOpen && <DeliveryLog deliveries={deliveries} />}
+                      {logOpen && <DeliveryLog subscriptionId={sub.id} refreshKey={testsQueued[sub.id] ?? 0} />}
                     </Fragment>
                   )
                 })}
