@@ -161,7 +161,18 @@ Branch coverage of the classes the plan touches (clean run):
    `fix/tickets-url-parsing` (behaviour changes): `?page=abc` was sent as `page=NaN`; `?view=constructor` /
    `?status=toString` resolved the title through `Object.prototype` — label maps are now read by own key
    (`ownLabel` in `util/labels.ts`).
-   Still open in this step: `WebhooksPage`.
+   ✅ `WebhooksPage.tsx` (371 → ~170 lines) → `pages/webhooks/`: `WebhookForm` (its own form state; the
+   page's `create` answers whether the webhook was created, so a rejected create keeps what was typed),
+   `SigningSecretAlert`, `SubscriptionRow`, `DeliveryLog`, `WebhooksHowToCard`; the page keeps the
+   message, the one-time secret and the single open log. Branch `refactor/1.3-webhooks-page`; first commit
+   `WebhooksPage.test.tsx` (25) pins the table and status badges, the create body (all events / ticked
+   types in order, blanks as null), the secret shown once + Copy + form reset, the rejected create, Test /
+   Enable / Disable / Delete bodies and messages, and the delivery log (cells, badges, one open at a time,
+   reload on reopen, empty and failed loads); 12 mutations of the page each fail it. Found there, not fixed
+   (behaviour changes — their own branch): switching logs shows the previous log's rows until the new load
+   answers, and an out-of-order answer can leave them there; Create is not disabled in flight, so a double
+   click makes two webhooks and the first secret is never seen; an open log is not refreshed after Test.
+   Stage 1.3 is complete.
 
 **Stage 2 — pipeline core, medium risk**
 1. `TicketProcessingService.processAttempt` (~174 lines, 23 dependencies) → steps (classify, extract,
