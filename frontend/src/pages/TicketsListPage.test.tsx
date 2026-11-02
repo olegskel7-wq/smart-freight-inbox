@@ -169,20 +169,21 @@ describe('TicketsListPage — summary chips', () => {
 })
 
 describe('TicketsListPage — filters and sort', () => {
-  it('shows the filters from the URL, and All / All while a view is active', async () => {
-    routes['GET /api/tickets?page=0&sort=createdAt&dir=asc&status=CLOSED&assignee=mine'] = () => json(page([ticket(1, 'Mine')]))
-    const { unmount } = renderAt('/tickets?status=CLOSED&assignee=mine&sort=createdAt&dir=asc')
-    await screen.findByText('Mine')
+  it('shows the filters and sort from the URL', async () => {
+    routes['GET /api/tickets?page=0&sort=createdAt&dir=asc&status=CLOSED&assignee=mine'] = () => json(page([ticket(1, 'My closed enquiry')]))
+    renderAt('/tickets?status=CLOSED&assignee=mine&sort=createdAt&dir=asc')
+    await screen.findByRole('link', { name: 'My closed enquiry' })
 
     expect(screen.getByLabelText('Assignee')).toHaveValue('mine')
     expect(screen.getByLabelText('Status')).toHaveValue('CLOSED')
     expect(screen.getByLabelText('Sort')).toHaveValue('createdAt:asc')
     expect(screen.getByText('1 tickets')).toBeInTheDocument()
-    unmount()
+  })
 
-    routes['GET /api/tickets?page=0&view=awaiting'] = () => json(page([ticket(2, 'Awaiting')]))
+  it('shows All / All in the filters while the URL names a view', async () => {
+    routes['GET /api/tickets?page=0&view=awaiting'] = () => json(page([ticket(2, 'Awaiting enquiry')]))
     renderAt('/tickets?view=awaiting&status=CLOSED&assignee=mine')
-    await screen.findByText('Awaiting')
+    await screen.findByRole('link', { name: 'Awaiting enquiry' })
     expect(screen.getByLabelText('Assignee')).toHaveValue('all')
     expect(screen.getByLabelText('Status')).toHaveValue('')
     expect(screen.getByLabelText('Sort')).toHaveValue('')

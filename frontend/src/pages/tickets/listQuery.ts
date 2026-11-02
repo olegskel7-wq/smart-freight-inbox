@@ -42,25 +42,29 @@ export interface ListQuery {
   assignee: string
   /** The drill-down view sent to the server — the Inbox ('open') when the URL has no filter at all. */
   view: string
+  /** The URL itself names a view — the filter selects then show All. */
+  viewInUrl: boolean
   page: number
 }
 
 export function readListQuery(params: URLSearchParams): ListQuery {
   const status = params.get('status') ?? ''
   const assignee = params.get('assignee') ?? 'all'
-  const unfiltered = !params.get('view') && !status && assignee === 'all'
+  const viewInUrl = !!params.get('view')
+  const unfiltered = !viewInUrl && !status && assignee === 'all'
   return {
     sort: params.get('sort'),
     dir: params.get('dir') ?? 'desc',
     status,
     assignee,
     view: unfiltered ? 'open' : (params.get('view') ?? ''),
+    viewInUrl,
     page: Math.max(0, Number(params.get('page') ?? '0')),
   }
 }
 
 /** The /api/tickets request for a query. */
-export function listRequest({ sort, dir, status, assignee, view, page }: ListQuery): string {
+export function listRequest({ sort, dir, status, assignee, view, page }: Omit<ListQuery, 'viewInUrl'>): string {
   const qs = new URLSearchParams({ page: String(page) })
   if (sort !== null) {
     qs.set('sort', sort)

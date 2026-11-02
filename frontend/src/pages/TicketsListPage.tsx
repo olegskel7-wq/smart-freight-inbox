@@ -145,7 +145,7 @@ export default function TicketsListPage() {
 
       <SummaryChips view={view} stats={stats} />
 
-      <TicketFilters query={query} viewInUrl={!!params.get('view')} total={data ? data.totalElements : null} onChange={update} />
+      <TicketFilters query={query} total={data ? data.totalElements : null} onChange={update} />
 
       {notice && (
         <div className="alert alert-info alert-dismissible">

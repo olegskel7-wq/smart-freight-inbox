@@ -150,7 +150,16 @@ Branch coverage of the classes the plan touches (clean run):
    refactoring): a silent token renewal rebuilt `useApi`, re-ran every page load and re-seeded the
    ticket draft / settings form, wiping unsaved typing — `useApi` is now stable and reads the auth
    context through a ref; an older load answering after a newer one overwrote the data —
-   `usePageData` drops it. Still open in this step: `TicketsListPage`, `WebhooksPage`.
+   `usePageData` drops it.
+   ✅ `TicketsListPage.tsx` (369 → ~180 lines) → `pages/tickets/`: `listQuery.ts` (queue tabs, sorts, URL →
+   query → `/api/tickets` request, active tab, title), `SummaryChips`, `TicketFilters`, `TicketRow`, `Pager`.
+   Branch `refactor/1.3-tickets-list-page`; first commit `TicketsListPage.test.tsx` (42) pins URL → request
+   and title for 17 URLs, tab links, chips, filter and sort changes (the address bar they leave, under a
+   real `BrowserRouter`), paging, row rendering and grouping, the queue handed to the ticket page, Claim /
+   Release bodies and Reprocess; five mutations of the page each fail it. The load keeps its per-field
+   deps, so it reloads exactly when it did before. Found and left for a fix branch (behaviour changes):
+   `?page=abc` is sent as `page=NaN`; `?view=constructor` resolves the title through `Object.prototype`.
+   Still open in this step: `WebhooksPage`.
 
 **Stage 2 — pipeline core, medium risk**
 1. `TicketProcessingService.processAttempt` (~174 lines, 23 dependencies) → steps (classify, extract,

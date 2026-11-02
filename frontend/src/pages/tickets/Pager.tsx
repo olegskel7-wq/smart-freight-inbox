@@ -7,7 +7,7 @@ export default function Pager({ data, page, onPage }: {
   page: number
   onPage: (page: number) => void
 }) {
-  if (data.totalPages <= 1) return null
+  if (!(data.totalPages > 1)) return null
   return (
     <nav className="d-flex justify-content-between align-items-center mt-3" aria-label="Pages">
       <span className="text-muted small">
