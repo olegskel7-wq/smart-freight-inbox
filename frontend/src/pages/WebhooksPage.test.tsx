@@ -476,3 +476,178 @@ describe('WebhooksPage — delivery log', () => {
     expect(screen.queryByText('reply.sent', { selector: 'code' })).not.toBeInTheDocument()
   })
 })
+
+describe('WebhooksPage — log loading and in-flight guards', () => {
+  const logRowOf = (eventType: string) => screen.queryByText(eventType, { selector: 'code' })
+
+  it('shows Loading… under a newly opened log instead of the previous log\'s rows', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([delivery(10, 'DELIVERED', { eventType: 'reply.sent' })])
+    const third = held(() => json([delivery(20, 'DEAD', { eventType: 'quote.sent' })]))
+    routes['GET /api/webhooks/3/deliveries'] = third.route
+    await renderPage()
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('reply.sent', { selector: 'code' })
+    await user.click(inRow(OFF.url).getByRole('button', { name: 'Log' }))
+
+    expect(logRowOf('reply.sent')).not.toBeInTheDocument()
+    expect(within(rowOf(OFF.url).nextElementSibling as HTMLElement).getByText('Loading…')).toBeInTheDocument()
+    await third.release()
+    expect(await screen.findByText('quote.sent', { selector: 'code' })).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+  })
+
+  it('ignores a log answer that arrives after another log was opened', async () => {
+    const user = userEvent.setup()
+    const first = held(() => json([delivery(10, 'DELIVERED', { eventType: 'reply.sent' })]))
+    routes['GET /api/webhooks/1/deliveries'] = first.route
+    routes['GET /api/webhooks/3/deliveries'] = () => json([delivery(20, 'DEAD', { eventType: 'quote.sent' })])
+    await renderPage()
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await user.click(inRow(OFF.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('quote.sent', { selector: 'code' })
+    await first.release()
+
+    expect(screen.getByText('quote.sent', { selector: 'code' })).toBeInTheDocument()
+    expect(logRowOf('reply.sent')).not.toBeInTheDocument()
+  })
+
+  it('ignores the answer of a log reopened before its first load answered', async () => {
+    const user = userEvent.setup()
+    const stale = held(() => json([delivery(10, 'PENDING', { eventType: 'reply.sent' })]))
+    routes['GET /api/webhooks/1/deliveries'] = stale.route
+    await renderPage()
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Hide log' }))
+    routes['GET /api/webhooks/1/deliveries'] = () => json([delivery(11, 'DELIVERED', { eventType: 'booking.confirmed' })])
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('booking.confirmed', { selector: 'code' })
+    await stale.release()
+
+    expect(screen.getByText('booking.confirmed', { selector: 'code' })).toBeInTheDocument()
+    expect(logRowOf('reply.sent')).not.toBeInTheDocument()
+  })
+
+  it('reloads the open log after a test event is queued for that webhook', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([])
+    routes['POST /api/webhooks/1/test'] = () => json(SNAPSHOT)
+    await renderPage()
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('No deliveries yet.')
+
+    routes['GET /api/webhooks/1/deliveries'] = () => json([delivery(10, 'PENDING', { eventType: 'test', deliveredAt: null })])
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Test' }))
+
+    expect(await screen.findByText('test', { selector: 'code' })).toBeInTheDocument()
+    expect(gets('/api/webhooks/1/deliveries')).toHaveLength(2)
+    expect(screen.getByText('Test event queued.')).toBeInTheDocument()
+  })
+
+  it('does not fill a log opened while a test of another webhook was in flight', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([delivery(10, 'PENDING', { eventType: 'reply.sent' })])
+    routes['GET /api/webhooks/3/deliveries'] = () => json([delivery(20, 'DEAD', { eventType: 'quote.sent' })])
+    const test = held(() => json(SNAPSHOT))
+    routes['POST /api/webhooks/1/test'] = test.route
+    await renderPage()
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('reply.sent', { selector: 'code' })
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Test' }))
+    await user.click(inRow(OFF.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('quote.sent', { selector: 'code' })
+    await test.release()
+
+    expect(await screen.findByText('Test event queued.')).toBeInTheDocument()
+    expect(screen.getByText('quote.sent', { selector: 'code' })).toBeInTheDocument()
+    expect(logRowOf('reply.sent')).not.toBeInTheDocument()
+    expect(gets('/api/webhooks/1/deliveries')).toHaveLength(1)
+  })
+
+  it('does not reload a log hidden while its test was in flight', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([])
+    const test = held(() => json(SNAPSHOT))
+    routes['POST /api/webhooks/1/test'] = test.route
+    await renderPage()
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('No deliveries yet.')
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Test' }))
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Hide log' }))
+    await test.release()
+
+    expect(await screen.findByText('Test event queued.')).toBeInTheDocument()
+    expect(gets('/api/webhooks/1/deliveries')).toHaveLength(1)
+  })
+
+  it('reloads a log reopened while its test was in flight, once the test is queued', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([])
+    const test = held(() => json(SNAPSHOT))
+    routes['POST /api/webhooks/1/test'] = test.route
+    await renderPage()
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('No deliveries yet.')
+
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Test' }))
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Hide log' }))
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('No deliveries yet.')
+    routes['GET /api/webhooks/1/deliveries'] = () => json([delivery(10, 'PENDING', { eventType: 'test', deliveredAt: null })])
+    await test.release()
+
+    expect(await screen.findByText('test', { selector: 'code' })).toBeInTheDocument()
+    expect(gets('/api/webhooks/1/deliveries')).toHaveLength(3)
+  })
+
+  it.each([
+    { name: 'a test of another webhook', other: true, answer: () => json(SNAPSHOT) },
+    { name: 'a failed test', other: false, answer: failure('Subscription not found') },
+  ])('leaves the open log alone after $name', async ({ other, answer }) => {
+    const user = userEvent.setup()
+    routes['GET /api/webhooks/1/deliveries'] = () => json([])
+    routes[`POST /api/webhooks/${other ? 3 : 1}/test`] = answer
+    await renderPage()
+    await user.click(inRow(ON.url).getByRole('button', { name: 'Log' }))
+    await screen.findByText('No deliveries yet.')
+
+    await user.click(inRow(other ? OFF.url : ON.url).getByRole('button', { name: 'Test' }))
+
+    await screen.findByText(other ? 'Test event queued.' : 'Subscription not found')
+    expect(gets('/api/webhooks/1/deliveries')).toHaveLength(1)
+  })
+
+  it('disables Create while the create is in flight, so a double click sends one request', async () => {
+    const user = userEvent.setup()
+    const created = held(() => json({ secret: 'whsec_once', snapshot: snapshot([ON, sub(4, 'https://new.example.com/hook')]) }))
+    routes['POST /api/webhooks'] = created.route
+    await renderPage()
+
+    await user.type(urlInput(), 'https://new.example.com/hook')
+    await user.dblClick(createButton())
+    await user.type(urlInput(), '{Enter}')
+
+    expect(createButton()).toBeDisabled()
+    expect(mutations()).toHaveLength(1)
+    await created.release()
+    expect(await screen.findByText('whsec_once')).toBeInTheDocument()
+    expect(createButton()).toBeEnabled()
+  })
+
+  it('enables Create again after a rejected create', async () => {
+    const user = userEvent.setup()
+    routes['POST /api/webhooks'] = failure('Webhook URL must use HTTPS')
+    await renderPage()
+
+    await user.type(urlInput(), 'https://10.0.0.1/hook')
+    await user.click(createButton())
+
+    await screen.findByText('Webhook URL must use HTTPS')
+    expect(createButton()).toBeEnabled()
+  })
+})
