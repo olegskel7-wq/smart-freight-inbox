@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../../api/useApi.ts'
+import { usePageData } from '../../api/usePageData.ts'
+import { errorMessage } from '../../util/errors.ts'
 import type { Settings } from '../../types.ts'
 
 export type Api = ReturnType<typeof useApi>
@@ -55,35 +57,28 @@ export type SectionProps = {
   save: SaveSettings
 }
 
-const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback)
-
 // Loads the /api/settings snapshot and owns the page-level state: the snapshot, the editable form
 // seeded from it, the load error and the page alert.
 export function useSettings() {
   const api = useApi()
 
-  const [data, setData] = useState<Settings | null>(null)
   const [form, setForm] = useState<SettingsForm | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
-  const applyData = useCallback((s: Settings) => {
+  // Every snapshot that arrives, loaded or returned by a save, re-seeds the form.
+  const load = useCallback(
+    () => api.get<Settings>('/api/settings').then((s) => {
+      setForm(formFrom(s))
+      return s
+    }),
+    [api],
+  )
+  const { data, setData, error, reload } = usePageData(load, 'Failed to load settings')
+
+  const applyData = (s: Settings) => {
     setData(s)
     setForm(formFrom(s))
-  }, [])
-
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      applyData(await api.get<Settings>('/api/settings'))
-    } catch (e) {
-      setError(errorText(e, 'Failed to load settings'))
-    }
-  }, [api, applyData])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  }
 
   const patchForm = useCallback(
     (patch: FormPatch) =>
@@ -100,7 +95,7 @@ export function useSettings() {
       setMsg(typeof outcome === 'string' ? { kind: 'success', text: outcome } : outcome(s))
       return true
     } catch (e) {
-      const text = errorText(e, 'Save failed')
+      const text = errorMessage(e, 'Save failed')
       if (setFormError) setFormError(text)
       else setMsg({ kind: 'danger', text })
       return false
@@ -112,10 +107,10 @@ export function useSettings() {
     setMsg(null)
     try {
       await call(api)
-      await load()
+      await reload()
       setMsg({ kind: 'success', text: ok })
     } catch (e) {
-      setMsg({ kind: 'danger', text: errorText(e, 'Delete failed') })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 

@@ -107,8 +107,8 @@ Branch coverage of the classes the plan touches (clean run):
 4. ✅ Frontend: vitest 5 + Testing Library (`npm test`); `SettingsPage.test.tsx` (6) stubs `fetch`, so
    the real `useApi` runs and the tests assert method, path, bearer token and JSON body — load,
    render of every section, load error, auto-send save (+ "no types" warning), AI endpoint
-   save/clear, rejected save. Lint is green: `react-hooks/set-state-in-effect` is a warning (12, the
-   fetch-on-mount pattern on every page — fixed in step 1.3). CI runs lint + tests in a separate
+   save/clear, rejected save. Lint is green: `react-hooks/set-state-in-effect` was a warning (12, the
+   fetch-on-mount pattern on every page — fixed in step 1.3, now an error). CI runs lint + tests in a separate
    `frontend` job on Node 22; deploy waits for it.
 5. Optional: Spotless + Prettier as one format-only commit listed in `.git-blame-ignore-revs`.
 
@@ -137,8 +137,19 @@ Branch coverage of the classes the plan touches (clean run):
    (25 in all) for every card — requests, messages, in-form mailbox errors, confirm + reload on
    delete, status badges, the missing-key guard, and the re-seed of every card from the snapshot a
    save returns (verified to fail when the re-seed is broken). Tests untouched by the refactor commit.
-   Still open in this step: `TicketsListPage`, `WebhooksPage`, and the `set-state-in-effect` warnings
-   (12 — one shared fetch-on-mount hook for every page, its own branch).
+   ✅ Fetch-on-mount (branch `refactor/1.3-fetch-on-mount`): ten pages and `useSettings` load through one
+   `usePageData` hook (`api/usePageData.ts`) — state is set only from the promise callbacks; `error`
+   and `loading` belong to the current `load`, so a URL filter change starts clean without a set-state
+   in the effect; `setError` shares the slot for page-level action errors, `reload()` serves live
+   updates and post-mutation reloads. `react-hooks/set-state-in-effect` is an error again, lint runs
+   at `--max-warnings 0`. One `util/errors.ts` `errorMessage` replaces 30 inline copies. First commit
+   `pageLoading.test.tsx` (27) pins every page's request, Loading…, load error, filter refetch, live
+   and post-mutation reload; the review added 2 (load error dropped on a tab change; a failed-send
+   error survives a silent token renewal — the ticket page keeps action errors apart from the load's).
+   Found, not fixed here (behaviour changes): a silent token renewal rebuilds `useApi`, re-runs every
+   page load and re-seeds the ticket draft / settings form, wiping unsaved typing — make `useApi`
+   stable (token from a ref); an older load resolving after a newer one overwrites the data — guard in
+   `usePageData`. Still open in this step: `TicketsListPage`, `WebhooksPage`.
 
 **Stage 2 — pipeline core, medium risk**
 1. `TicketProcessingService.processAttempt` (~174 lines, 23 dependencies) → steps (classify, extract,

@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi, ApiError } from '../api/useApi.ts'
 import { useOperators } from '../api/useOperators.ts'
+import { usePageData } from '../api/usePageData.ts'
 import { useRoles } from '../auth/roles.ts'
 import type { Page, TicketDetail, TicketSummary } from '../types.ts'
 import Icon from '../components/Icon.tsx'
@@ -14,6 +15,7 @@ import {
 import { groupTickets, queueFromState, queueIds, ticketSla } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
 import type { TicketQueue } from '../util/queue.ts'
+import { errorMessage } from '../util/errors.ts'
 
 // A conversation layout — the customer email and the reply composer in a
 // centred thread, ticket facts in a right-hand context rail. The composer's action bar is sticky so
@@ -41,9 +43,24 @@ export default function TicketDetailPage() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const [ticket, setTicket] = useState<TicketDetail | null>(null)
   const [draft, setDraft] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(
+    () => api.get<TicketDetail>(`/api/tickets/${id}`).then((t) => {
+      setDraft(t.draftReply ?? '')
+      return t
+    }),
+    [api, id],
+  )
+  const { data: ticket, setData: setTicket, error: loadError, setError: setLoadError } =
+    usePageData(load, 'Failed to load ticket')
+  // The page shows one alert: an action's error, else the load's. An action clears both; its own
+  // error is not tied to the load, so a refetch (a silent token renewal re-runs it) keeps it.
+  const [actionError, setActionError] = useState<string | null>(null)
+  const error = actionError ?? loadError
+  const clearError = () => {
+    setActionError(null)
+    setLoadError(null)
+  }
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // A tenant admin can assign to any teammate; non-admins can't read /api/users (403), so skip the fetch.
@@ -79,30 +96,16 @@ export default function TicketDetailPage() {
     }
   }, [navigate, backTo, queue])
 
-  const load = useCallback(async () => {
-    try {
-      const t = await api.get<TicketDetail>(`/api/tickets/${id}`)
-      setTicket(t)
-      setDraft(t.draftReply ?? '')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load ticket')
-    }
-  }, [api, id])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
   // Runs one ticket mutation with the shared busy/error/notice handling.
   const act = async (fn: () => Promise<TicketDetail>, done: string, failed: string) => {
     setBusy(true)
-    setError(null)
+    clearError()
     setNotice(null)
     try {
       setTicket(await fn())
       setNotice(done)
     } catch (e) {
-      setError(e instanceof Error ? e.message : failed)
+      setActionError(errorMessage(e, failed))
     } finally {
       setBusy(false)
     }
@@ -122,7 +125,7 @@ export default function TicketDetailPage() {
   // ("Send and next"), else back to the list.
   const submitDraft = async (action: 'save' | 'close' | 'send', advance = false) => {
     setBusy(true)
-    setError(null)
+    clearError()
     setNotice(null)
     try {
       const updated = await api.post<TicketDetail>(`/api/tickets/${id}/draft`, { action, draftReply: draft })
@@ -135,11 +138,11 @@ export default function TicketDetailPage() {
       setNotice('Draft saved.')
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) {
-        setError('Please wait a few seconds before sending again.')
+        setActionError('Please wait a few seconds before sending again.')
       } else if (e instanceof ApiError && e.status === 502) {
-        setError('Failed to send email — the message was not delivered.')
+        setActionError('Failed to send email — the message was not delivered.')
       } else {
-        setError(e instanceof Error ? e.message : 'Action failed')
+        setActionError(errorMessage(e, 'Action failed'))
       }
     } finally {
       setBusy(false)

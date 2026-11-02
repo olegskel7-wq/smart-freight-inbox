@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { Tenant } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -14,8 +16,6 @@ type Msg = { kind: 'success' | 'danger'; text: string } | null
 export default function TenantsPage() {
   const api = useApi()
 
-  const [tenants, setTenants] = useState<Tenant[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
   // Add-tenant form.
@@ -25,18 +25,8 @@ export default function TenantsPage() {
   const [adminLastName, setAdminLastName] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setTenants(await api.get<Tenant[]>('/api/admin/tenants'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load tenants')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<Tenant[]>('/api/admin/tenants'), [api])
+  const { data: tenants, setData: setTenants, error } = usePageData(load, 'Failed to load tenants')
 
   const createTenant = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,7 +43,7 @@ export default function TenantsPage() {
       setAdminLastName('')
       setAdminPassword('')
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Create failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Create failed') })
     }
   }
 

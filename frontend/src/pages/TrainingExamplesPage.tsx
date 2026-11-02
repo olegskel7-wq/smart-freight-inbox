@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import { typeLabel } from '../util/labels.ts'
 import type { TrainingExamplesResponse } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -14,22 +16,10 @@ type Msg = { kind: 'success' | 'danger'; text: string } | null
 export default function TrainingExamplesPage() {
   const api = useApi()
 
-  const [data, setData] = useState<TrainingExamplesResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setData(await api.get<TrainingExamplesResponse>('/api/training-examples'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load training examples')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<TrainingExamplesResponse>('/api/training-examples'), [api])
+  const { data, setData, error } = usePageData(load, 'Failed to load training examples')
 
   const deleteExample = async (id: number) => {
     if (!window.confirm('Delete this training example?')) return
@@ -38,7 +28,7 @@ export default function TrainingExamplesPage() {
       setData(await api.del<TrainingExamplesResponse>(`/api/training-examples/${id}`))
       setMsg({ kind: 'success', text: 'Training example deleted.' })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 
