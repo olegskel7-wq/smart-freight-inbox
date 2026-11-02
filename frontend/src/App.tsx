@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
 import { useAuth } from 'react-oidc-context'
 import { useRoles } from './auth/roles.ts'
@@ -36,6 +37,22 @@ function TicketDetailKeyed() {
 export default function App() {
   const auth = useAuth()
 
+  // The redirect runs after the render: it updates AuthProvider's state, which React refuses while
+  // App is rendering. Started once while signed out — re-renders don't restart it; a failed redirect
+  // surfaces as auth.error, after which signing out again starts a new one.
+  const needsSignIn = !auth.isLoading && !auth.error && !auth.isAuthenticated
+  const { signinRedirect } = auth
+  const redirectStarted = useRef(false)
+  useEffect(() => {
+    if (!needsSignIn) {
+      redirectStarted.current = false
+      return
+    }
+    if (redirectStarted.current) return
+    redirectStarted.current = true
+    void signinRedirect()
+  }, [needsSignIn, signinRedirect])
+
   if (auth.isLoading) {
     return <div className="container py-5 text-center text-muted">Loading…</div>
   }
@@ -47,7 +64,6 @@ export default function App() {
     )
   }
   if (!auth.isAuthenticated) {
-    void auth.signinRedirect()
     return <div className="container py-5 text-center text-muted">Redirecting to sign in…</div>
   }
 
