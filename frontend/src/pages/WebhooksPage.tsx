@@ -8,6 +8,7 @@ import type {
   WebhookDelivery,
   WebhooksResponse,
 } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -63,7 +64,7 @@ export default function WebhooksPage() {
       setAllEvents(true)
       setSelectedTypes([])
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Failed to create webhook' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Failed to create webhook') })
     }
   }
 
@@ -73,7 +74,7 @@ export default function WebhooksPage() {
       setData(await call())
       setMsg({ kind: 'success', text: ok })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Action failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Action failed') })
     }
   }
 

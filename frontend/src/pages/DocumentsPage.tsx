@@ -4,6 +4,7 @@ import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { DocumentsResponse } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -54,7 +55,7 @@ export default function DocumentsPage() {
       setIdentifier('')
       if (fileInput.current) fileInput.current.value = ''
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Upload failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Upload failed') })
     }
   }
 
@@ -70,7 +71,7 @@ export default function DocumentsPage() {
       a.remove()
       URL.revokeObjectURL(url)
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Download failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Download failed') })
     }
   }
 
@@ -81,7 +82,7 @@ export default function DocumentsPage() {
       setData(await api.del<DocumentsResponse>(`/api/documents/${id}`))
       setMsg({ kind: 'success', text: 'Document deleted.' })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 

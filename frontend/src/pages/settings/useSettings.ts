@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useApi } from '../../api/useApi.ts'
 import { usePageData } from '../../api/usePageData.ts'
+import { errorMessage } from '../../util/errors.ts'
 import type { Settings } from '../../types.ts'
 
 export type Api = ReturnType<typeof useApi>
@@ -56,8 +57,6 @@ export type SectionProps = {
   save: SaveSettings
 }
 
-const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback)
-
 // Loads the /api/settings snapshot and owns the page-level state: the snapshot, the editable form
 // seeded from it, the load error and the page alert.
 export function useSettings() {
@@ -96,7 +95,7 @@ export function useSettings() {
       setMsg(typeof outcome === 'string' ? { kind: 'success', text: outcome } : outcome(s))
       return true
     } catch (e) {
-      const text = errorText(e, 'Save failed')
+      const text = errorMessage(e, 'Save failed')
       if (setFormError) setFormError(text)
       else setMsg({ kind: 'danger', text })
       return false
@@ -111,7 +110,7 @@ export function useSettings() {
       await reload()
       setMsg({ kind: 'success', text: ok })
     } catch (e) {
-      setMsg({ kind: 'danger', text: errorText(e, 'Delete failed') })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 

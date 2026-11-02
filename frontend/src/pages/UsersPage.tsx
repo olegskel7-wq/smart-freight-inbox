@@ -3,6 +3,7 @@ import { useApi } from '../api/useApi.ts'
 import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { User } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -41,7 +42,7 @@ export default function UsersPage() {
       setPassword('')
       setRole('OPERATOR')
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Create failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Create failed') })
     }
   }
 
@@ -52,7 +53,7 @@ export default function UsersPage() {
       setUsers(await api.post<User[]>(`/api/users/${id}/role`, { role: newRole }))
       setMsg({ kind: 'success', text: `Role updated to ${newRole}.` })
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Role change failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Role change failed') })
     }
   }
 
@@ -65,7 +66,7 @@ export default function UsersPage() {
       setPwForId(null)
       setPwValue('')
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Password change failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Password change failed') })
     }
   }
 
@@ -76,7 +77,7 @@ export default function UsersPage() {
       setUsers(await api.del<User[]>(`/api/users/${id}`))
       setMsg({ kind: 'success', text: 'User deleted.' })
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Delete failed') })
     }
   }
 

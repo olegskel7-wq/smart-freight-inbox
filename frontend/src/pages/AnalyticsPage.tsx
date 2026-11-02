@@ -15,6 +15,7 @@ import PageHeader from '../components/PageHeader.tsx'
 import type { AnalyticsResponse, InboxAnswer } from '../types.ts'
 import { statusBadgeClass } from '../util/format.ts'
 import { statusLabel, typeLabel } from '../util/labels.ts'
+import { errorMessage } from '../util/errors.ts'
 
 // Chart.js is tree-shaken — register only the pieces the two bar charts use. Served from our own
 // bundle, never a CDN: the product promise is that data never leaves the server.
@@ -48,7 +49,7 @@ export default function AnalyticsPage() {
     try {
       setAnswer(await api.post<InboxAnswer>('/api/analytics/ask', { question }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to ask')
+      setError(errorMessage(err, 'Failed to ask'))
     } finally {
       setAsking(false)
     }

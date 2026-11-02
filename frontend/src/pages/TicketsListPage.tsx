@@ -12,6 +12,7 @@ import { initialsOf, isDone, senderParts, statusLabel, toneLabel, typeLabel } fr
 import { groupTickets, queueIds } from '../util/queue.ts'
 import type { TicketQueue } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
+import { errorMessage } from '../util/errors.ts'
 
 // A mail-style list grouped by SLA urgency. The server still decides the
 // order (escalated first, then newest — or the operator's explicit sort); the page only buckets each
@@ -167,7 +168,7 @@ export default function TicketsListPage() {
       setNotice(typeof result === 'string' ? result : 'Reprocess queued.')
       await reload()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Reprocess failed')
+      setError(errorMessage(e, 'Reprocess failed'))
     } finally {
       setReprocessing(false)
     }
@@ -182,7 +183,7 @@ export default function TicketsListPage() {
       await api.post(`/api/tickets/${id}/${action}`, action === 'assign' ? {} : undefined)
       await reload()
     } catch (e) {
-      setError(e instanceof Error ? e.message : action === 'assign' ? 'Claim failed' : 'Release failed')
+      setError(errorMessage(e, action === 'assign' ? 'Claim failed' : 'Release failed'))
     } finally {
       setActing(null)
     }

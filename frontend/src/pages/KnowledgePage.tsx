@@ -4,6 +4,7 @@ import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { KnowledgeResponse } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -44,7 +45,7 @@ export default function KnowledgePage() {
       setMsg({ kind: 'success', text: editingId == null ? 'Knowledge document added.' : 'Knowledge document updated.' })
       resetForm()
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Save failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Save failed') })
     } finally {
       setSaving(false)
     }
@@ -67,7 +68,7 @@ export default function KnowledgePage() {
       if (editingId === id) resetForm()
       setMsg({ kind: 'success', text: 'Knowledge document deleted.' })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 

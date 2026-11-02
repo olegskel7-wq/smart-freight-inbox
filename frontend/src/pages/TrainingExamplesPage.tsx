@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import { typeLabel } from '../util/labels.ts'
 import type { TrainingExamplesResponse } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -27,7 +28,7 @@ export default function TrainingExamplesPage() {
       setData(await api.del<TrainingExamplesResponse>(`/api/training-examples/${id}`))
       setMsg({ kind: 'success', text: 'Training example deleted.' })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 

@@ -4,6 +4,7 @@ import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { Tenant } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -42,7 +43,7 @@ export default function TenantsPage() {
       setAdminLastName('')
       setAdminPassword('')
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Create failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Create failed') })
     }
   }
 

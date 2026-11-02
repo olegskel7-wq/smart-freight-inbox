@@ -3,6 +3,7 @@ import { useApi } from '../api/useApi.ts'
 import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { RatesResponse, RateUploadResponse } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
 
 type Msg = { kind: 'success' | 'danger'; text: string } | null
 
@@ -42,7 +43,7 @@ export default function RatesPage() {
       })
       if (fileInput.current) fileInput.current.value = ''
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Import failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Import failed') })
     }
   }
 
@@ -52,7 +53,7 @@ export default function RatesPage() {
       setData(await call())
       setMsg({ kind: 'success', text: ok })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Action failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Action failed') })
     }
   }
 

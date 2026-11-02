@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { errorMessage } from '../util/errors.ts'
 
 type Load<T> = () => Promise<T>
 
@@ -23,7 +24,7 @@ export function usePageData<T>(load: Load<T>, failMessage: string) {
     (current: Load<T>) =>
       current()
         .then(setData, (e: unknown) =>
-          setFailure({ load: current, message: e instanceof Error ? e.message : failMessage }))
+          setFailure({ load: current, message: errorMessage(e, failMessage) }))
         .finally(() => setSettled(() => current)),
     [failMessage],
   )

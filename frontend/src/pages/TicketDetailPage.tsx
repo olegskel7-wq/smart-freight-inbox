@@ -15,6 +15,7 @@ import {
 import { groupTickets, queueFromState, queueIds, ticketSla } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
 import type { TicketQueue } from '../util/queue.ts'
+import { errorMessage } from '../util/errors.ts'
 
 // A conversation layout — the customer email and the reply composer in a
 // centred thread, ticket facts in a right-hand context rail. The composer's action bar is sticky so
@@ -96,7 +97,7 @@ export default function TicketDetailPage() {
       setTicket(await fn())
       setNotice(done)
     } catch (e) {
-      setError(e instanceof Error ? e.message : failed)
+      setError(errorMessage(e, failed))
     } finally {
       setBusy(false)
     }
@@ -133,7 +134,7 @@ export default function TicketDetailPage() {
       } else if (e instanceof ApiError && e.status === 502) {
         setError('Failed to send email — the message was not delivered.')
       } else {
-        setError(e instanceof Error ? e.message : 'Action failed')
+        setError(errorMessage(e, 'Action failed'))
       }
     } finally {
       setBusy(false)
