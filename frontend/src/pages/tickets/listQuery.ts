@@ -5,7 +5,9 @@ import { statusLabel } from '../../util/labels.ts'
 
 // Queue tabs — each maps to filters the API already supports (no invented backend filters).
 // With no filter in the URL the page shows the Inbox (open work), as in the approved design.
-export const QUEUES: { key: string; label: string; params: Record<string, string> }[] = [
+export interface Queue { key: string; label: string; params: Record<string, string> }
+
+export const QUEUES: Queue[] = [
   { key: 'inbox', label: 'Inbox', params: { view: 'open' } },
   { key: 'mine', label: 'Assigned to me', params: { assignee: 'mine' } },
   { key: 'autosent', label: 'Auto-sent', params: { status: 'AUTO_SENT' } },
@@ -80,15 +82,15 @@ export function listRequest({ sort, dir, status, assignee, view, page }: Omit<Li
   return `/api/tickets?${qs.toString()}`
 }
 
-/** The key of the queue tab the URL matches exactly, if any. */
-export function activeQueueKey(params: URLSearchParams, { status, assignee, view }: ListQuery): string | undefined {
+/** The queue tab the URL matches exactly, if any. */
+export function activeQueueOf(params: URLSearchParams, { status, assignee, view }: ListQuery): Queue | undefined {
   return QUEUES.find((q) =>
     q.params.view ? q.params.view === view
       : !view && Object.entries(q.params).every(([k, v]) => params.get(k) === v)
-        && (q.params.status ? assignee === 'all' : !status))?.key
+        && (q.params.status ? assignee === 'all' : !status))
 }
 
-export function listTitle(activeQueue: string | undefined, { status, view }: ListQuery): string {
-  return QUEUES.find((q) => q.key === activeQueue)?.label ?? VIEW_LABELS[view]
+export function listTitle(activeQueue: Queue | undefined, { status, view }: ListQuery): string {
+  return activeQueue?.label ?? VIEW_LABELS[view]
     ?? (status ? statusLabel(status) : 'Tickets')
 }

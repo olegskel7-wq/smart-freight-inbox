@@ -9,7 +9,7 @@ import { groupTickets, queueIds } from '../util/queue.ts'
 import type { TicketQueue } from '../util/queue.ts'
 import { useNow } from '../util/useNow.ts'
 import { errorMessage } from '../util/errors.ts'
-import { QUEUES, activeQueueKey, listRequest, listTitle, readListQuery } from './tickets/listQuery.ts'
+import { QUEUES, activeQueueOf, listRequest, listTitle, readListQuery } from './tickets/listQuery.ts'
 import Pager from './tickets/Pager.tsx'
 import SummaryChips from './tickets/SummaryChips.tsx'
 import TicketFilters from './tickets/TicketFilters.tsx'
@@ -35,7 +35,7 @@ export default function TicketsListPage() {
 
   // Memoised so the React Compiler can treat the query as frozen once read (it is passed on below).
   const query = useMemo(() => readListQuery(params), [params])
-  const activeQueue = activeQueueKey(params, query)
+  const activeQueue = activeQueueOf(params, query)
   const { sort, dir, status, assignee, view, page } = query
 
   const load = useCallback(
@@ -135,8 +135,8 @@ export default function TicketsListPage() {
           <Link
             key={q.key}
             to={`/tickets?${new URLSearchParams(q.params).toString()}`}
-            className={`sf-tab${activeQueue === q.key ? ' is-active' : ''}`}
-            aria-current={activeQueue === q.key ? 'page' : undefined}
+            className={`sf-tab${activeQueue?.key === q.key ? ' is-active' : ''}`}
+            aria-current={activeQueue?.key === q.key ? 'page' : undefined}
           >
             {q.label}
           </Link>
