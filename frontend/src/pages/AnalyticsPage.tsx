@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   BarElement,
@@ -10,6 +10,7 @@ import {
 } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { AnalyticsResponse, InboxAnswer } from '../types.ts'
 import { statusBadgeClass } from '../util/format.ts'
@@ -32,26 +33,13 @@ export default function AnalyticsPage() {
   const [params, setParams] = useSearchParams()
   const days = Number(params.get('days') ?? '30')
 
-  const [data, setData] = useState<AnalyticsResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(() => api.get<AnalyticsResponse>(`/api/analytics?days=${days}`), [api, days])
+  // A failed question shares the load's error slot, which replaces the page.
+  const { data, error, setError } = usePageData(load, 'Failed to load analytics')
 
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState<InboxAnswer | null>(null)
   const [asking, setAsking] = useState(false)
-
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      const result = await api.get<AnalyticsResponse>(`/api/analytics?days=${days}`)
-      setData(result)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load analytics')
-    }
-  }, [api, days])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   const ask = async (e: React.FormEvent) => {
     e.preventDefault()

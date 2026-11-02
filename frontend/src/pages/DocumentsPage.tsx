@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { DocumentsResponse } from '../types.ts'
@@ -16,8 +17,6 @@ function formatSize(bytes: number): string {
 export default function DocumentsPage() {
   const api = useApi()
 
-  const [data, setData] = useState<DocumentsResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
   // Upload form state.
@@ -25,21 +24,15 @@ export default function DocumentsPage() {
   const [docType, setDocType] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      const res = await api.get<DocumentsResponse>('/api/documents')
-      setData(res)
+  const load = useCallback(
+    () => api.get<DocumentsResponse>('/api/documents').then((res) => {
       // Default the type dropdown to the first option once the catalogue is known.
       setDocType((prev) => prev || res.docTypes[0]?.value || '')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load documents')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+      return res
+    }),
+    [api],
+  )
+  const { data, setData, error } = usePageData(load, 'Failed to load documents')
 
   const upload = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { RatesResponse, RateUploadResponse } from '../types.ts'
 
@@ -12,25 +13,13 @@ type Msg = { kind: 'success' | 'danger'; text: string } | null
 export default function RatesPage() {
   const api = useApi()
 
-  const [data, setData] = useState<RatesResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
   // Skipped-row messages from the last import, shown separately so good rows still land.
   const [importErrors, setImportErrors] = useState<string[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setData(await api.get<RatesResponse>('/api/rates'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load rates')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<RatesResponse>('/api/rates'), [api])
+  const { data, setData, error } = usePageData(load, 'Failed to load rates')
 
   const upload = async (e: React.FormEvent) => {
     e.preventDefault()

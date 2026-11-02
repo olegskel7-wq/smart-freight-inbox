@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { User } from '../types.ts'
 
@@ -12,8 +13,6 @@ type Msg = { kind: 'success' | 'danger'; text: string } | null
 export default function UsersPage() {
   const api = useApi()
 
-  const [users, setUsers] = useState<User[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
   // Add-operator form.
@@ -27,18 +26,8 @@ export default function UsersPage() {
   const [pwForId, setPwForId] = useState<string | null>(null)
   const [pwValue, setPwValue] = useState('')
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setUsers(await api.get<User[]>('/api/users'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load users')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<User[]>('/api/users'), [api])
+  const { data: users, setData: setUsers, error } = usePageData(load, 'Failed to load users')
 
   const createUser = async (e: React.FormEvent) => {
     e.preventDefault()

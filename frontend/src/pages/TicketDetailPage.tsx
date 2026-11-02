@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi, ApiError } from '../api/useApi.ts'
 import { useOperators } from '../api/useOperators.ts'
+import { usePageData } from '../api/usePageData.ts'
 import { useRoles } from '../auth/roles.ts'
 import type { Page, TicketDetail, TicketSummary } from '../types.ts'
 import Icon from '../components/Icon.tsx'
@@ -41,9 +42,16 @@ export default function TicketDetailPage() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const [ticket, setTicket] = useState<TicketDetail | null>(null)
   const [draft, setDraft] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(
+    () => api.get<TicketDetail>(`/api/tickets/${id}`).then((t) => {
+      setDraft(t.draftReply ?? '')
+      return t
+    }),
+    [api, id],
+  )
+  // One error slot for the load and every action, as the page shows a single alert.
+  const { data: ticket, setData: setTicket, error, setError } = usePageData(load, 'Failed to load ticket')
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // A tenant admin can assign to any teammate; non-admins can't read /api/users (403), so skip the fetch.
@@ -78,20 +86,6 @@ export default function TicketDetailPage() {
       navigate(`/tickets/${target}`, { state: { queue } })
     }
   }, [navigate, backTo, queue])
-
-  const load = useCallback(async () => {
-    try {
-      const t = await api.get<TicketDetail>(`/api/tickets/${id}`)
-      setTicket(t)
-      setDraft(t.draftReply ?? '')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load ticket')
-    }
-  }, [api, id])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   // Runs one ticket mutation with the shared busy/error/notice handling.
   const act = async (fn: () => Promise<TicketDetail>, done: string, failed: string) => {

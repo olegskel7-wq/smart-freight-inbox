@@ -1,5 +1,6 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type {
@@ -16,8 +17,6 @@ type Msg = { kind: 'success' | 'danger'; text: string } | null
 export default function WebhooksPage() {
   const api = useApi()
 
-  const [data, setData] = useState<WebhooksResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
   // New-subscription form.
@@ -34,18 +33,8 @@ export default function WebhooksPage() {
   const [openLog, setOpenLog] = useState<number | null>(null)
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([])
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setData(await api.get<WebhooksResponse>('/api/webhooks'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load webhooks')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<WebhooksResponse>('/api/webhooks'), [api])
+  const { data, setData, error } = usePageData(load, 'Failed to load webhooks')
 
   const toggleType = (type: string) => {
     setSelectedTypes((prev) =>

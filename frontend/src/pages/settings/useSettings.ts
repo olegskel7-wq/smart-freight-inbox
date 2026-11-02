@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../../api/useApi.ts'
+import { usePageData } from '../../api/usePageData.ts'
 import type { Settings } from '../../types.ts'
 
 export type Api = ReturnType<typeof useApi>
@@ -62,28 +63,23 @@ const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.mess
 export function useSettings() {
   const api = useApi()
 
-  const [data, setData] = useState<Settings | null>(null)
   const [form, setForm] = useState<SettingsForm | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
-  const applyData = useCallback((s: Settings) => {
+  // Every snapshot that arrives, loaded or returned by a save, re-seeds the form.
+  const load = useCallback(
+    () => api.get<Settings>('/api/settings').then((s) => {
+      setForm(formFrom(s))
+      return s
+    }),
+    [api],
+  )
+  const { data, setData, error, reload } = usePageData(load, 'Failed to load settings')
+
+  const applyData = (s: Settings) => {
     setData(s)
     setForm(formFrom(s))
-  }, [])
-
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      applyData(await api.get<Settings>('/api/settings'))
-    } catch (e) {
-      setError(errorText(e, 'Failed to load settings'))
-    }
-  }, [api, applyData])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  }
 
   const patchForm = useCallback(
     (patch: FormPatch) =>
@@ -112,7 +108,7 @@ export function useSettings() {
     setMsg(null)
     try {
       await call(api)
-      await load()
+      await reload()
       setMsg({ kind: 'success', text: ok })
     } catch (e) {
       setMsg({ kind: 'danger', text: errorText(e, 'Delete failed') })

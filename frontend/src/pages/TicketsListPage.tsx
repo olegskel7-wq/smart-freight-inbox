@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import { useTicketStream } from '../api/useTicketStream.ts'
 import Icon from '../components/Icon.tsx'
 import type { Page, TicketStats, TicketSummary } from '../types.ts'
@@ -98,66 +99,43 @@ export default function TicketsListPage() {
       : !view && Object.entries(q.params).every(([k, v]) => params.get(k) === v)
         && (q.params.status ? assignee === 'all' : !status))?.key
 
-  const [data, setData] = useState<Page<TicketSummary> | null>(null)
-  const [stats, setStats] = useState<TicketStats | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [reprocessing, setReprocessing] = useState(false)
   const [acting, setActing] = useState<number | null>(null)
   const now = useNow()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const qs = new URLSearchParams({ page: String(page) })
-      if (sort !== null) {
-        qs.set('sort', sort)
-        qs.set('dir', dir)
-      }
-      // A drill-down view (queue tab or summary chip) takes precedence over the status/assignee filters.
-      if (view) {
-        qs.set('view', view)
-      } else {
-        if (status) qs.set('status', status)
-        if (assignee !== 'all') qs.set('assignee', assignee)
-      }
-      setData(await api.get<Page<TicketSummary>>(`/api/tickets?${qs.toString()}`))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load tickets')
-    } finally {
-      setLoading(false)
+  const load = useCallback(() => {
+    const qs = new URLSearchParams({ page: String(page) })
+    if (sort !== null) {
+      qs.set('sort', sort)
+      qs.set('dir', dir)
     }
+    // A drill-down view (queue tab or summary chip) takes precedence over the status/assignee filters.
+    if (view) {
+      qs.set('view', view)
+    } else {
+      if (status) qs.set('status', status)
+      if (assignee !== 'all') qs.set('assignee', assignee)
+    }
+    return api.get<Page<TicketSummary>>(`/api/tickets?${qs.toString()}`)
   }, [api, sort, dir, status, assignee, view, page])
+  const { data, error, setError, loading, reload } = usePageData(load, 'Failed to load tickets')
 
-  // The summary strip is best-effort: a failed count never blocks the list.
-  const loadStats = useCallback(async () => {
-    try {
-      setStats(await api.get<TicketStats>('/api/tickets/summary'))
-    } catch {
-      /* keep last known counts */
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-  useEffect(() => {
-    void loadStats()
-  }, [loadStats])
+  // The summary strip is best-effort: a failed count never blocks the list, the last known counts stay.
+  const loadStats = useCallback(() => api.get<TicketStats>('/api/tickets/summary'), [api])
+  const { data: stats, reload: reloadStats } = usePageData(loadStats, 'Failed to load the summary')
 
   // Live updates: the backend pushes a ticket-changed event per tenant; we re-fetch the
   // current query (and the summary counts). Refs keep the stream subscription stable across filter
   // changes (no reconnect just because a callback was recreated).
-  const loadRef = useRef(load)
-  const statsRef = useRef(loadStats)
+  const loadRef = useRef(reload)
+  const statsRef = useRef(reloadStats)
   useEffect(() => {
-    loadRef.current = load
-  }, [load])
+    loadRef.current = reload
+  }, [reload])
   useEffect(() => {
-    statsRef.current = loadStats
-  }, [loadStats])
+    statsRef.current = reloadStats
+  }, [reloadStats])
   const onLiveEvent = useCallback(() => {
     void loadRef.current()
     void statsRef.current()
@@ -187,13 +165,13 @@ export default function TicketsListPage() {
     try {
       const result = await api.post<string>('/api/admin/reprocess')
       setNotice(typeof result === 'string' ? result : 'Reprocess queued.')
-      await load()
+      await reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Reprocess failed')
     } finally {
       setReprocessing(false)
     }
-  }, [api, load])
+  }, [api, reload, setError])
 
   // Shared-queue assignment: self-claim an unassigned ticket or release one of your
   // own. Assigning to another operator is a tenant-admin action, done from the ticket page.
@@ -202,7 +180,7 @@ export default function TicketsListPage() {
     setError(null)
     try {
       await api.post(`/api/tickets/${id}/${action}`, action === 'assign' ? {} : undefined)
-      await load()
+      await reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : action === 'assign' ? 'Claim failed' : 'Release failed')
     } finally {
