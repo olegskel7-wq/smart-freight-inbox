@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from 'react-oidc-context'
+import { signinState } from '../auth/oidc.ts'
 
 /** Error carrying the HTTP status so callers can branch (e.g. 403 vs 500). */
 export class ApiError extends Error {
@@ -51,7 +52,7 @@ export function useApi() {
     const res = await fetch(path, { ...init, headers })
 
     if (res.status === 401) {
-      void authRef.current.signinRedirect()
+      void authRef.current.signinRedirect(signinState())
       throw new ApiError(401, 'Unauthorized')
     }
     if (!res.ok) throw new ApiError(res.status, await errorText(res))

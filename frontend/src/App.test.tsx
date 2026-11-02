@@ -37,6 +37,16 @@ describe('App — auth gate', () => {
     expect(onScreen).toEqual([true])
   })
 
+  it('asks Keycloak to bring the operator back to the page they opened', () => {
+    window.history.replaceState(null, '', '/analytics?days=7')
+    const signinRedirect = authWith({})
+
+    renderApp()
+
+    expect(signinRedirect).toHaveBeenCalledWith({ state: { returnTo: '/analytics?days=7' } })
+    window.history.replaceState(null, '', '/')
+  })
+
   it('starts the redirect once under StrictMode, which runs the effect twice', () => {
     const signinRedirect = authWith({})
 
