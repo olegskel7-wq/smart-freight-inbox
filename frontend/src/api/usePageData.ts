@@ -22,7 +22,8 @@ export function usePageData<T>(load: Load<T>, failMessage: string) {
 
   const run = useCallback(
     (current: Load<T>) =>
-      current()
+      // A load that throws before returning its promise still ends up as the page error.
+      new Promise<T>((resolve) => resolve(current()))
         .then(setData, (e: unknown) =>
           setFailure({ load: current, message: errorMessage(e, failMessage) }))
         .finally(() => setSettled(() => current)),

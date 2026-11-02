@@ -23,11 +23,11 @@ import WebhooksPage from './WebhooksPage.tsx'
 // net for moving the pages onto one fetch-on-mount hook (docs/refactoring.md, Stage 1.3). fetch is
 // stubbed, so the real useApi runs.
 
-// One stable object, like the real context value (see SettingsPage.test.tsx).
-vi.mock('react-oidc-context', () => {
-  const auth = { user: { access_token: 'test-token', profile: { sub: 'me' } }, signinRedirect: vi.fn() }
-  return { useAuth: () => auth }
-})
+// One stable object, like the real context value (see SettingsPage.test.tsx). A test swaps it for a
+// new one to act out a silent token renewal, which rebuilds useApi's client.
+const SIGNED_IN = { user: { access_token: 'test-token', profile: { sub: 'me' } }, signinRedirect: () => {} }
+const oidc = vi.hoisted(() => ({ auth: null as unknown }))
+vi.mock('react-oidc-context', () => ({ useAuth: () => oidc.auth }))
 
 // The live stream is a STOMP socket; the tests fire its callback by hand.
 let liveEvent: () => void = () => {}
@@ -58,6 +58,7 @@ function held(response: () => Response) {
 }
 
 beforeEach(() => {
+  oidc.auth = SIGNED_IN
   calls = []
   routes = {}
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -298,6 +299,20 @@ describe('TicketsListPage', () => {
     await waitFor(() => expect(gets('/api/tickets/summary')).toHaveLength(2))
   })
 
+  it('drops a load error once a queue tab loads a different query', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/tickets?page=0&view=open'] = failure('Tickets unavailable')
+    routes['GET /api/tickets?page=0&status=CLOSED'] = () => json(page(ticket(2, 'Closed enquiry')))
+    routes['GET /api/tickets/summary'] = () => json(STATS)
+
+    renderAt(<TicketsListPage />, '/tickets')
+    expect(await screen.findByText('Tickets unavailable')).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Closed' }))
+
+    expect(await screen.findByText('Closed enquiry')).toBeInTheDocument()
+    expect(screen.queryByText('Tickets unavailable')).not.toBeInTheDocument()
+  })
+
   it('reloads the current page after a claim', async () => {
     const user = userEvent.setup()
     let claimed = false
@@ -326,14 +341,14 @@ const DETAIL: TicketDetail = {
   retryCount: 0, createdAt: AT, updatedAt: AT,
 }
 
-const renderTicket = () =>
-  render(
-    <MemoryRouter initialEntries={['/tickets/7']}>
-      <Routes>
-        <Route path="/tickets/:id" element={<TicketDetailPage />} />
-      </Routes>
-    </MemoryRouter>,
-  )
+const ticketTree = () => (
+  <MemoryRouter initialEntries={['/tickets/7']}>
+    <Routes>
+      <Route path="/tickets/:id" element={<TicketDetailPage />} />
+    </Routes>
+  </MemoryRouter>
+)
+const renderTicket = () => render(ticketTree())
 
 describe('TicketDetailPage', () => {
   beforeEach(() => {
@@ -358,5 +373,22 @@ describe('TicketDetailPage', () => {
 
     expect(await screen.findByText('Ticket not found')).toHaveClass('alert-danger')
     expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+  })
+
+  it('keeps a failed-send error through a silent token renewal, which refetches the ticket', async () => {
+    const user = userEvent.setup()
+    routes['GET /api/tickets/7'] = () => json(DETAIL)
+    routes['POST /api/tickets/7/draft'] = () => json({ error: 'Bad Gateway', message: 'SMTP refused' }, 502)
+
+    const { rerender } = renderTicket()
+    await user.click(await screen.findByRole('button', { name: 'Send' }))
+    const sendError = 'Failed to send email — the message was not delivered.'
+    expect(await screen.findByText(sendError)).toHaveClass('alert-danger')
+
+    oidc.auth = { ...SIGNED_IN, user: { ...SIGNED_IN.user, access_token: 'renewed-token' } }
+    rerender(ticketTree())
+
+    await waitFor(() => expect(calls).toContainEqual({ method: 'GET', url: '/api/tickets/7', auth: 'Bearer renewed-token' }))
+    expect(screen.getByText(sendError)).toBeInTheDocument()
   })
 })

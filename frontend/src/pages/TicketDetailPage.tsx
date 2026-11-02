@@ -51,8 +51,16 @@ export default function TicketDetailPage() {
     }),
     [api, id],
   )
-  // One error slot for the load and every action, as the page shows a single alert.
-  const { data: ticket, setData: setTicket, error, setError } = usePageData(load, 'Failed to load ticket')
+  const { data: ticket, setData: setTicket, error: loadError, setError: setLoadError } =
+    usePageData(load, 'Failed to load ticket')
+  // The page shows one alert: an action's error, else the load's. An action clears both; its own
+  // error is not tied to the load, so a refetch (a silent token renewal re-runs it) keeps it.
+  const [actionError, setActionError] = useState<string | null>(null)
+  const error = actionError ?? loadError
+  const clearError = () => {
+    setActionError(null)
+    setLoadError(null)
+  }
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // A tenant admin can assign to any teammate; non-admins can't read /api/users (403), so skip the fetch.
@@ -91,13 +99,13 @@ export default function TicketDetailPage() {
   // Runs one ticket mutation with the shared busy/error/notice handling.
   const act = async (fn: () => Promise<TicketDetail>, done: string, failed: string) => {
     setBusy(true)
-    setError(null)
+    clearError()
     setNotice(null)
     try {
       setTicket(await fn())
       setNotice(done)
     } catch (e) {
-      setError(errorMessage(e, failed))
+      setActionError(errorMessage(e, failed))
     } finally {
       setBusy(false)
     }
@@ -117,7 +125,7 @@ export default function TicketDetailPage() {
   // ("Send and next"), else back to the list.
   const submitDraft = async (action: 'save' | 'close' | 'send', advance = false) => {
     setBusy(true)
-    setError(null)
+    clearError()
     setNotice(null)
     try {
       const updated = await api.post<TicketDetail>(`/api/tickets/${id}/draft`, { action, draftReply: draft })
@@ -130,11 +138,11 @@ export default function TicketDetailPage() {
       setNotice('Draft saved.')
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) {
-        setError('Please wait a few seconds before sending again.')
+        setActionError('Please wait a few seconds before sending again.')
       } else if (e instanceof ApiError && e.status === 502) {
-        setError('Failed to send email — the message was not delivered.')
+        setActionError('Failed to send email — the message was not delivered.')
       } else {
-        setError(errorMessage(e, 'Action failed'))
+        setActionError(errorMessage(e, 'Action failed'))
       }
     } finally {
       setBusy(false)
