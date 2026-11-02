@@ -343,6 +343,26 @@ describe('TicketsListPage', () => {
     expect(screen.queryByText('Tickets unavailable')).not.toBeInTheDocument()
   })
 
+  it('keeps the newest answer when two live reloads overlap', async () => {
+    routes['GET /api/tickets?page=0&view=open'] = () => json(page(ticket(1, 'First load')))
+    routes['GET /api/tickets/summary'] = () => json(STATS)
+
+    renderAt(<TicketsListPage />, '/tickets')
+    await screen.findByText('First load')
+
+    const older = held(() => json(page(ticket(1, 'Older snapshot'))))
+    routes['GET /api/tickets?page=0&view=open'] = older.route
+    act(() => liveEvent())
+    routes['GET /api/tickets?page=0&view=open'] = () => json(page(ticket(1, 'Newest snapshot')))
+    act(() => liveEvent())
+    expect(await screen.findByText('Newest snapshot')).toBeInTheDocument()
+
+    await older.release()
+
+    expect(screen.getByText('Newest snapshot')).toBeInTheDocument()
+    expect(screen.queryByText('Older snapshot')).not.toBeInTheDocument()
+  })
+
   it('reloads the current page after a claim', async () => {
     const user = userEvent.setup()
     let claimed = false

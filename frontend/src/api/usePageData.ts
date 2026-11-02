@@ -19,14 +19,15 @@ export function usePageData<T>(load: Load<T>, failMessage: string) {
   // Each records the load it belongs to; one recorded for an older load reads as "none".
   const [failure, setFailure] = useState<{ load: Load<T>; message: string } | null>(null)
   const [settled, setSettled] = useState<Load<T> | null>(null)
-  // The newest load started; an older one that answers after it is dropped, so a quick filter
-  // change can't land the previous filter's data on screen.
-  const latest = useRef(load)
+  // Numbers every run; only the newest one's answer is applied, so an older request answering late
+  // (the previous filter, or an earlier of two overlapping live reloads) can't land on screen.
+  const lastRun = useRef(0)
 
   const run = useCallback(
     (current: Load<T>) => {
+      const runId = ++lastRun.current
       const settle = (apply: () => void) => {
-        if (latest.current !== current) return
+        if (runId !== lastRun.current) return
         apply()
         setSettled(() => current)
       }
@@ -40,7 +41,6 @@ export function usePageData<T>(load: Load<T>, failMessage: string) {
   )
 
   useEffect(() => {
-    latest.current = load
     void run(load)
   }, [run, load])
 
