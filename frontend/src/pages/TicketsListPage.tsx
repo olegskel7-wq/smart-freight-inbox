@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
 import { useApi } from '../api/useApi.ts'
@@ -126,22 +126,13 @@ export default function TicketsListPage() {
   const loadStats = useCallback(() => api.get<TicketStats>('/api/tickets/summary'), [api])
   const { data: stats, reload: reloadStats } = usePageData(loadStats, 'Failed to load the summary')
 
-  // Live updates: the backend pushes a ticket-changed event per tenant; we re-fetch the
-  // current query (and the summary counts). Refs keep the stream subscription stable across filter
-  // changes (no reconnect just because a callback was recreated).
-  const loadRef = useRef(reload)
-  const statsRef = useRef(reloadStats)
-  useEffect(() => {
-    loadRef.current = reload
-  }, [reload])
-  useEffect(() => {
-    statsRef.current = reloadStats
-  }, [reloadStats])
-  const onLiveEvent = useCallback(() => {
-    void loadRef.current()
-    void statsRef.current()
-  }, [])
-  const live = useTicketStream(onLiveEvent)
+  // Live updates: the backend pushes a ticket-changed event per tenant; we re-fetch the current query
+  // and the summary counts. useTicketStream keeps the latest callback in a ref, so a filter change
+  // never reconnects the stream.
+  const live = useTicketStream(() => {
+    void reload()
+    void reloadStats()
+  })
 
   const update = (next: Record<string, string>) => {
     // Start from the real address bar, not the router's copy: the OIDC sign-in callback strips its
