@@ -4,12 +4,14 @@ import { formatDateTime } from '../../util/format.ts'
 const deliveryBadge = (status: string) =>
   status === 'DELIVERED' ? 'text-bg-success' : status === 'DEAD' ? 'text-bg-danger' : 'text-bg-warning'
 
-/** One subscription's delivery attempts, shown in a full-width row under it. */
-export default function DeliveryLog({ deliveries }: { deliveries: WebhookDelivery[] }) {
+/** One subscription's delivery attempts (null while they load), shown in a full-width row under it. */
+export default function DeliveryLog({ deliveries }: { deliveries: WebhookDelivery[] | null }) {
   return (
     <tr>
       <td colSpan={4} className="bg-light">
-        {deliveries.length === 0 ? (
+        {deliveries === null ? (
+          <p className="text-muted small mb-0 p-2">Loading…</p>
+        ) : deliveries.length === 0 ? (
           <p className="text-muted small mb-0 p-2">No deliveries yet.</p>
         ) : (
           <table className="table table-sm mb-0 small">

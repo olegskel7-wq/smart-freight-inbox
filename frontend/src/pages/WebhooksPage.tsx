@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useState } from 'react'
+import { Fragment, useCallback, useRef, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
 import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
@@ -29,9 +29,12 @@ export default function WebhooksPage() {
   // The freshly-created secret, shown once for the operator to copy.
   const [newSecret, setNewSecret] = useState<string | null>(null)
 
-  // The one subscription whose delivery log is open, and its rows (loaded on every open).
+  // The one subscription whose delivery log is open, and its rows (null while they load — loaded on
+  // every open). Each load is numbered and only the newest may fill the log, so a slow answer for a
+  // log opened earlier never shows under another subscription.
   const [openLog, setOpenLog] = useState<number | null>(null)
-  const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([])
+  const [deliveries, setDeliveries] = useState<WebhookDelivery[] | null>(null)
+  const logRun = useRef(0)
 
   const load = useCallback(() => api.get<WebhooksResponse>('/api/webhooks'), [api])
   const { data, setData, error } = usePageData(load, 'Failed to load webhooks')
@@ -51,13 +54,16 @@ export default function WebhooksPage() {
     }
   }
 
+  // Answers whether the call succeeded.
   const mutate = async (call: () => Promise<WebhooksResponse>, ok: string) => {
     setMsg(null)
     try {
       setData(await call())
       setMsg({ kind: 'success', text: ok })
+      return true
     } catch (e) {
       setMsg({ kind: 'danger', text: errorMessage(e, 'Action failed') })
+      return false
     }
   }
 
@@ -79,8 +85,25 @@ export default function WebhooksPage() {
     void mutate(() => api.del<WebhooksResponse>(`/api/webhooks/${id}`), 'Webhook deleted.')
   }
 
-  const sendTest = (id: number) =>
-    mutate(() => api.post<WebhooksResponse>(`/api/webhooks/${id}/test`, {}), 'Test event queued.')
+  const loadLog = async (id: number) => {
+    const run = ++logRun.current
+    let rows: WebhookDelivery[]
+    try {
+      rows = await api.get<WebhookDelivery[]>(`/api/webhooks/${id}/deliveries`)
+    } catch {
+      rows = []
+    }
+    if (run === logRun.current) setDeliveries(rows)
+  }
+
+  // The queued test delivery shows up in that webhook's log if it is open.
+  const sendTest = async (id: number) => {
+    const queued = await mutate(
+      () => api.post<WebhooksResponse>(`/api/webhooks/${id}/test`, {}),
+      'Test event queued.',
+    )
+    if (queued && openLog === id) await loadLog(id)
+  }
 
   const showLog = async (id: number) => {
     if (openLog === id) {
@@ -88,11 +111,8 @@ export default function WebhooksPage() {
       return
     }
     setOpenLog(id)
-    try {
-      setDeliveries(await api.get<WebhookDelivery[]>(`/api/webhooks/${id}/deliveries`))
-    } catch {
-      setDeliveries([])
-    }
+    setDeliveries(null)
+    await loadLog(id)
   }
 
   if (error) return <div className="alert alert-danger">{error}</div>

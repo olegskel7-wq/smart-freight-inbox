@@ -24,6 +24,9 @@ export default function WebhookForm({ availableEventTypes, secretConfigured, onC
   const [secret, setSecret] = useState('')
   const [allEvents, setAllEvents] = useState(true)
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
+  // A create is in flight: a second submit would make a second webhook whose one-time secret the
+  // operator never sees, since the first answer's secret is replaced by the second's.
+  const [submitting, setSubmitting] = useState(false)
 
   const toggleType = (type: string) => {
     setSelectedTypes((prev) =>
@@ -33,12 +36,19 @@ export default function WebhookForm({ availableEventTypes, secretConfigured, onC
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const created = await onCreate({
-      url,
-      eventTypes: allEvents ? ['*'] : selectedTypes,
-      description: description || null,
-      secret: secret || null,
-    })
+    if (submitting) return
+    setSubmitting(true)
+    let created: boolean
+    try {
+      created = await onCreate({
+        url,
+        eventTypes: allEvents ? ['*'] : selectedTypes,
+        description: description || null,
+        secret: secret || null,
+      })
+    } finally {
+      setSubmitting(false)
+    }
     if (!created) return
     setUrl('')
     setDescription('')
@@ -117,7 +127,7 @@ export default function WebhookForm({ availableEventTypes, secretConfigured, onC
             />
           </div>
 
-          <button type="submit" className="btn btn-primary btn-sm" disabled={!secretConfigured}>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={!secretConfigured || submitting}>
             Create webhook
           </button>
         </form>
