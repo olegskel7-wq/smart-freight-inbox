@@ -21,6 +21,7 @@ function authWith(state: AuthState, signinRedirect = vi.fn(async () => {})) {
 const renderApp = () => render(<MemoryRouter initialEntries={['/tickets']}><App /></MemoryRouter>)
 
 afterEach(() => {
+  window.history.replaceState(null, '', '/')
   vi.restoreAllMocks()
 })
 
@@ -35,6 +36,15 @@ describe('App — auth gate', () => {
 
     expect(screen.getByText('Redirecting to sign in…')).toBeInTheDocument()
     expect(onScreen).toEqual([true])
+  })
+
+  it('asks Keycloak to bring the operator back to the page they opened', () => {
+    window.history.replaceState(null, '', '/analytics?days=7')
+    const signinRedirect = authWith({})
+
+    renderApp()
+
+    expect(signinRedirect).toHaveBeenCalledWith({ state: { returnTo: '/analytics?days=7' } })
   })
 
   it('starts the redirect once under StrictMode, which runs the effect twice', () => {

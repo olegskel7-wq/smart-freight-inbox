@@ -57,9 +57,7 @@ export default function TicketsListPage() {
   })
 
   const update = (next: Record<string, string>) => {
-    // Start from the real address bar, not the router's copy: the OIDC sign-in callback strips its
-    // one-time `code`/`state` with history.replaceState, which React Router never sees.
-    const merged = new URLSearchParams(window.location.search)
+    const merged = new URLSearchParams(params)
     Object.entries(next).forEach(([k, v]) => (v ? merged.set(k, v) : merged.delete(k)))
     setParams(merged)
   }

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
 import { useAuth } from 'react-oidc-context'
+import { signinState } from './auth/oidc.ts'
 import { useRoles } from './auth/roles.ts'
 import Layout from './components/Layout.tsx'
 import TicketsListPage from './pages/TicketsListPage.tsx'
@@ -45,7 +46,7 @@ export default function App() {
   const { signinRedirect } = auth
   const redirectStarted = useRef(false)
   useEffect(() => {
-    if (needsSignIn && !redirectStarted.current) void signinRedirect()
+    if (needsSignIn && !redirectStarted.current) void signinRedirect(signinState())
     redirectStarted.current = needsSignIn
   }, [needsSignIn, signinRedirect])
 

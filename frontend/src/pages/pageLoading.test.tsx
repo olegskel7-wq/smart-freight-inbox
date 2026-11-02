@@ -161,6 +161,9 @@ describe('TrainingExamplesPage', () => {
 
     expect(await screen.findByText('Unauthorized')).toHaveClass('alert-danger')
     expect(signedOut.signinRedirect).toHaveBeenCalledOnce()
+    // Back to the same page once signed in again.
+    const { pathname, search, hash } = window.location
+    expect(signedOut.signinRedirect).toHaveBeenCalledWith({ state: { returnTo: pathname + search + hash } })
   })
 
   it('re-renders from the snapshot a delete returns, without reloading', async () => {
