@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../util/errors.ts'
 
 type Load<T> = () => Promise<T>
@@ -19,18 +19,28 @@ export function usePageData<T>(load: Load<T>, failMessage: string) {
   // Each records the load it belongs to; one recorded for an older load reads as "none".
   const [failure, setFailure] = useState<{ load: Load<T>; message: string } | null>(null)
   const [settled, setSettled] = useState<Load<T> | null>(null)
+  // The newest load started; an older one that answers after it is dropped, so a quick filter
+  // change can't land the previous filter's data on screen.
+  const latest = useRef(load)
 
   const run = useCallback(
-    (current: Load<T>) =>
+    (current: Load<T>) => {
+      const settle = (apply: () => void) => {
+        if (latest.current !== current) return
+        apply()
+        setSettled(() => current)
+      }
       // A load that throws before returning its promise still ends up as the page error.
-      new Promise<T>((resolve) => resolve(current()))
-        .then(setData, (e: unknown) =>
-          setFailure({ load: current, message: errorMessage(e, failMessage) }))
-        .finally(() => setSettled(() => current)),
+      return new Promise<T>((resolve) => resolve(current())).then(
+        (value) => settle(() => setData(value)),
+        (e: unknown) => settle(() => setFailure({ load: current, message: errorMessage(e, failMessage) })),
+      )
+    },
     [failMessage],
   )
 
   useEffect(() => {
+    latest.current = load
     void run(load)
   }, [run, load])
 
