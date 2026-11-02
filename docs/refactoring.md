@@ -168,11 +168,13 @@ Branch coverage of the classes the plan touches (clean run):
    `WebhooksPage.test.tsx` (25) pins the table and status badges, the create body (all events / ticked
    types in order, blanks as null), the secret shown once + Copy + form reset, the rejected create, Test /
    Enable / Disable / Delete bodies and messages, and the delivery log (cells, badges, one open at a time,
-   reload on reopen, empty and failed loads); 12 mutations of the page each fail it. Found there, not fixed
-   (behaviour changes — their own branch): switching logs shows the previous log's rows until the new load
-   answers, and an out-of-order answer can leave them there; Create is not disabled in flight, so a double
-   click makes two webhooks and the first secret is never seen; an open log is not refreshed after Test.
-   Stage 1.3 is complete.
+   reload on reopen, empty and failed loads); 12 mutations of the page each fail it. Found there and fixed
+   in its own branch `fix/webhooks-log-and-create` (behaviour changes): switching logs showed the previous
+   log's rows until the new load answered, and an out-of-order answer could leave them there — the
+   `DeliveryLog` row now loads its own rows through `usePageData` and is mounted only while open (Loading…
+   first); Create was not disabled in flight, so a double click made two webhooks and the first secret was
+   never seen; an open log was not refreshed after Test — a queued test bumps that webhook's refresh key.
+   +12 tests. Stage 1.3 is complete.
 
 **Stage 2 — pipeline core, medium risk**
 1. `TicketProcessingService.processAttempt` (~174 lines, 23 dependencies) → steps (classify, extract,
