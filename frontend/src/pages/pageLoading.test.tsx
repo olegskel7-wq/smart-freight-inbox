@@ -210,6 +210,25 @@ describe('AnalyticsPage', () => {
     expect(gets('/api/analytics?days=7')).toHaveLength(1)
   })
 
+  // The server maps any whole number to an allowed period; only a value it cannot bind as an int
+  // must not reach it (it would answer an error instead of the report).
+  it.each(['abc', '1.5', '1e12', ''])('loads the default period for ?days=%s', async (days) => {
+    routes['GET /api/analytics?days=30'] = () => json(analytics(30, 42))
+
+    renderAt(<AnalyticsPage />, `/analytics?days=${days}`)
+
+    expect(await screen.findByText('42')).toBeInTheDocument()
+    expect(calls.map((c) => c.url)).toEqual(['/api/analytics?days=30'])
+  })
+
+  it('passes any other whole number on for the server to settle', async () => {
+    routes['GET /api/analytics?days=45'] = () => json(analytics(30, 42))
+
+    renderAt(<AnalyticsPage />, '/analytics?days=45')
+
+    expect(await screen.findByText('42')).toBeInTheDocument()
+  })
+
   it('replaces the page with the server message when the load fails', async () => {
     routes['GET /api/analytics?days=90'] = failure('Analytics unavailable')
 

@@ -29,10 +29,17 @@ const CONFIDENCE_LABELS = [
 
 const pct = (v: number) => v.toFixed(1) + '%'
 
+// The period from the URL. The server settles any whole number to one of its allowed periods, so
+// only a value it cannot bind as an int (`abc`, `1.5`, beyond int range) falls back to 30 days here.
+function periodOf(value: string | null): number {
+  const days = Number(value || '30')
+  return Number.isInteger(days) && Math.abs(days) <= 2 ** 31 - 1 ? days : 30
+}
+
 export default function AnalyticsPage() {
   const api = useApi()
   const [params, setParams] = useSearchParams()
-  const days = Number(params.get('days') ?? '30')
+  const days = periodOf(params.get('days'))
 
   const load = useCallback(() => api.get<AnalyticsResponse>(`/api/analytics?days=${days}`), [api, days])
   // A failed question shares the load's error slot, which replaces the page.
