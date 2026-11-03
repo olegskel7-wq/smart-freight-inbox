@@ -107,9 +107,9 @@ class TicketProcessingClassificationTest {
     void setUp() {
         service = new TicketProcessingService(
                 emailTicketRepository, emailClassificationService,
-                new IdentifierLookupStep(aiExtractionService, itemLookupService), aiDraftingService, rateSheetService, gmailDraftService,
-                slaService, autoSendService, shipmentWatchService, documentRequestService,
-                feedbackLoopService, knowledgeBaseService, embeddingService, settingsService,
+                new IdentifierLookupStep(aiExtractionService, itemLookupService), aiDraftingService,
+                new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
+                gmailDraftService, slaService, autoSendService, shipmentWatchService, documentRequestService, settingsService,
                 webhookEventPublisher, ticketAuditService, new SimpleMeterRegistry());
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.

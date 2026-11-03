@@ -26,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
-import java.util.function.Supplier;
 
 /**
  * AI pipeline orchestrator for ticket processing.
@@ -67,15 +66,12 @@ public class TicketProcessingService {
     private final EmailClassificationService emailClassificationService;
     private final IdentifierLookupStep identifierLookupStep;
     private final AiDraftingService aiDraftingService;
-    private final RateSheetService rateSheetService;
+    private final DraftContextAssembler draftContextAssembler;
     private final GmailDraftService gmailDraftService;
     private final SlaService slaService;
     private final AutoSendService autoSendService;
     private final ShipmentWatchService shipmentWatchService;
     private final DocumentRequestService documentRequestService;
-    private final FeedbackLoopService feedbackLoopService;
-    private final KnowledgeBaseService knowledgeBaseService;
-    private final EmbeddingService embeddingService;
     private final SettingsService settingsService;
     private final WebhookEventPublisher webhookEventPublisher;
     private final TicketAuditService ticketAuditService;
@@ -99,15 +95,12 @@ public class TicketProcessingService {
                                    EmailClassificationService emailClassificationService,
                                    IdentifierLookupStep identifierLookupStep,
                                    AiDraftingService aiDraftingService,
-                                   RateSheetService rateSheetService,
+                                   DraftContextAssembler draftContextAssembler,
                                    GmailDraftService gmailDraftService,
                                    SlaService slaService,
                                    AutoSendService autoSendService,
                                    ShipmentWatchService shipmentWatchService,
                                    DocumentRequestService documentRequestService,
-                                   FeedbackLoopService feedbackLoopService,
-                                   KnowledgeBaseService knowledgeBaseService,
-                                   EmbeddingService embeddingService,
                                    SettingsService settingsService,
                                    WebhookEventPublisher webhookEventPublisher,
                                    TicketAuditService ticketAuditService,
@@ -116,15 +109,12 @@ public class TicketProcessingService {
         this.emailClassificationService = emailClassificationService;
         this.identifierLookupStep = identifierLookupStep;
         this.aiDraftingService = aiDraftingService;
-        this.rateSheetService = rateSheetService;
+        this.draftContextAssembler = draftContextAssembler;
         this.gmailDraftService = gmailDraftService;
         this.slaService = slaService;
         this.autoSendService = autoSendService;
         this.shipmentWatchService = shipmentWatchService;
         this.documentRequestService = documentRequestService;
-        this.feedbackLoopService = feedbackLoopService;
-        this.knowledgeBaseService = knowledgeBaseService;
-        this.embeddingService = embeddingService;
         this.settingsService = settingsService;
         this.webhookEventPublisher = webhookEventPublisher;
         this.ticketAuditService = ticketAuditService;
@@ -299,8 +289,7 @@ public class TicketProcessingService {
         }
 
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
-        // Matched carrier rates (if any) let the model quote a real price.
-        String rateContext = rateSheetService.buildRateContext(aiInput);
+        String rateContext = draftContextAssembler.rateContext(aiInput);
 
         String draft;
         // A document request takes a dedicated path — determine which document is wanted,
@@ -326,22 +315,8 @@ public class TicketProcessingService {
                         requested, identifier);
             }
         } else {
-            // Both the feedback loop and the knowledge base rank by semantic
-            // similarity to the SAME enquiry, so share ONE memoised embedding supplier — the enquiry is
-            // embedded at most once per draft, lazily, and only if a retriever (after its own feature /
-            // blank checks) actually needs the vector. Each retriever owns its own feature gate, so the
-            // pipeline stays out of that decision.
-            Supplier<Optional<float[]>> enquiryEmbedding =
-                    memoize(() -> embeddingService.embed(aiInput));
-            // Inject the most similar past operator corrections (this tenant, this type)
-            // as few-shot examples so the draft improves as corrections accumulate.
-            String exampleContext = feedbackLoopService.retrieveExamples(
-                    ticket.getTicketType(), aiInput, enquiryEmbedding);
-            // Ground the draft with the tenant's knowledge base (FAQs / policies / rules) so
-            // typical "how / where / when" enquiries get a substantive answer even without backend data.
-            String knowledgeContext = knowledgeBaseService.retrieveContext(aiInput, enquiryEmbedding);
             draft = aiDraftingService.generateDraft(
-                    new ReplyDraftRequest(aiInput, item, rateContext, exampleContext, knowledgeContext));
+                    draftContextAssembler.replyRequest(ticket.getTicketType(), aiInput, item, rateContext));
         }
         ticket.setDraftReply(draft);
         // Preserve the unmodified AI draft so the feedback loop can compare it against
@@ -422,28 +397,6 @@ public class TicketProcessingService {
             return body;
         }
         return body + "\n\n" + attachments;
-    }
-
-    /**
-     * Wraps a supplier so its value is computed at most once, on first {@code get()}. Used to share a
-     * single lazy enquiry-embedding across the feedback-loop and knowledge-base retrievers: the
-     * embedding call happens once if either retriever asks, and not at all if neither does. Called only
-     * on the single ticket-processing thread, so no synchronisation is needed.
-     */
-    private static <T> Supplier<T> memoize(Supplier<T> delegate) {
-        return new Supplier<>() {
-            private boolean computed;
-            private T value;
-
-            @Override
-            public T get() {
-                if (!computed) {
-                    value = delegate.get();
-                    computed = true;
-                }
-                return value;
-            }
-        };
     }
 
     /**
