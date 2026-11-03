@@ -189,7 +189,8 @@ Branch coverage of the classes the plan touches (clean run):
    `REQUIRES_NEW`, the retry loop and `markRetryLater` / `markFailed`; open-breaker exceptions pass through the steps untouched. Branch `refactor/2.1-processing-steps`; first commit
    pins the null rate-context guard. Test bodies untouched — only the two `setUp`s wire the real steps
    over the same mocks. Branches 73/74 (the miss is unreachable: no identifier ⇒ no lookup ⇒ no item);
-   764 tests green; golden set identical to `baseline-2.1-main-68e369a` across 18 scenarios. Two log
+   764 tests green; golden set identical to `baseline-2.1-main-68e369a` across 18 scenarios (after `/simplify`:
+   only the known `felixstowe-invoice` urgency noise). Two log
    lines (document attach/escalate, auto-assign) now log under their step's class.
 2. `TicketApiController` → split by sub-resource; URLs and `@PreAuthorize` unchanged.
 3. `InboxQueryService`, then `EmailTicketRepository` (group queries, SQL unchanged).
