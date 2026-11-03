@@ -259,6 +259,28 @@ class InboxQueryServiceTest {
         assertThat(service.isEnabled()).isTrue();
     }
 
+    @Test
+    void ask_nullQuestion_returnsGuidanceWithoutTouchingTheModel() {
+        InboxAnswer answer = service.ask(null);
+
+        assertThat(answer.question()).isNull();
+        assertThat(answer.matched()).isFalse();
+        assertThat(answer.periodDays()).isEqualTo(AnalyticsService.DEFAULT_PERIOD_DAYS);
+        assertThat(answer.answer()).contains("I can answer questions about your inbox");
+        assertThat(meterRegistry.find("smartfreight_inbox_queries_total").counter()).isNull();
+    }
+
+    @Test
+    void ask_typeBreakdown_noUnclassified_listsEveryTypeWithoutAnUnclassifiedLine() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithType(TicketType.RFQ, 3));
+        stubOllamaSequence(Map.of("response", "TYPE_BREAKDOWN | 30"), Map.of("response", ""));
+
+        InboxAnswer answer = service.ask("emails by type?");
+
+        assertThat(answer.answer()).isEqualTo("Relevant emails by type over the last 30 days — RFQ: 3, "
+                + "STATUS_UPDATE: 0, BOOKING_CONFIRM: 0, INVOICE_QUERY: 0, DOCUMENT_REQUEST: 0, GENERAL: 0.");
+    }
+
     // ---- characterisation: the deterministic headline of every metric ----
     // Phrasing returns nothing here, so the answer is exactly the headline sentence the service builds.
 
