@@ -78,12 +78,14 @@ class TicketApiControllerTest {
 
     @BeforeEach
     void setUp() {
+        TicketDetailAssembler details =
+                new TicketDetailAssembler(emailTicketRepository, documentRepository, keycloakAdminService);
         TicketApiController controller = new TicketApiController(
+                emailTicketRepository, auditService, keycloakAdminService, details);
+        TicketReplyController replies = new TicketReplyController(
                 emailTicketRepository, emailReplyService, auditService, sendRateLimiter,
-                quoteFollowUpService, documentRepository, feedbackLoopService, keycloakAdminService,
-                webhookEventPublisher,
-                new TicketDetailAssembler(emailTicketRepository, documentRepository, keycloakAdminService));
-        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+                quoteFollowUpService, documentRepository, feedbackLoopService, webhookEventPublisher, details);
+        mockMvc = MockMvcBuilders.standaloneSetup(controller, replies)
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
     }

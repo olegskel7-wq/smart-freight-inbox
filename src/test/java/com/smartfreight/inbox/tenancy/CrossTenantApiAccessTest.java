@@ -2,9 +2,10 @@ package com.smartfreight.inbox.tenancy;
 
 import com.smartfreight.inbox.TestcontainersConfiguration;
 import com.smartfreight.inbox.controller.TicketApiController;
+import com.smartfreight.inbox.controller.TicketReplyController;
 import com.smartfreight.inbox.controller.TicketApiController.AssignRequest;
-import com.smartfreight.inbox.controller.TicketApiController.AttachRequest;
-import com.smartfreight.inbox.controller.TicketApiController.DraftRequest;
+import com.smartfreight.inbox.controller.TicketReplyController.AttachRequest;
+import com.smartfreight.inbox.controller.TicketReplyController.DraftRequest;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.Tenant;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
@@ -62,6 +63,9 @@ class CrossTenantApiAccessTest {
     private TicketApiController tickets;
 
     @Autowired
+    private TicketReplyController replies;
+
+    @Autowired
     private EmailTicketRepository ticketRepository;
 
     @Autowired
@@ -115,7 +119,7 @@ class CrossTenantApiAccessTest {
 
     @Test
     void attacker_cannotSendOrEditForeignDraft() {
-        assertCrossTenant404(() -> tickets.updateDraft(victimTicketId, new DraftRequest("send", "HACKED"), null));
+        assertCrossTenant404(() -> replies.updateDraft(victimTicketId, new DraftRequest("send", "HACKED"), null));
     }
 
     @Test
@@ -130,7 +134,7 @@ class CrossTenantApiAccessTest {
 
     @Test
     void attacker_cannotAttachToForeignTicket() {
-        assertCrossTenant404(() -> tickets.attachDocument(victimTicketId, new AttachRequest(null)));
+        assertCrossTenant404(() -> replies.attachDocument(victimTicketId, new AttachRequest(null)));
     }
 
     @Test
@@ -147,9 +151,9 @@ class CrossTenantApiAccessTest {
 
     @Test
     void victimTicket_survivesEveryCrossTenantMutationAttempt() {
-        assertCrossTenant404(() -> tickets.updateDraft(victimTicketId, new DraftRequest("send", "HACKED"), null));
+        assertCrossTenant404(() -> replies.updateDraft(victimTicketId, new DraftRequest("send", "HACKED"), null));
         assertCrossTenant404(() -> tickets.close(victimTicketId));
-        assertCrossTenant404(() -> tickets.attachDocument(victimTicketId, new AttachRequest(null)));
+        assertCrossTenant404(() -> replies.attachDocument(victimTicketId, new AttachRequest(null)));
         assertCrossTenant404(() -> tickets.assign(victimTicketId, new AssignRequest("attacker-user"), attackerJwt()));
         assertCrossTenant404(() -> tickets.unassign(victimTicketId));
         assertCrossTenant404(() -> tickets.delete(victimTicketId));
