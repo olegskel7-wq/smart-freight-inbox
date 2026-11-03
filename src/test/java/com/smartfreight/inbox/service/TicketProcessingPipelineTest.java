@@ -253,6 +253,19 @@ class TicketProcessingPipelineTest {
         verify(autoSendService).confidenceFor(TicketType.RFQ, true, false, false);
     }
 
+    /** RateSheetService never returns null today; the guard keeps a null from failing the draft. */
+    @Test
+    void nullRateContext_doesNotCountAsRateMatched() {
+        EmailTicket ticket = typedTicket(TicketType.RFQ);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        stubDraftPath("MSCU1234567", Optional.empty(), null);
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
+        verify(autoSendService).confidenceFor(TicketType.RFQ, true, false, false);
+    }
+
     // ---- processAttempt(): proactive shipment watch (Phase 2.4) -----------------------
 
     @Test
