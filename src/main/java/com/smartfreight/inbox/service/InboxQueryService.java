@@ -2,19 +2,12 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.service.InboxMetricResolver.MetricResult;
-import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
 
-import java.time.Duration;
-import java.util.HashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,14 +29,12 @@ import java.util.regex.Pattern;
  *       gets the right number, never a wrong one.</li>
  * </ol>
  *
- * <p>Both LLM steps run on the current tenant's Ollama endpoint via {@link OllamaClientProvider}.
+ * <p>Both LLM steps run on the current tenant's Ollama endpoint via {@link InboxQueryOllamaClient}.
  * Unlike the email pipeline, this is an interactive read-only query: an open circuit breaker or a
  * failed call degrades gracefully (deterministic headline / a friendly notice), it never throws.
  */
 @Service
 public class InboxQueryService {
-
-    private static final Logger log = LoggerFactory.getLogger(InboxQueryService.class);
 
     /** Feature flag (default ON) — read-only analytics, but it does spend LLM time. */
     public static final String FEATURE_KEY = "feature.inbox-query";
@@ -53,8 +44,6 @@ public class InboxQueryService {
 
     /** Phrasing prompt template ({@code {question}}, {@code {facts}}). Seeded by migration V25. */
     public static final String KEY_ANSWER_PROMPT = "ai.inbox-answer-prompt";
-
-    private static final Duration OLLAMA_TIMEOUT = Duration.ofSeconds(60);
 
     /** Pulls the period (7/30/90) out of the routing reply; anything else falls back to the default. */
     private static final Pattern PERIOD = Pattern.compile("\\b(7|30|90)\\b");
@@ -98,20 +87,20 @@ public class InboxQueryService {
 
     private final InboxMetricResolver metricResolver;
     private final SettingsService settingsService;
-    private final OllamaClientProvider ollamaClients;
+    private final InboxQueryOllamaClient ollamaClient;
     private final MeterRegistry meterRegistry;
     private final String routingModel;
     private final String phrasingModel;
 
     public InboxQueryService(InboxMetricResolver metricResolver,
                              SettingsService settingsService,
-                             OllamaClientProvider ollamaClients,
+                             InboxQueryOllamaClient ollamaClient,
                              MeterRegistry meterRegistry,
                              @Value("${ollama.extraction-model:qwen2.5:7b}") String routingModel,
                              @Value("${ollama.drafting-model:llama3.1:8b}") String phrasingModel) {
         this.metricResolver = metricResolver;
         this.settingsService = settingsService;
-        this.ollamaClients = ollamaClients;
+        this.ollamaClient = ollamaClient;
         this.meterRegistry = meterRegistry;
         this.routingModel = routingModel;
         this.phrasingModel = phrasingModel;
@@ -151,7 +140,7 @@ public class InboxQueryService {
                 .replace("{catalogue}", InboxMetric.catalogue())
                 .replace("{question}", question.strip());
 
-        return callOllama(routingModel, prompt)
+        return ollamaClient.generate(routingModel, prompt)
                 .map(InboxQueryService::parseIntent)
                 .orElseGet(() -> new QueryIntent(InboxMetric.UNKNOWN, AnalyticsService.DEFAULT_PERIOD_DAYS, null));
     }
@@ -192,46 +181,7 @@ public class InboxQueryService {
         String prompt = settingsService.getString(KEY_ANSWER_PROMPT, DEFAULT_ANSWER_PROMPT)
                 .replace("{question}", question.strip())
                 .replace("{facts}", facts);
-        return callOllama(phrasingModel, prompt);
-    }
-
-    /**
-     * One Ollama generate call for the CURRENT tenant's endpoint, returning the response text.
-     *
-     * <p>Unlike {@link AiDraftingService}, this is interactive and read-only: an open breaker or any
-     * failure yields {@link Optional#empty()} (the caller degrades), it is never propagated.
-     */
-    private Optional<String> callOllama(String model, String prompt) {
-        try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("model", model);
-            body.put("prompt", prompt);
-            body.put("stream", false);
-
-            WebClient client = ollamaClients.client();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> client
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(body)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block(OLLAMA_TIMEOUT));
-            ollamaClients.recordUsage("inbox-query", model, response);
-
-            if (response == null) {
-                return Optional.empty();
-            }
-            String text = String.valueOf(response.getOrDefault("response", "")).trim();
-            return text.isEmpty() ? Optional.empty() : Optional.of(text);
-
-        } catch (CallNotPermittedException e) {
-            log.warn("Ollama circuit breaker open — inbox query degraded to deterministic answer");
-            return Optional.empty();
-        } catch (Exception e) {
-            log.error("Inbox query Ollama call failed: {}", e.getMessage());
-            return Optional.empty();
-        }
+        return ollamaClient.generate(phrasingModel, prompt);
     }
 
     /** Routed question: which metric, over what window, optionally for one type. */
