@@ -30,11 +30,13 @@ import java.time.LocalDateTime;
  *    ({@link TicketClassificationStep})
  * 1. Item identifier extraction (Qwen 2.5) from the email body
  * 2. Item lookup via the backend ({@link ItemLookupService}) — both in {@link IdentifierLookupStep}
- * 3. Reply draft generation (Llama 3.1) — {@link ReplyDraftStep}, context from {@link DraftContextAssembler}
- * then confidence, shipment watch, auto-send decision and Gmail draft ({@link DraftRoutingStep}).
+ * 3. Reply draft generation (Llama 3.1) and its confidence score — {@link ReplyDraftStep}, context
+ *    from {@link DraftContextAssembler}
+ * then shipment watch, auto-send decision and Gmail draft ({@link DraftRoutingStep}).
  *
- * The steps only compute and set ticket fields; this class owns every status transition, every
- * save and the transaction / retry semantics around them.
+ * This class owns every ticket status transition, every save of the ticket and the transaction /
+ * retry semantics around them. The steps set ticket fields and may record side effects (audit row,
+ * webhook delivery, shipment watch, Gmail draft) inside the attempt's transaction.
  *
  * Executed synchronously in the calling thread — the RabbitMQ
  * consumer ({@link com.smartfreight.inbox.messaging.TicketEventConsumer}), never the
@@ -191,12 +193,13 @@ public class TicketProcessingService {
             return false;
         }
 
+        // The AI sees the email body plus any parsed attachment text as one input.
+        String aiInput = buildAiInput(ticket);
+
         if (ticketClassificationStep.needsClassification(ticket)) {
             log.info("Step 0: Classifying email relevance and type via Qwen 2.5");
-            if (!ticketClassificationStep.classify(ticket, buildAiInput(ticket))) {
+            if (!ticketClassificationStep.classify(ticket, aiInput)) {
                 ticket.setStatus(TicketStatus.IRRELEVANT);
-                // Spam carries no SLA — drop the provisional deadline set at ingest.
-                ticket.setSlaDeadlineAt(null);
                 ticket.setUpdatedAt(LocalDateTime.now());
                 emailTicketRepository.save(ticket);
                 log.info("Ticket classified as IRRELEVANT — pipeline stopped, kept for audit");
@@ -207,9 +210,6 @@ public class TicketProcessingService {
         ticket.setStatus(TicketStatus.PROCESSING);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.saveAndFlush(ticket);
-
-        // The AI sees the email body plus any parsed attachment text as one input.
-        String aiInput = buildAiInput(ticket);
 
         log.info("Step 1/3: Extracting item identifier via Qwen 2.5");
         String identifier = identifierLookupStep.extract(aiInput);
@@ -224,13 +224,7 @@ public class TicketProcessingService {
         }
 
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
-        ReplyDraftStep.ReplyDraft draft = replyDraftStep.draft(ticket, aiInput, identifier, item);
-        ticket.setDraftReply(draft.text());
-        // Preserve the unmodified AI draft so the feedback loop can compare it against
-        // what the operator actually sends. draftReply gets overwritten on edit; this does not.
-        ticket.setAiOriginalDraft(draft.text());
-
-        ticket.setAiConfidence(draftRoutingStep.confidence(ticket, item, draft.rateMatched()));
+        replyDraftStep.draft(ticket, aiInput, identifier, item);
 
         ticket.setStatus(TicketStatus.DRAFT_READY);
         ticket.setUpdatedAt(LocalDateTime.now());

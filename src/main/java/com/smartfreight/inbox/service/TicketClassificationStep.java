@@ -13,7 +13,8 @@ import org.springframework.stereotype.Component;
 /**
  * Pipeline step 0 of {@link TicketProcessingService}: relevance + type classification (Qwen 2.5)
  * and what the verdict sets on the ticket — type, smart-routing signals, the per-type SLA window,
- * escalation routing and the {@code booking.confirmed} webhook.
+ * escalation routing and the {@code booking.confirmed} webhook. Classification happens here, off the
+ * IMAP thread.
  *
  * The orchestrator decides what an irrelevant verdict means for the ticket's status. Runs inside the
  * orchestrator's transaction (the webhook delivery is queued atomically with the verdict); an
@@ -43,7 +44,6 @@ class TicketClassificationStep {
     }
 
     /**
-     * Classification happens here, off the IMAP thread.
      * In typed mode the retry path re-enters classification when ticketType
      * is still null — such a ticket never got a verdict (it was parked by an open
      * breaker before step 0 completed, or swept out of RECEIVED). This is a first
@@ -59,16 +59,18 @@ class TicketClassificationStep {
     /**
      * Classifies the ticket and, when it is relevant, applies the verdict to it.
      *
-     * @return {@code false} for an irrelevant ticket (left untouched), {@code true} otherwise
+     * @return {@code false} for an irrelevant ticket (only its SLA deadline is dropped), {@code true} otherwise
      */
     boolean classify(EmailTicket ticket, String aiInput) {
         // The same call also assigns the business type (RFQ/STATUS_UPDATE/…).
         EmailClassificationService.ClassificationResult classification =
                 emailClassificationService.classify(ticket.getSubject(), aiInput);
         if (!classification.relevant()) {
+            // Spam carries no SLA — drop the provisional deadline set at ingest.
+            ticket.setSlaDeadlineAt(null);
             return false;
         }
-        // Persisted together with the PROCESSING transition — no extra UPDATE.
+        // Persisted together with the orchestrator's PROCESSING transition — no extra UPDATE.
         ticket.setTicketType(classification.type());
         // Smart-routing signals from the same classification call.
         ticket.setUrgency(classification.urgency());

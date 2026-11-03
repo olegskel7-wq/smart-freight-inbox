@@ -6,10 +6,9 @@ import com.smartfreight.inbox.entity.enums.TicketType;
 import org.springframework.stereotype.Component;
 
 /**
- * Where a finished draft goes, for {@link TicketProcessingService}: the confidence score (before the
- * DRAFT_READY save), then the shipment-watch subscription, the auto-send decision and the Gmail draft
- * (after it). Runs inside the orchestrator's transaction; the SMTP send itself stays with the caller,
- * after the commit.
+ * Where a DRAFT_READY ticket goes, for {@link TicketProcessingService}: the shipment-watch subscription,
+ * the auto-send decision and the Gmail draft. Runs inside the orchestrator's transaction, after the
+ * DRAFT_READY save; the SMTP send itself stays with the caller, after the commit.
  */
 @Component
 class DraftRoutingStep {
@@ -27,20 +26,6 @@ class DraftRoutingStep {
     }
 
     /**
-     * Confidence is computed and stored on every run (even with auto-send off)
-     * so the score distribution accumulates for threshold tuning.
-     */
-    double confidence(EmailTicket ticket, TrackedItem item, boolean rateMatched) {
-        return autoSendService.confidenceFor(
-                ticket.getTicketType(),
-                ticket.getExtractedIdentifier() != null,
-                item != null,
-                rateMatched);
-    }
-
-    /**
-     * Routes a DRAFT_READY ticket.
-     *
      * @return whether the ticket qualifies for auto-send — the caller sends after the transaction commits
      */
     boolean route(EmailTicket ticket, TrackedItem item) {

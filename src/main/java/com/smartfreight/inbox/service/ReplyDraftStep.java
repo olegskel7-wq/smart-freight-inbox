@@ -18,24 +18,20 @@ import java.util.Optional;
  *
  * A document request takes the Phase 2.7 path (detect the wanted document, attach it if on file,
  * else escalate); everything else gets the generic draft grounded by {@link DraftContextAssembler}.
- * Sets the document fields on the ticket; the orchestrator stores the draft and moves the status.
- * Runs inside the orchestrator's transaction; open-breaker exceptions propagate.
+ * Sets the draft, the unmodified AI draft, the document fields and the confidence score on the ticket;
+ * the orchestrator moves the status and saves. Runs inside the orchestrator's transaction; open-breaker
+ * exceptions propagate.
  */
 @Component
 class ReplyDraftStep {
 
     private static final Logger log = LoggerFactory.getLogger(ReplyDraftStep.class);
 
-    /**
-     * The draft text, and whether a carrier rate matched — the latter feeds the confidence score.
-     */
-    record ReplyDraft(String text, boolean rateMatched) {
-    }
-
     private final SettingsService settingsService;
     private final DocumentRequestService documentRequestService;
     private final AiDraftingService aiDraftingService;
     private final DraftContextAssembler draftContextAssembler;
+    private final AutoSendService autoSendService;
     private final Counter documentAttachedCounter;
     private final Counter documentEscalatedCounter;
 
@@ -43,11 +39,13 @@ class ReplyDraftStep {
                    DocumentRequestService documentRequestService,
                    AiDraftingService aiDraftingService,
                    DraftContextAssembler draftContextAssembler,
+                   AutoSendService autoSendService,
                    MeterRegistry meterRegistry) {
         this.settingsService = settingsService;
         this.documentRequestService = documentRequestService;
         this.aiDraftingService = aiDraftingService;
         this.draftContextAssembler = draftContextAssembler;
+        this.autoSendService = autoSendService;
         this.documentAttachedCounter = Counter.builder("smartfreight_document_requests_total")
                 .tag("result", "attached")
                 .description("Document requests resolved by the Phase 2.7 pipeline")
@@ -62,7 +60,7 @@ class ReplyDraftStep {
      * @param identifier the extracted identifier, empty when none
      * @param item       the backend item, {@code null} when not found
      */
-    ReplyDraft draft(EmailTicket ticket, String aiInput, String identifier, TrackedItem item) {
+    void draft(EmailTicket ticket, String aiInput, String identifier, TrackedItem item) {
         String rateContext = draftContextAssembler.rateContext(aiInput);
 
         String draft;
@@ -92,6 +90,17 @@ class ReplyDraftStep {
             draft = aiDraftingService.generateDraft(
                     draftContextAssembler.replyRequest(ticket.getTicketType(), aiInput, item, rateContext));
         }
-        return new ReplyDraft(draft, rateContext != null && !rateContext.isBlank());
+        ticket.setDraftReply(draft);
+        // Preserve the unmodified AI draft so the feedback loop can compare it against
+        // what the operator actually sends. draftReply gets overwritten on edit; this does not.
+        ticket.setAiOriginalDraft(draft);
+
+        // Confidence is computed and stored on every run (even with auto-send off)
+        // so the score distribution accumulates for threshold tuning.
+        ticket.setAiConfidence(autoSendService.confidenceFor(
+                ticket.getTicketType(),
+                ticket.getExtractedIdentifier() != null,
+                item != null,
+                rateContext != null && !rateContext.isBlank()));
     }
 }

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  *
  * Two separate calls on purpose — the orchestrator stores the identifier on the ticket between them.
  * Runs inside the orchestrator's transaction; an open-breaker exception from extraction propagates
- * so the ticket is parked, exactly as before the split.
+ * so the ticket is parked.
  */
 @Component
 class IdentifierLookupStep {

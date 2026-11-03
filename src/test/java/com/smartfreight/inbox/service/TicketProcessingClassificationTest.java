@@ -113,7 +113,7 @@ class TicketProcessingClassificationTest {
                 new IdentifierLookupStep(aiExtractionService, itemLookupService),
                 new ReplyDraftStep(settingsService, documentRequestService, aiDraftingService,
                         new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
-                        meterRegistry),
+                        autoSendService, meterRegistry),
                 new DraftRoutingStep(autoSendService, shipmentWatchService, gmailDraftService),
                 autoSendService, meterRegistry);
         // In production `self` is the Spring proxy (@Transactional); in a unit test the

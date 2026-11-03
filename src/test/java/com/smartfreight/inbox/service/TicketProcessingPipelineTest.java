@@ -67,7 +67,7 @@ class TicketProcessingPipelineTest {
                 new IdentifierLookupStep(aiExtractionService, itemLookupService),
                 new ReplyDraftStep(settingsService, documentRequestService, aiDraftingService,
                         new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
-                        meterRegistry),
+                        autoSendService, meterRegistry),
                 new DraftRoutingStep(autoSendService, shipmentWatchService, gmailDraftService),
                 autoSendService, meterRegistry);
         // process() calls through `self` (the Spring proxy in production); the plain instance is enough here.

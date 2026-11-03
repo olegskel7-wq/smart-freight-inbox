@@ -3,6 +3,7 @@ package com.smartfreight.inbox.service;
 import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.function.SingletonSupplier;
 
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -32,7 +33,7 @@ class DraftContextAssembler {
         this.embeddingService = embeddingService;
     }
 
-    /** Matched carrier rates (if any) let the model quote a real price; also feeds the confidence score. */
+    /** Matched carrier rates (if any) let the model quote a real price; a match also raises the confidence score. */
     String rateContext(String aiInput) {
         return rateSheetService.buildRateContext(aiInput);
     }
@@ -45,10 +46,10 @@ class DraftContextAssembler {
         // Both the feedback loop and the knowledge base rank by semantic
         // similarity to the SAME enquiry, so share ONE memoised embedding supplier — the enquiry is
         // embedded at most once per draft, lazily, and only if a retriever (after its own feature /
-        // blank checks) actually needs the vector. Each retriever owns its own feature gate, so the
-        // pipeline stays out of that decision.
+        // blank checks) actually needs the vector. embed() never returns null, so SingletonSupplier
+        // caches the first answer, an empty Optional included.
         Supplier<Optional<float[]>> enquiryEmbedding =
-                memoize(() -> embeddingService.embed(aiInput));
+                SingletonSupplier.of(() -> embeddingService.embed(aiInput));
         // Inject the most similar past operator corrections (this tenant, this type)
         // as few-shot examples so the draft improves as corrections accumulate.
         String exampleContext = feedbackLoopService.retrieveExamples(ticketType, aiInput, enquiryEmbedding);
@@ -56,27 +57,5 @@ class DraftContextAssembler {
         // typical "how / where / when" enquiries get a substantive answer even without backend data.
         String knowledgeContext = knowledgeBaseService.retrieveContext(aiInput, enquiryEmbedding);
         return new ReplyDraftRequest(aiInput, item, rateContext, exampleContext, knowledgeContext);
-    }
-
-    /**
-     * Wraps a supplier so its value is computed at most once, on first {@code get()}. Used to share a
-     * single lazy enquiry-embedding across the feedback-loop and knowledge-base retrievers: the
-     * embedding call happens once if either retriever asks, and not at all if neither does. Called only
-     * on the single ticket-processing thread, so no synchronisation is needed.
-     */
-    private static <T> Supplier<T> memoize(Supplier<T> delegate) {
-        return new Supplier<>() {
-            private boolean computed;
-            private T value;
-
-            @Override
-            public T get() {
-                if (!computed) {
-                    value = delegate.get();
-                    computed = true;
-                }
-                return value;
-            }
-        };
     }
 }
