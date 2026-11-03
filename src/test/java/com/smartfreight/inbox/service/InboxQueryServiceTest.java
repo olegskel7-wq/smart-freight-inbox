@@ -71,7 +71,7 @@ class InboxQueryServiceTest {
         lenient().when(ollamaClients.client()).thenReturn(webClient);
         lenient().when(ollamaClients.circuitBreaker()).thenReturn(circuitBreaker);
         meterRegistry = new SimpleMeterRegistry();
-        service = new InboxQueryService(analyticsService, settingsService, ollamaClients,
+        service = new InboxQueryService(new InboxMetricResolver(analyticsService), settingsService, ollamaClients,
                 meterRegistry, "qwen2.5:7b", "llama3.1:8b");
     }
 
