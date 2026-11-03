@@ -3,7 +3,6 @@ package com.smartfreight.inbox.service;
 import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
-import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
@@ -28,9 +27,14 @@ import java.time.LocalDateTime;
  * 0. Relevance + type classification (Qwen 2.5) for RECEIVED tickets — non-freight mail is
  *    parked as IRRELEVANT and never reaches the heavier steps;
  *    relevant mail gets its business type (RFQ/STATUS_UPDATE/…) in the same call
+ *    ({@link TicketClassificationStep})
  * 1. Item identifier extraction (Qwen 2.5) from the email body
- * 2. Item lookup via the backend ({@link ItemLookupService})
- * 3. Reply draft generation (Llama 3.1)
+ * 2. Item lookup via the backend ({@link ItemLookupService}) — both in {@link IdentifierLookupStep}
+ * 3. Reply draft generation (Llama 3.1) — {@link ReplyDraftStep}, context from {@link DraftContextAssembler}
+ * then confidence, shipment watch, auto-send decision and Gmail draft ({@link DraftRoutingStep}).
+ *
+ * The steps only compute and set ticket fields; this class owns every status transition, every
+ * save and the transaction / retry semantics around them.
  *
  * Executed synchronously in the calling thread — the RabbitMQ
  * consumer ({@link com.smartfreight.inbox.messaging.TicketEventConsumer}), never the
@@ -60,9 +64,8 @@ public class TicketProcessingService {
     private final TicketClassificationStep ticketClassificationStep;
     private final IdentifierLookupStep identifierLookupStep;
     private final ReplyDraftStep replyDraftStep;
-    private final GmailDraftService gmailDraftService;
+    private final DraftRoutingStep draftRoutingStep;
     private final AutoSendService autoSendService;
-    private final ShipmentWatchService shipmentWatchService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
@@ -81,17 +84,15 @@ public class TicketProcessingService {
                                    TicketClassificationStep ticketClassificationStep,
                                    IdentifierLookupStep identifierLookupStep,
                                    ReplyDraftStep replyDraftStep,
-                                   GmailDraftService gmailDraftService,
+                                   DraftRoutingStep draftRoutingStep,
                                    AutoSendService autoSendService,
-                                   ShipmentWatchService shipmentWatchService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.ticketClassificationStep = ticketClassificationStep;
         this.identifierLookupStep = identifierLookupStep;
         this.replyDraftStep = replyDraftStep;
-        this.gmailDraftService = gmailDraftService;
+        this.draftRoutingStep = draftRoutingStep;
         this.autoSendService = autoSendService;
-        this.shipmentWatchService = shipmentWatchService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -229,13 +230,7 @@ public class TicketProcessingService {
         // what the operator actually sends. draftReply gets overwritten on edit; this does not.
         ticket.setAiOriginalDraft(draft.text());
 
-        // Confidence is computed and stored on every run (even with auto-send off)
-        // so the score distribution accumulates for threshold tuning.
-        ticket.setAiConfidence(autoSendService.confidenceFor(
-                ticket.getTicketType(),
-                ticket.getExtractedIdentifier() != null,
-                item != null,
-                draft.rateMatched()));
+        ticket.setAiConfidence(draftRoutingStep.confidence(ticket, item, draft.rateMatched()));
 
         ticket.setStatus(TicketStatus.DRAFT_READY);
         ticket.setUpdatedAt(LocalDateTime.now());
@@ -245,24 +240,7 @@ public class TicketProcessingService {
         processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
         log.info("Ticket processing finished: DRAFT_READY (confidence {})", ticket.getAiConfidence());
 
-        // A STATUS_UPDATE enquiry grounded in real backend data becomes a proactive
-        // subscription — StatusWatchScheduler keeps this customer posted about this shipment
-        // until it is delivered. Recorded unconditionally (cheap); the scheduler is gated by
-        // feature.status-update-automation, so enabling the flag activates recent enquiries at once.
-        if (ticket.getTicketType() == TicketType.STATUS_UPDATE
-                && ticket.getExtractedIdentifier() != null
-                && item != null) {
-            shipmentWatchService.upsertFromTicket(ticket, item);
-        }
-
-        // The auto-send decision is made here (one settings read, one log line), but the SMTP
-        // call belongs to the caller — after this transaction commits. An eligible ticket also
-        // skips the Gmail draft: it is about to be answered, a lingering draft would be noise.
-        boolean autoSendEligible = autoSendService.shouldAutoSend(ticket);
-        if (!autoSendEligible) {
-            gmailDraftService.saveDraft(ticket);
-        }
-        return autoSendEligible;
+        return draftRoutingStep.route(ticket, item);
     }
 
     /**

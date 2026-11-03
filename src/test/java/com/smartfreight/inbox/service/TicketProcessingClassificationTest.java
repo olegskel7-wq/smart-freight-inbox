@@ -114,7 +114,8 @@ class TicketProcessingClassificationTest {
                 new ReplyDraftStep(settingsService, documentRequestService, aiDraftingService,
                         new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
                         meterRegistry),
-                gmailDraftService, autoSendService, shipmentWatchService, meterRegistry);
+                new DraftRoutingStep(autoSendService, shipmentWatchService, gmailDraftService),
+                autoSendService, meterRegistry);
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);

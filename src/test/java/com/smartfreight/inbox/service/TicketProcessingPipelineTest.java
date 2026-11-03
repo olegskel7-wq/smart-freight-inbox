@@ -68,7 +68,8 @@ class TicketProcessingPipelineTest {
                 new ReplyDraftStep(settingsService, documentRequestService, aiDraftingService,
                         new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
                         meterRegistry),
-                gmailDraftService, autoSendService, shipmentWatchService, meterRegistry);
+                new DraftRoutingStep(autoSendService, shipmentWatchService, gmailDraftService),
+                autoSendService, meterRegistry);
         // process() calls through `self` (the Spring proxy in production); the plain instance is enough here.
         ReflectionTestUtils.setField(service, "self", service);
     }
