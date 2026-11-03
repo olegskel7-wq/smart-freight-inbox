@@ -94,6 +94,7 @@ public class TicketApiController {
     private final FeedbackLoopService feedbackLoopService;
     private final KeycloakAdminService keycloakAdminService;
     private final WebhookEventPublisher webhookEventPublisher;
+    private final TicketDetailAssembler details;
 
     public TicketApiController(EmailTicketRepository emailTicketRepository,
                                EmailReplyService emailReplyService,
@@ -103,7 +104,8 @@ public class TicketApiController {
                                TenantDocumentRepository documentRepository,
                                FeedbackLoopService feedbackLoopService,
                                KeycloakAdminService keycloakAdminService,
-                               WebhookEventPublisher webhookEventPublisher) {
+                               WebhookEventPublisher webhookEventPublisher,
+                               TicketDetailAssembler details) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
         this.auditService = auditService;
@@ -113,6 +115,7 @@ public class TicketApiController {
         this.feedbackLoopService = feedbackLoopService;
         this.keycloakAdminService = keycloakAdminService;
         this.webhookEventPublisher = webhookEventPublisher;
+        this.details = details;
     }
 
     /** Request body for {@code POST /api/tickets/{id}/draft}: action = save | close | send. */
@@ -204,7 +207,7 @@ public class TicketApiController {
     /** GET /api/tickets/{id} — full ticket detail (404 if missing). */
     @GetMapping("/{id}")
     public TicketDetailDto detail(@PathVariable Long id) {
-        return buildDetail(requireTicket(id));
+        return details.buildDetail(details.requireTicket(id));
     }
 
     /**
@@ -217,9 +220,9 @@ public class TicketApiController {
     public ResponseEntity<TicketDetailDto> updateDraft(@PathVariable Long id,
                                                        @RequestBody DraftRequest request,
                                                        @AuthenticationPrincipal Jwt jwt) {
-        EmailTicket ticket = requireTicket(id);
-        if (isTerminal(ticket)) {
-            return ResponseEntity.ok(buildDetail(ticket));
+        EmailTicket ticket = details.requireTicket(id);
+        if (TicketDetailAssembler.isTerminal(ticket)) {
+            return ResponseEntity.ok(details.buildDetail(ticket));
         }
 
         String action = request.action() == null ? "save" : request.action();
@@ -256,7 +259,7 @@ public class TicketApiController {
         }
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
-        return ResponseEntity.ok(buildDetail(ticket));
+        return ResponseEntity.ok(details.buildDetail(ticket));
     }
 
     /**
@@ -277,21 +280,21 @@ public class TicketApiController {
     @Transactional
     @PostMapping("/{id}/close")
     public TicketDetailDto close(@PathVariable Long id) {
-        EmailTicket ticket = requireTicket(id);
+        EmailTicket ticket = details.requireTicket(id);
         if (ticket.getStatus() != TicketStatus.AUTO_SENT) {
             ticket.setStatus(TicketStatus.CLOSED);
             ticket.setUpdatedAt(LocalDateTime.now());
             emailTicketRepository.save(ticket);
             auditService.record(id, TicketAuditService.ACTION_CLOSE, null);
         }
-        return buildDetail(ticket);
+        return details.buildDetail(ticket);
     }
 
     /** DELETE /api/tickets/{id} — soft delete (409 while PROCESSING). */
     @Transactional
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        EmailTicket ticket = requireTicket(id);
+        EmailTicket ticket = details.requireTicket(id);
         if (ticket.getStatus() == TicketStatus.PROCESSING) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
@@ -308,9 +311,9 @@ public class TicketApiController {
     @Transactional
     @PostMapping("/{id}/attach-document")
     public TicketDetailDto attachDocument(@PathVariable Long id, @RequestBody AttachRequest request) {
-        EmailTicket ticket = requireTicket(id);
-        if (isTerminal(ticket)) {
-            return buildDetail(ticket);
+        EmailTicket ticket = details.requireTicket(id);
+        if (TicketDetailAssembler.isTerminal(ticket)) {
+            return details.buildDetail(ticket);
         }
         if (request.documentId() == null) {
             ticket.setAttachedDocumentId(null);
@@ -322,7 +325,7 @@ public class TicketApiController {
         }
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
-        return buildDetail(ticket);
+        return details.buildDetail(ticket);
     }
 
     /**
@@ -336,7 +339,7 @@ public class TicketApiController {
     public TicketDetailDto assign(@PathVariable Long id,
                                   @RequestBody(required = false) AssignRequest request,
                                   @AuthenticationPrincipal Jwt jwt) {
-        EmailTicket ticket = requireTicket(id);
+        EmailTicket ticket = details.requireTicket(id);
         String me = jwt == null ? null : jwt.getSubject();
         if (me == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No authenticated operator.");
@@ -351,61 +354,22 @@ public class TicketApiController {
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
         auditService.record(id, TicketAuditService.ACTION_ASSIGN, "to=" + target);
-        return buildDetail(ticket);
+        return details.buildDetail(ticket);
     }
 
     /** POST /api/tickets/{id}/unassign — releases the ticket back to the unclaimed queue. */
     @Transactional
     @PostMapping("/{id}/unassign")
     public TicketDetailDto unassign(@PathVariable Long id) {
-        EmailTicket ticket = requireTicket(id);
+        EmailTicket ticket = details.requireTicket(id);
         ticket.setAssigneeUserId(null);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
         auditService.record(id, TicketAuditService.ACTION_UNASSIGN, null);
-        return buildDetail(ticket);
+        return details.buildDetail(ticket);
     }
 
     // ---- helpers ----
-
-    private EmailTicket requireTicket(Long id) {
-        return emailTicketRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found: " + id));
-    }
-
-    private boolean isTerminal(EmailTicket ticket) {
-        return ticket.getStatus() == TicketStatus.CLOSED || ticket.getStatus() == TicketStatus.AUTO_SENT;
-    }
-
-    /** Builds the detail DTO, resolving the attached document and available documents. */
-    private TicketDetailDto buildDetail(EmailTicket ticket) {
-        TenantDocument attached = ticket.getAttachedDocumentId() == null
-                ? null
-                : documentRepository.findById(ticket.getAttachedDocumentId()).orElse(null);
-        List<TenantDocument> available = (ticket.getTicketType() == TicketType.DOCUMENT_REQUEST
-                && ticket.getExtractedIdentifier() != null)
-                ? documentRepository.findByIdentifierOrderByUploadedAtDesc(ticket.getExtractedIdentifier())
-                : List.of();
-        return TicketDetailDto.from(ticket, attached, available, resolveAssigneeEmail(ticket));
-    }
-
-    /**
-     * Resolves one assigned ticket's owner to a display email. Best-effort: a missing
-     * assignee or an unreachable Keycloak yields null (the UUID is still on the DTO), never an error —
-     * showing the ticket must not depend on the identity service being up.
-     */
-    private String resolveAssigneeEmail(EmailTicket ticket) {
-        String uid = ticket.getAssigneeUserId();
-        if (uid == null || ticket.getTenantId() == null) {
-            return null;
-        }
-        try {
-            return keycloakAdminService.userEmailsByTenant(ticket.getTenantId()).get(uid);
-        } catch (Exception e) {
-            log.warn("Could not resolve assignee email for ticket {}: {}", ticket.getId(), e.getMessage());
-            return null;
-        }
-    }
 
     /**
      * Resolves the assignees on one list page to a {@code uuid → email} map in a single Keycloak

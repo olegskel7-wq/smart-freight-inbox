@@ -40,6 +40,7 @@ class ArchitectureTest {
             "DocumentApiController",
             "RateApiController",
             "TicketApiController",
+            "TicketDetailAssembler",
             "TrainingExampleApiController");
 
     /**
