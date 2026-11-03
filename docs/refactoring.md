@@ -192,7 +192,23 @@ Branch coverage of the classes the plan touches (clean run):
    764 tests green; golden set identical to `baseline-2.1-main-68e369a` across 18 scenarios (after `/simplify`:
    only the known `felixstowe-invoice` urgency noise). Two log
    lines (document attach/escalate, auto-assign) now log under their step's class.
-2. `TicketApiController` → split by sub-resource; URLs and `@PreAuthorize` unchanged.
+2. ✅ `TicketApiController` (478 → ~230 lines, 9 → 3 dependencies) split by sub-resource: `TicketApiController`
+   keeps the list, the summary strip, detail, close and delete; `TicketReplyController` takes the draft (save /
+   close / send with rate limit, SMTP, audit, quote follow-up, feedback capture, reply/quote webhooks) and
+   `attach-document`; `TicketAssignmentController` takes claim / hand-over / release with the admin check; the
+   package-private `TicketDetailAssembler` loads a ticket (404 when missing or foreign) and builds the detail
+   DTO, and resolves assignee e-mails for both the list and the detail. Paths, methods, bodies, status codes and
+   `@Transactional` are unchanged (there is no `@PreAuthorize`: `/api/**` → `authenticated()` plus the in-code
+   admin check). Branch `refactor/2.2-ticket-api-controller`; first commit
+   `TicketApiControllerCharacterizationTest` (62) — branches 64 → 98 %; test bodies untouched afterwards, the
+   wiring moved into `TicketApiMockMvcSupport`; `CrossTenantApiAccessTest` calls the moved endpoints on their new
+   controllers with the same assertions. ArchitectureTest's repository-user list names the four `Ticket*`
+   classes (same debt, spread — a ticket service is the real fix). 826 tests green; golden set identical to
+   `baseline-2.2-main-4e57368` across 18 scenarios (it exercises the pipeline, not this API — the API is pinned
+   by the MockMvc tests and an unauthenticated 401 check of all 9 endpoints). Log lines of the moved code now
+   log under their new class. Left for later: the detail loads `TenantDocument` with its file bytes to build
+   `DocumentRefDto` (a projection would skip them); `isAdmin` re-reads the `roles` claim instead of the
+   authorities `KeycloakJwtRoleConverter` builds.
 3. `InboxQueryService`, then `EmailTicketRepository` (group queries, SQL unchanged).
 
 **Stage 3 — only on a separate decision**
