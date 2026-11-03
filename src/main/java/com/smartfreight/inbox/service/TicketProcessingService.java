@@ -4,9 +4,6 @@ import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
-import com.smartfreight.inbox.webhook.WebhookEventPublisher;
-import com.smartfreight.inbox.webhook.WebhookEventType;
-import com.smartfreight.inbox.webhook.WebhookPayloads;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
@@ -60,16 +57,12 @@ public class TicketProcessingService {
     public static final String SETTING_ESCALATION_ASSIGNEE = "routing.escalation-assignee";
 
     private final EmailTicketRepository emailTicketRepository;
-    private final EmailClassificationService emailClassificationService;
+    private final TicketClassificationStep ticketClassificationStep;
     private final IdentifierLookupStep identifierLookupStep;
     private final ReplyDraftStep replyDraftStep;
     private final GmailDraftService gmailDraftService;
-    private final SlaService slaService;
     private final AutoSendService autoSendService;
     private final ShipmentWatchService shipmentWatchService;
-    private final SettingsService settingsService;
-    private final WebhookEventPublisher webhookEventPublisher;
-    private final TicketAuditService ticketAuditService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
@@ -85,28 +78,20 @@ public class TicketProcessingService {
     private TicketProcessingService self;
 
     public TicketProcessingService(EmailTicketRepository emailTicketRepository,
-                                   EmailClassificationService emailClassificationService,
+                                   TicketClassificationStep ticketClassificationStep,
                                    IdentifierLookupStep identifierLookupStep,
                                    ReplyDraftStep replyDraftStep,
                                    GmailDraftService gmailDraftService,
-                                   SlaService slaService,
                                    AutoSendService autoSendService,
                                    ShipmentWatchService shipmentWatchService,
-                                   SettingsService settingsService,
-                                   WebhookEventPublisher webhookEventPublisher,
-                                   TicketAuditService ticketAuditService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
-        this.emailClassificationService = emailClassificationService;
+        this.ticketClassificationStep = ticketClassificationStep;
         this.identifierLookupStep = identifierLookupStep;
         this.replyDraftStep = replyDraftStep;
         this.gmailDraftService = gmailDraftService;
-        this.slaService = slaService;
         this.autoSendService = autoSendService;
         this.shipmentWatchService = shipmentWatchService;
-        this.settingsService = settingsService;
-        this.webhookEventPublisher = webhookEventPublisher;
-        this.ticketAuditService = ticketAuditService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -205,20 +190,9 @@ public class TicketProcessingService {
             return false;
         }
 
-        // Classification happens here, off the IMAP thread.
-        // The same call also assigns the business type (RFQ/STATUS_UPDATE/…).
-        // In typed mode the retry path re-enters classification when ticketType
-        // is still null — such a ticket never got a verdict (it was parked by an open
-        // breaker before step 0 completed, or swept out of RECEIVED). This is a first
-        // classification, not a re-judgement: tickets the operator sent back for a redraft
-        // carry their type and are not re-classified. Binary mode persists no verdict
-        // marker, so there the retry path keeps its historical fail-open skip.
-        if (ticket.getStatus() == TicketStatus.RECEIVED
-                || (ticket.getTicketType() == null && emailClassificationService.isTypedMode())) {
+        if (ticketClassificationStep.needsClassification(ticket)) {
             log.info("Step 0: Classifying email relevance and type via Qwen 2.5");
-            EmailClassificationService.ClassificationResult classification =
-                    emailClassificationService.classify(ticket.getSubject(), buildAiInput(ticket));
-            if (!classification.relevant()) {
+            if (!ticketClassificationStep.classify(ticket, buildAiInput(ticket))) {
                 ticket.setStatus(TicketStatus.IRRELEVANT);
                 // Spam carries no SLA — drop the provisional deadline set at ingest.
                 ticket.setSlaDeadlineAt(null);
@@ -226,27 +200,6 @@ public class TicketProcessingService {
                 emailTicketRepository.save(ticket);
                 log.info("Ticket classified as IRRELEVANT — pipeline stopped, kept for audit");
                 return false;
-            }
-            // Persisted together with the PROCESSING transition below — no extra UPDATE.
-            ticket.setTicketType(classification.type());
-            // Smart-routing signals from the same classification call.
-            ticket.setUrgency(classification.urgency());
-            ticket.setSentimentNegative(classification.sentimentNegative());
-            // Refine the provisional (GENERAL) deadline to the per-type window.
-            // Still anchored to createdAt — the customer's clock started at receipt.
-            // An escalated ticket (HIGH urgency / negative tone) gets a tighter window.
-            if (slaService.isEnabled()) {
-                ticket.setSlaDeadlineAt(slaService.deadlineFor(classification.type(),
-                        classification.isEscalated(), ticket.getCreatedAt()));
-            }
-            // Route an escalated, still-unclaimed ticket to the configured escalation operator.
-            applyEscalationRouting(ticket, classification);
-            // The customer is booking — notify the CRM. Fires once: a typed ticket is not
-            // re-classified (the retry path only re-enters this block when ticketType is still null), and
-            // this runs inside the pipeline transaction so the delivery is queued atomically with the verdict.
-            if (classification.type() == TicketType.BOOKING_CONFIRM) {
-                webhookEventPublisher.publish(WebhookEventType.BOOKING_CONFIRMED, ticket.getTenantId(),
-                        WebhookPayloads.ticketData(ticket));
             }
         }
 
@@ -310,29 +263,6 @@ public class TicketProcessingService {
             gmailDraftService.saveDraft(ticket);
         }
         return autoSendEligible;
-    }
-
-    /**
-     * Auto-assigns an escalated ticket to the tenant's configured escalation operator.
-     *
-     * Routing is deliberately deterministic, not LLM-chosen: the classifier only flags HIGH urgency /
-     * negative tone (it does not know the tenant's operators), and a tenant opts in by setting
-     * {@link #SETTING_ESCALATION_ASSIGNEE} on {@code /settings}. We only ever claim an UNassigned
-     * ticket, so a manual assignment is never overwritten. With no assignee configured the
-     * ticket simply stays unclaimed — escalation still tightened the SLA and floats it to the top.
-     * Mutating {@code assigneeUserId} fires the existing {@code @PostUpdate} live event for free.
-     */
-    private void applyEscalationRouting(EmailTicket ticket, EmailClassificationService.ClassificationResult classification) {
-        if (!classification.isEscalated() || ticket.getAssigneeUserId() != null) {
-            return;
-        }
-        String target = settingsService.getString(SETTING_ESCALATION_ASSIGNEE, "").trim();
-        if (target.isEmpty()) {
-            return;
-        }
-        ticket.setAssigneeUserId(target);
-        ticketAuditService.record(ticket.getId(), TicketAuditService.ACTION_ASSIGN, "auto-escalation to=" + target);
-        log.info("Auto-assigned escalated ticket {} to escalation operator {}", ticket.getId(), target);
     }
 
     /**
