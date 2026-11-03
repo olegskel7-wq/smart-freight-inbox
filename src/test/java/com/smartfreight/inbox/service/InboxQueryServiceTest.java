@@ -5,7 +5,7 @@ import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.service.AnalyticsService.AnalyticsSummary;
 import com.smartfreight.inbox.service.AnalyticsService.DayVolume;
 import com.smartfreight.inbox.service.InboxQueryService.InboxAnswer;
-import com.smartfreight.inbox.service.InboxQueryService.QueryIntent;
+import com.smartfreight.inbox.service.InboxMetricResolver.QueryIntent;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,7 +71,8 @@ class InboxQueryServiceTest {
         lenient().when(ollamaClients.client()).thenReturn(webClient);
         lenient().when(ollamaClients.circuitBreaker()).thenReturn(circuitBreaker);
         meterRegistry = new SimpleMeterRegistry();
-        service = new InboxQueryService(analyticsService, settingsService, ollamaClients,
+        service = new InboxQueryService(new InboxMetricResolver(analyticsService), settingsService,
+                new InboxQueryOllamaClient(ollamaClients),
                 meterRegistry, "qwen2.5:7b", "llama3.1:8b");
     }
 
@@ -257,6 +258,28 @@ class InboxQueryServiceTest {
     void isEnabled_defaultsTrue() {
         when(settingsService.isFeatureEnabled(InboxQueryService.FEATURE_KEY, true)).thenReturn(true);
         assertThat(service.isEnabled()).isTrue();
+    }
+
+    @Test
+    void ask_nullQuestion_returnsGuidanceWithoutTouchingTheModel() {
+        InboxAnswer answer = service.ask(null);
+
+        assertThat(answer.question()).isNull();
+        assertThat(answer.matched()).isFalse();
+        assertThat(answer.periodDays()).isEqualTo(AnalyticsService.DEFAULT_PERIOD_DAYS);
+        assertThat(answer.answer()).contains("I can answer questions about your inbox");
+        assertThat(meterRegistry.find("smartfreight_inbox_queries_total").counter()).isNull();
+    }
+
+    @Test
+    void ask_typeBreakdown_noUnclassified_listsEveryTypeWithoutAnUnclassifiedLine() {
+        when(analyticsService.summarise(30)).thenReturn(summaryWithType(TicketType.RFQ, 3));
+        stubOllamaSequence(Map.of("response", "TYPE_BREAKDOWN | 30"), Map.of("response", ""));
+
+        InboxAnswer answer = service.ask("emails by type?");
+
+        assertThat(answer.answer()).isEqualTo("Relevant emails by type over the last 30 days — RFQ: 3, "
+                + "STATUS_UPDATE: 0, BOOKING_CONFIRM: 0, INVOICE_QUERY: 0, DOCUMENT_REQUEST: 0, GENERAL: 0.");
     }
 
     // ---- characterisation: the deterministic headline of every metric ----
