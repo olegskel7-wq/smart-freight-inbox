@@ -3,7 +3,6 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.controller.dto.TicketDetailDto;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.TenantDocument;
-import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.repository.TenantDocumentRepository;
@@ -15,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * What every {@code /api/tickets/{id}} endpoint shares: loading the ticket (404 when it is missing
@@ -43,10 +43,6 @@ class TicketDetailAssembler {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found: " + id));
     }
 
-    static boolean isTerminal(EmailTicket ticket) {
-        return ticket.getStatus() == TicketStatus.CLOSED || ticket.getStatus() == TicketStatus.AUTO_SENT;
-    }
-
     /** Builds the detail DTO, resolving the attached document and available documents. */
     TicketDetailDto buildDetail(EmailTicket ticket) {
         TenantDocument attached = ticket.getAttachedDocumentId() == null
@@ -56,24 +52,27 @@ class TicketDetailAssembler {
                 && ticket.getExtractedIdentifier() != null)
                 ? documentRepository.findByIdentifierOrderByUploadedAtDesc(ticket.getExtractedIdentifier())
                 : List.of();
-        return TicketDetailDto.from(ticket, attached, available, resolveAssigneeEmail(ticket));
+        String uid = ticket.getAssigneeUserId();
+        String assigneeEmail = uid == null ? null : assigneeEmails(List.of(ticket), ticket.getTenantId()).get(uid);
+        return TicketDetailDto.from(ticket, attached, available, assigneeEmail);
     }
 
     /**
-     * Resolves one assigned ticket's owner to a display email. Best-effort: a missing
-     * assignee or an unreachable Keycloak yields null (the UUID is still on the DTO), never an error —
-     * showing the ticket must not depend on the identity service being up.
+     * Resolves the assignees of these tickets to a {@code uuid → email} map in a single Keycloak
+     * call — and only when one of them is assigned, so the common (all-unclaimed) path stays
+     * call-free. Best-effort: no tenant or an unreachable Keycloak yields an empty map (the UUID is
+     * still on the DTO), never an error — showing tickets must not depend on the identity service.
      */
-    private String resolveAssigneeEmail(EmailTicket ticket) {
-        String uid = ticket.getAssigneeUserId();
-        if (uid == null || ticket.getTenantId() == null) {
-            return null;
+    Map<String, String> assigneeEmails(List<EmailTicket> tickets, Long tenantId) {
+        boolean anyAssigned = tickets.stream().anyMatch(t -> t.getAssigneeUserId() != null);
+        if (!anyAssigned || tenantId == null) {
+            return Map.of();
         }
         try {
-            return keycloakAdminService.userEmailsByTenant(ticket.getTenantId()).get(uid);
+            return keycloakAdminService.userEmailsByTenant(tenantId);
         } catch (Exception e) {
-            log.warn("Could not resolve assignee email for ticket {}: {}", ticket.getId(), e.getMessage());
-            return null;
+            log.warn("Could not resolve assignee emails for tenant {}: {}", tenantId, e.getMessage());
+            return Map.of();
         }
     }
 }

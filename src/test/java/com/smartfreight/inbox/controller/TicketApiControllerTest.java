@@ -3,25 +3,10 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
-import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.webhook.WebhookEventPublisher;
 import com.smartfreight.inbox.webhook.WebhookEventType;
-import com.smartfreight.inbox.repository.TenantDocumentRepository;
-import com.smartfreight.inbox.service.EmailReplyService;
-import com.smartfreight.inbox.service.FeedbackLoopService;
-import com.smartfreight.inbox.service.KeycloakAdminService;
-import com.smartfreight.inbox.service.QuoteFollowUpService;
-import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import com.smartfreight.inbox.entity.enums.Urgency;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -29,9 +14,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -56,46 +38,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Standalone MockMvc tests for the JSON ticket API (Phase 3.2). No security/tenant filter here —
- * those are covered by KeycloakJwtRoleConverterTest / TenantFilterTest; this verifies the
- * controller's behaviour and DTO output.
+ * Standalone MockMvc tests for the JSON ticket API: controller behaviour and DTO output
+ * (wiring in {@link TicketApiMockMvcSupport}).
  */
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
-class TicketApiControllerTest {
-
-    @Mock private EmailTicketRepository emailTicketRepository;
-    @Mock private EmailReplyService emailReplyService;
-    @Mock private TicketAuditService auditService;
-    @Mock private SendRateLimiter sendRateLimiter;
-    @Mock private QuoteFollowUpService quoteFollowUpService;
-    @Mock private TenantDocumentRepository documentRepository;
-    @Mock private FeedbackLoopService feedbackLoopService;
-    @Mock private KeycloakAdminService keycloakAdminService;
-    @Mock private WebhookEventPublisher webhookEventPublisher;
-
-    private MockMvc mockMvc;
-
-    @BeforeEach
-    void setUp() {
-        TicketDetailAssembler details =
-                new TicketDetailAssembler(emailTicketRepository, documentRepository, keycloakAdminService);
-        TicketApiController controller = new TicketApiController(
-                emailTicketRepository, auditService, keycloakAdminService, details);
-        TicketReplyController replies = new TicketReplyController(
-                emailTicketRepository, emailReplyService, auditService, sendRateLimiter,
-                quoteFollowUpService, documentRepository, feedbackLoopService, webhookEventPublisher, details);
-        TicketAssignmentController assignments =
-                new TicketAssignmentController(emailTicketRepository, auditService, details);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller, replies, assignments)
-                .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
-                .build();
-    }
-
-    @AfterEach
-    void tearDown() {
-        SecurityContextHolder.clearContext();
-    }
+class TicketApiControllerTest extends TicketApiMockMvcSupport {
 
     /** Puts a Keycloak JWT (subject = user id, optional realm roles) in the context. */
     private void authenticateAs(String subject, String... roles) {
@@ -105,18 +51,6 @@ class TicketApiControllerTest {
                 .claim("tenant_id", 1L)
                 .build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
-    }
-
-    private EmailTicket ticket(long id, TicketStatus status) {
-        return EmailTicket.builder()
-                .id(id)
-                .messageId("<m" + id + "@x>")
-                .senderEmail("customer@x.com")
-                .subject("Subject " + id)
-                .status(status)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
     }
 
     @Test

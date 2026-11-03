@@ -33,8 +33,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.Map;
 
-import static com.smartfreight.inbox.controller.TicketDetailAssembler.isTerminal;
-
 /**
  * The reply to a ticket: the operator edits, saves, closes or sends the draft and picks the
  * on-file document that goes out with it. The draft/send orchestration lives here.
@@ -122,10 +120,8 @@ public class TicketReplyController {
         } else if ("close".equalsIgnoreCase(action)) {
             ticket.setStatus(TicketStatus.CLOSED);
             auditService.record(id, TicketAuditService.ACTION_CLOSE, null);
-        } else if (ticket.getStatus() != TicketStatus.DRAFT_READY) {
-            ticket.setStatus(TicketStatus.DRAFT_READY);
-            auditService.record(id, TicketAuditService.ACTION_DRAFT_EDIT, null);
         } else {
+            ticket.setStatus(TicketStatus.DRAFT_READY);
             auditService.record(id, TicketAuditService.ACTION_DRAFT_EDIT, null);
         }
         ticket.setUpdatedAt(LocalDateTime.now());
@@ -169,5 +165,9 @@ public class TicketReplyController {
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
         return details.buildDetail(ticket);
+    }
+
+    private static boolean isTerminal(EmailTicket ticket) {
+        return ticket.getStatus() == TicketStatus.CLOSED || ticket.getStatus() == TicketStatus.AUTO_SENT;
     }
 }

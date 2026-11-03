@@ -34,7 +34,11 @@ class ArchitectureTest {
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
             .importPackages(ROOT);
 
-    /** Controllers that still use a repository directly instead of a service. */
+    /**
+     * Classes in {@code controller} that still use a repository directly instead of a service. The
+     * four {@code Ticket*} names are the former {@code TicketApiController} split by sub-resource
+     * (same debt, spread over the classes that now hold it).
+     */
     private static final Set<String> CONTROLLERS_USING_REPOSITORIES = Set.of(
             "AdminController",
             "DocumentApiController",

@@ -7,7 +7,6 @@ import com.smartfreight.inbox.controller.dto.TicketSummaryDto;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.service.KeycloakAdminService;
 import com.smartfreight.inbox.service.TicketAuditService;
 import com.smartfreight.inbox.tenancy.TenantClaims;
 import org.slf4j.Logger;
@@ -32,7 +31,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -48,7 +46,7 @@ public class TicketApiController {
 
     private static final Logger log = LoggerFactory.getLogger(TicketApiController.class);
 
-    /** Same sort whitelist as the Thymeleaf controller — guards against PropertyReferenceException. */
+    /** Columns the list may sort by — anything else would fail as a PropertyReferenceException. */
     private static final Set<String> SORTABLE_COLUMNS = Set.of(
             "id", "senderEmail", "subject", "extractedIdentifier",
             "status", "ticketType", "slaDeadlineAt", "aiConfidence", "createdAt", "updatedAt"
@@ -74,16 +72,13 @@ public class TicketApiController {
 
     private final EmailTicketRepository emailTicketRepository;
     private final TicketAuditService auditService;
-    private final KeycloakAdminService keycloakAdminService;
     private final TicketDetailAssembler details;
 
     public TicketApiController(EmailTicketRepository emailTicketRepository,
                                TicketAuditService auditService,
-                               KeycloakAdminService keycloakAdminService,
                                TicketDetailAssembler details) {
         this.emailTicketRepository = emailTicketRepository;
         this.auditService = auditService;
-        this.keycloakAdminService = keycloakAdminService;
         this.details = details;
     }
 
@@ -117,34 +112,15 @@ public class TicketApiController {
             sortSpec = ESCALATION_SORT.and(sortSpec);
         }
         Pageable pageable = PageRequest.of(safePage, safeSize, sortSpec);
-        TicketStatus statusFilter = parseStatusOrNull(status);
-        String mode = assignee == null ? "all" : assignee.trim().toLowerCase();
-
         // A summary-chip drill-down: each `view` reuses the exact set the chip counted,
         // so the count and the list it links to can never diverge. It takes precedence over the
         // status/assignee filters (sort still applies via the pageable).
-        Page<EmailTicket> viewPage = resolveView(view, pageable);
-        if (viewPage != null) {
-            Map<String, String> viewEmails = resolveAssigneeEmails(viewPage.getContent(), jwt);
-            return PageDto.of(viewPage, t -> TicketSummaryDto.from(t,
-                    t.getAssigneeUserId() == null ? null : viewEmails.get(t.getAssigneeUserId())));
+        Page<EmailTicket> ticketPage = resolveView(view, pageable);
+        if (ticketPage == null) {
+            ticketPage = filteredPage(status, assignee, jwt, pageable);
         }
 
-        Page<EmailTicket> ticketPage;
-        if ("mine".equals(mode)) {
-            String me = jwt == null ? null : jwt.getSubject();
-            ticketPage = (me == null)
-                    ? Page.empty(pageable)
-                    : emailTicketRepository.findByAssignee(me, statusFilter, pageable);
-        } else if ("unassigned".equals(mode)) {
-            ticketPage = emailTicketRepository.findUnassigned(statusFilter, pageable);
-        } else if (statusFilter != null) {
-            ticketPage = emailTicketRepository.findByStatus(statusFilter, pageable);
-        } else {
-            ticketPage = emailTicketRepository.findAll(pageable);
-        }
-
-        Map<String, String> emails = resolveAssigneeEmails(ticketPage.getContent(), jwt);
+        Map<String, String> emails = details.assigneeEmails(ticketPage.getContent(), TenantClaims.fromJwt(jwt));
         return PageDto.of(ticketPage, t -> TicketSummaryDto.from(t,
                 t.getAssigneeUserId() == null ? null : emails.get(t.getAssigneeUserId())));
     }
@@ -200,26 +176,21 @@ public class TicketApiController {
 
     // ---- helpers ----
 
-    /**
-     * Resolves the assignees on one list page to a {@code uuid → email} map in a single Keycloak
-     * call — and only when the page actually has an assigned ticket, so the common (all-unclaimed)
-     * path stays call-free. Best-effort: an unreachable Keycloak yields an empty map.
-     */
-    private Map<String, String> resolveAssigneeEmails(List<EmailTicket> tickets, Jwt jwt) {
-        boolean anyAssigned = tickets.stream().anyMatch(t -> t.getAssigneeUserId() != null);
-        if (!anyAssigned) {
-            return Map.of();
+    /** The status/assignee-filtered page: {@code mine}, {@code unassigned} or everything. */
+    private Page<EmailTicket> filteredPage(String status, String assignee, Jwt jwt, Pageable pageable) {
+        TicketStatus statusFilter = parseStatusOrNull(status);
+        String mode = assignee == null ? "all" : assignee.trim().toLowerCase();
+        if ("mine".equals(mode)) {
+            String me = jwt == null ? null : jwt.getSubject();
+            return (me == null)
+                    ? Page.empty(pageable)
+                    : emailTicketRepository.findByAssignee(me, statusFilter, pageable);
+        } else if ("unassigned".equals(mode)) {
+            return emailTicketRepository.findUnassigned(statusFilter, pageable);
+        } else if (statusFilter != null) {
+            return emailTicketRepository.findByStatus(statusFilter, pageable);
         }
-        Long tenantId = TenantClaims.fromJwt(jwt);
-        if (tenantId == null) {
-            return Map.of();
-        }
-        try {
-            return keycloakAdminService.userEmailsByTenant(tenantId);
-        } catch (Exception e) {
-            log.warn("Could not resolve assignee emails: {}", e.getMessage());
-            return Map.of();
-        }
+        return emailTicketRepository.findAll(pageable);
     }
 
     /**

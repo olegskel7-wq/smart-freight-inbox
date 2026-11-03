@@ -5,36 +5,21 @@ import com.smartfreight.inbox.entity.TenantDocument;
 import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
-import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.repository.TenantDocumentRepository;
-import com.smartfreight.inbox.service.EmailReplyService;
-import com.smartfreight.inbox.service.FeedbackLoopService;
-import com.smartfreight.inbox.service.KeycloakAdminService;
-import com.smartfreight.inbox.service.QuoteFollowUpService;
-import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
-import com.smartfreight.inbox.webhook.WebhookEventPublisher;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.mail.MailSendException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,11 +29,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -58,44 +45,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Characterisation tests for the ticket API: they record what the endpoints do today on the paths
  * {@link TicketApiControllerTest} leaves open (close, attach, send failure, list parameter guards,
  * drill-down views, assignee e-mails, assign edge cases), so the split by sub-resource can be checked
- * against them. Standalone MockMvc over the HTTP contract, like {@link TicketApiControllerTest}.
+ * against them. Standalone MockMvc over the HTTP contract (wiring in {@link TicketApiMockMvcSupport}).
  */
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
-class TicketApiControllerCharacterizationTest {
-
-    @Mock private EmailTicketRepository emailTicketRepository;
-    @Mock private EmailReplyService emailReplyService;
-    @Mock private TicketAuditService auditService;
-    @Mock private SendRateLimiter sendRateLimiter;
-    @Mock private QuoteFollowUpService quoteFollowUpService;
-    @Mock private TenantDocumentRepository documentRepository;
-    @Mock private FeedbackLoopService feedbackLoopService;
-    @Mock private KeycloakAdminService keycloakAdminService;
-    @Mock private WebhookEventPublisher webhookEventPublisher;
-
-    private MockMvc mockMvc;
-
-    @BeforeEach
-    void setUp() {
-        TicketDetailAssembler details =
-                new TicketDetailAssembler(emailTicketRepository, documentRepository, keycloakAdminService);
-        TicketApiController controller = new TicketApiController(
-                emailTicketRepository, auditService, keycloakAdminService, details);
-        TicketReplyController replies = new TicketReplyController(
-                emailTicketRepository, emailReplyService, auditService, sendRateLimiter,
-                quoteFollowUpService, documentRepository, feedbackLoopService, webhookEventPublisher, details);
-        TicketAssignmentController assignments =
-                new TicketAssignmentController(emailTicketRepository, auditService, details);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller, replies, assignments)
-                .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
-                .build();
-    }
-
-    @AfterEach
-    void tearDown() {
-        SecurityContextHolder.clearContext();
-    }
+class TicketApiControllerCharacterizationTest extends TicketApiMockMvcSupport {
 
     private void authenticate(Jwt jwt) {
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
@@ -103,18 +55,6 @@ class TicketApiControllerCharacterizationTest {
 
     private static Jwt.Builder jwt(String subject) {
         return Jwt.withTokenValue("token").header("alg", "none").subject(subject);
-    }
-
-    private EmailTicket ticket(long id, TicketStatus status) {
-        return EmailTicket.builder()
-                .id(id)
-                .messageId("<m" + id + "@x>")
-                .senderEmail("customer@x.com")
-                .subject("Subject " + id)
-                .status(status)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
     }
 
     private static TenantDocument document(long id, String identifier) {
@@ -148,8 +88,8 @@ class TicketApiControllerCharacterizationTest {
         mockMvc.perform(get("/api/tickets").param("sort", "body").param("dir", "asc"))
                 .andExpect(status().isOk());
 
-        List<org.springframework.data.domain.Sort.Order> orders = capturedFindAllPageable().getSort().toList();
-        assertThat(orders).extracting(org.springframework.data.domain.Sort.Order::getProperty)
+        List<Sort.Order> orders = capturedFindAllPageable().getSort().toList();
+        assertThat(orders).extracting(Sort.Order::getProperty)
                 .containsExactly("sentimentNegative", "urgency", "createdAt");
         // dir applies to the fallback column, never to the escalation keys.
         assertThat(orders.get(0).isDescending()).isTrue();
@@ -310,7 +250,7 @@ class TicketApiControllerCharacterizationTest {
         mockMvc.perform(get("/api/tickets").param("view", "open")).andExpect(status().isOk());
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<java.util.Collection<TicketStatus>> statuses = ArgumentCaptor.forClass(java.util.Collection.class);
+        ArgumentCaptor<Collection<TicketStatus>> statuses = ArgumentCaptor.forClass(Collection.class);
         verify(emailTicketRepository).findByStatusIn(statuses.capture(), any(Pageable.class));
         assertThat(statuses.getValue()).containsExactlyInAnyOrder(
                 TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.PROCESSING,
@@ -615,7 +555,7 @@ class TicketApiControllerCharacterizationTest {
         EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
         when(sendRateLimiter.tryAcquire(anyLong())).thenReturn(true);
-        org.mockito.Mockito.doThrow(new MailSendException("smtp down"))
+        doThrow(new MailSendException("smtp down"))
                 .when(emailReplyService).sendReply(any(), any());
 
         mockMvc.perform(post("/api/tickets/1/draft")
@@ -635,7 +575,7 @@ class TicketApiControllerCharacterizationTest {
         EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
         when(sendRateLimiter.tryAcquire(1L)).thenReturn(false);
-        when(sendRateLimiter.getCooldown()).thenReturn(java.time.Duration.ofSeconds(5));
+        when(sendRateLimiter.getCooldown()).thenReturn(Duration.ofSeconds(5));
 
         mockMvc.perform(post("/api/tickets/1/draft")
                         .contentType("application/json").content("{\"action\":\"send\",\"draftReply\":\"R\"}"))
@@ -907,7 +847,7 @@ class TicketApiControllerCharacterizationTest {
 
     @Test
     void deleteOfAMissingTicketIs404() throws Exception {
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/tickets/9"))
+        mockMvc.perform(delete("/api/tickets/9"))
                 .andExpect(status().isNotFound());
 
         verify(emailTicketRepository, never()).delete(any());
@@ -918,7 +858,7 @@ class TicketApiControllerCharacterizationTest {
         EmailTicket t = ticket(1, TicketStatus.CLOSED);
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
 
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/tickets/1"))
+        mockMvc.perform(delete("/api/tickets/1"))
                 .andExpect(status().isNoContent());
 
         verify(emailTicketRepository).delete(t);
