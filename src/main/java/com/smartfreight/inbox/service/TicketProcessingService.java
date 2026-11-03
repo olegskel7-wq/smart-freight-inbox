@@ -261,14 +261,6 @@ public class TicketProcessingService {
     }
 
     /**
-     * Marks a ticket as FAILED in its own transaction.
-     *
-     * Public and REQUIRES_NEW so it can be called through the Spring proxy from
-     * {@link #process} after a failed attempt's transaction has already been rolled back.
-     *
-     * @param ticketId ticket identifier
-     */
-    /**
      * Parks a ticket as RETRY_LATER because a circuit breaker rejected a pipeline call.
      * Runs in its own transaction for the same reason as {@link #markFailed}:
      * the failed attempt's transaction has already rolled back.
@@ -290,6 +282,14 @@ public class TicketProcessingService {
         });
     }
 
+    /**
+     * Marks a ticket as FAILED in its own transaction.
+     *
+     * Public and REQUIRES_NEW so it can be called through the Spring proxy from
+     * {@link #process} after a failed attempt's transaction has already been rolled back.
+     *
+     * @param ticketId ticket identifier
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(Long ticketId) {
         emailTicketRepository.findById(ticketId).ifPresent(t -> {
