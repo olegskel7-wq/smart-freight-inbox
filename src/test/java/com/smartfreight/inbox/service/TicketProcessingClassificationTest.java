@@ -105,12 +105,14 @@ class TicketProcessingClassificationTest {
 
     @BeforeEach
     void setUp() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         service = new TicketProcessingService(
                 emailTicketRepository, emailClassificationService,
-                new IdentifierLookupStep(aiExtractionService, itemLookupService), aiDraftingService,
-                new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
-                gmailDraftService, slaService, autoSendService, shipmentWatchService, documentRequestService, settingsService,
-                webhookEventPublisher, ticketAuditService, new SimpleMeterRegistry());
+                new IdentifierLookupStep(aiExtractionService, itemLookupService), new ReplyDraftStep(settingsService, documentRequestService, aiDraftingService,
+                        new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
+                        meterRegistry),
+                gmailDraftService, slaService, autoSendService, shipmentWatchService, settingsService,
+                webhookEventPublisher, ticketAuditService, meterRegistry);
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);

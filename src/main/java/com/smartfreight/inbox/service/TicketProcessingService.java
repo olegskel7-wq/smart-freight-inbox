@@ -2,8 +2,6 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.EmailTicket;
-import com.smartfreight.inbox.entity.TenantDocument;
-import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.webhook.WebhookEventPublisher;
@@ -25,7 +23,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 
 /**
  * AI pipeline orchestrator for ticket processing.
@@ -65,13 +62,11 @@ public class TicketProcessingService {
     private final EmailTicketRepository emailTicketRepository;
     private final EmailClassificationService emailClassificationService;
     private final IdentifierLookupStep identifierLookupStep;
-    private final AiDraftingService aiDraftingService;
-    private final DraftContextAssembler draftContextAssembler;
+    private final ReplyDraftStep replyDraftStep;
     private final GmailDraftService gmailDraftService;
     private final SlaService slaService;
     private final AutoSendService autoSendService;
     private final ShipmentWatchService shipmentWatchService;
-    private final DocumentRequestService documentRequestService;
     private final SettingsService settingsService;
     private final WebhookEventPublisher webhookEventPublisher;
     private final TicketAuditService ticketAuditService;
@@ -79,8 +74,6 @@ public class TicketProcessingService {
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
     private final Counter parkedCounter;
-    private final Counter documentAttachedCounter;
-    private final Counter documentEscalatedCounter;
 
     /**
      * Self-reference to the Spring proxy so that @Transactional on processAttempt()
@@ -94,13 +87,11 @@ public class TicketProcessingService {
     public TicketProcessingService(EmailTicketRepository emailTicketRepository,
                                    EmailClassificationService emailClassificationService,
                                    IdentifierLookupStep identifierLookupStep,
-                                   AiDraftingService aiDraftingService,
-                                   DraftContextAssembler draftContextAssembler,
+                                   ReplyDraftStep replyDraftStep,
                                    GmailDraftService gmailDraftService,
                                    SlaService slaService,
                                    AutoSendService autoSendService,
                                    ShipmentWatchService shipmentWatchService,
-                                   DocumentRequestService documentRequestService,
                                    SettingsService settingsService,
                                    WebhookEventPublisher webhookEventPublisher,
                                    TicketAuditService ticketAuditService,
@@ -108,13 +99,11 @@ public class TicketProcessingService {
         this.emailTicketRepository = emailTicketRepository;
         this.emailClassificationService = emailClassificationService;
         this.identifierLookupStep = identifierLookupStep;
-        this.aiDraftingService = aiDraftingService;
-        this.draftContextAssembler = draftContextAssembler;
+        this.replyDraftStep = replyDraftStep;
         this.gmailDraftService = gmailDraftService;
         this.slaService = slaService;
         this.autoSendService = autoSendService;
         this.shipmentWatchService = shipmentWatchService;
-        this.documentRequestService = documentRequestService;
         this.settingsService = settingsService;
         this.webhookEventPublisher = webhookEventPublisher;
         this.ticketAuditService = ticketAuditService;
@@ -131,14 +120,6 @@ public class TicketProcessingService {
                 .register(meterRegistry);
         this.parkedCounter = Counter.builder("smartfreight_tickets_parked_total")
                 .description("Tickets parked as RETRY_LATER because a circuit breaker was open")
-                .register(meterRegistry);
-        this.documentAttachedCounter = Counter.builder("smartfreight_document_requests_total")
-                .tag("result", "attached")
-                .description("Document requests resolved by the Phase 2.7 pipeline")
-                .register(meterRegistry);
-        this.documentEscalatedCounter = Counter.builder("smartfreight_document_requests_total")
-                .tag("result", "escalated")
-                .description("Document requests resolved by the Phase 2.7 pipeline")
                 .register(meterRegistry);
     }
 
@@ -289,39 +270,11 @@ public class TicketProcessingService {
         }
 
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
-        String rateContext = draftContextAssembler.rateContext(aiInput);
-
-        String draft;
-        // A document request takes a dedicated path — determine which document is wanted,
-        // attach it if on file (it then rides the same auto-send/operator gate as any reply), else
-        // escalate: draft an acknowledgement and flag the requested type for the operator. The
-        // detection call propagates an open-breaker exception, so a parked ticket re-runs cleanly.
-        if (ticket.getTicketType() == TicketType.DOCUMENT_REQUEST
-                && settingsService.isFeatureEnabled(DocumentService.FEATURE_KEY, true)) {
-            DocumentType requested = documentRequestService.detectRequestedType(aiInput);
-            ticket.setRequestedDocType(requested);
-            Optional<TenantDocument> doc = identifier.isEmpty()
-                    ? Optional.empty()
-                    : documentRequestService.findDocument(identifier, requested);
-            if (doc.isPresent()) {
-                ticket.setAttachedDocumentId(doc.get().getId());
-                draft = aiDraftingService.generateDocumentReply(aiInput, requested, item, true);
-                documentAttachedCounter.increment();
-                log.info("Document request: attaching {} for '{}'", requested, identifier);
-            } else {
-                draft = aiDraftingService.generateDocumentReply(aiInput, requested, item, false);
-                documentEscalatedCounter.increment();
-                log.info("Document request: {} not on file for '{}' — escalating to operator",
-                        requested, identifier);
-            }
-        } else {
-            draft = aiDraftingService.generateDraft(
-                    draftContextAssembler.replyRequest(ticket.getTicketType(), aiInput, item, rateContext));
-        }
-        ticket.setDraftReply(draft);
+        ReplyDraftStep.ReplyDraft draft = replyDraftStep.draft(ticket, aiInput, identifier, item);
+        ticket.setDraftReply(draft.text());
         // Preserve the unmodified AI draft so the feedback loop can compare it against
         // what the operator actually sends. draftReply gets overwritten on edit; this does not.
-        ticket.setAiOriginalDraft(draft);
+        ticket.setAiOriginalDraft(draft.text());
 
         // Confidence is computed and stored on every run (even with auto-send off)
         // so the score distribution accumulates for threshold tuning.
@@ -329,7 +282,7 @@ public class TicketProcessingService {
                 ticket.getTicketType(),
                 ticket.getExtractedIdentifier() != null,
                 item != null,
-                rateContext != null && !rateContext.isBlank()));
+                draft.rateMatched()));
 
         ticket.setStatus(TicketStatus.DRAFT_READY);
         ticket.setUpdatedAt(LocalDateTime.now());

@@ -62,9 +62,10 @@ class TicketProcessingPipelineTest {
         meterRegistry = new SimpleMeterRegistry();
         service = new TicketProcessingService(
                 emailTicketRepository, emailClassificationService,
-                new IdentifierLookupStep(aiExtractionService, itemLookupService), aiDraftingService,
-                new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
-                gmailDraftService, slaService, autoSendService, shipmentWatchService, documentRequestService, settingsService,
+                new IdentifierLookupStep(aiExtractionService, itemLookupService), new ReplyDraftStep(settingsService, documentRequestService, aiDraftingService,
+                        new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
+                        meterRegistry),
+                gmailDraftService, slaService, autoSendService, shipmentWatchService, settingsService,
                 webhookEventPublisher, ticketAuditService, meterRegistry);
         // process() calls through `self` (the Spring proxy in production); the plain instance is enough here.
         ReflectionTestUtils.setField(service, "self", service);
