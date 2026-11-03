@@ -209,7 +209,25 @@ Branch coverage of the classes the plan touches (clean run):
    log under their new class. Left for later: the detail loads `TenantDocument` with its file bytes to build
    `DocumentRefDto` (a projection would skip them); `isAdmin` re-reads the `roles` claim instead of the
    authorities `KeycloakJwtRoleConverter` builds.
-3. `InboxQueryService`, then `EmailTicketRepository` (group queries, SQL unchanged).
+3. ✅ `InboxQueryService` (392 → 160 lines) split along its three steps: package-private
+   `InboxMetricResolver` (`@Component` over `AnalyticsService` — every metric's headline and figures
+   block, `busiestOpenStage`, the English-locale `fmt`, the `QueryIntent` record it consumes),
+   `InboxQueryOllamaClient` (`@Component` — the 60 s generate call on the tenant's endpoint and breaker,
+   `recordUsage("inbox-query", …)`, every failure → empty) and `InboxQueryPrompts` (guidance, the two V25
+   fallback templates, their substitution in the old order). The service keeps `ask`, `route`,
+   `parseIntent`, `phrase`, the `smartfreight_inbox_queries_total` counter and
+   `@Transactional(readOnly = true)`. Branch `refactor/2.3-inbox-query-service`; first commit pins the null
+   question and a type breakdown without unclassified mail — branches 42/47 → 44/47. Test bodies untouched
+   afterwards: `setUp` wires the real resolver and client, one import follows `QueryIntent`. `/simplify`
+   dropped the two dead `busiest == null` checks (`busiestOpenStage` never returns null) and kept the six
+   open stages in one list; the one branch left uncovered is `UNKNOWN` in the resolver (unreachable — `ask`
+   answers it first). 828 tests green; golden set identical to `baseline-2.3-main-0085b9e` across 18
+   scenarios (it exercises the pipeline, not this service — the headlines are pinned to exact text by
+   `InboxQueryServiceTest`). Both Ollama log lines now log under `InboxQueryOllamaClient`. Left for later
+   (behaviour changes): `ask` holds its read-only transaction across both Ollama calls (narrow it to
+   `summarise`); `answer()` substitutes the untrusted question before the trusted `{facts}`, unlike the
+   drafting prompts' trusted-first order.
+4. `EmailTicketRepository` (group queries, SQL unchanged).
 
 **Stage 3 — only on a separate decision**
 1. Remove the binary (pre-1.4) classifier mode — a behaviour change; first confirm no tenant has
