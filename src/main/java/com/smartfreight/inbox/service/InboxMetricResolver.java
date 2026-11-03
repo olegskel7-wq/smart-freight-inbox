@@ -121,7 +121,7 @@ class InboxMetricResolver {
                 yield result(headline, facts);
             }
 
-            case UNKNOWN -> result(InboxQueryService.GUIDANCE, InboxQueryService.GUIDANCE);
+            case UNKNOWN -> result(InboxQueryPrompts.GUIDANCE, InboxQueryPrompts.GUIDANCE);
         };
     }
 

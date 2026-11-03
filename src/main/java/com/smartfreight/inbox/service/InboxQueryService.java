@@ -48,43 +48,6 @@ public class InboxQueryService {
     /** Pulls the period (7/30/90) out of the routing reply; anything else falls back to the default. */
     private static final Pattern PERIOD = Pattern.compile("\\b(7|30|90)\\b");
 
-    /** What the user is told when their question doesn't match the catalogue. */
-    static final String GUIDANCE = """
-            I can answer questions about your inbox activity — for example:
-            • How many RFQs did we get in the last 30 days?
-            • What's our average response time this week?
-            • What share of replies were sent automatically?
-            • How many emails breached their SLA?
-            • What share of our quotes turned into bookings?
-            • Where is the inbox getting stuck?""";
-
-    /** Fallback routing prompt when the DB-backed {@code ai.inbox-query-prompt} row is missing. Kept in sync with V25. */
-    private static final String DEFAULT_QUERY_PROMPT = """
-            You route a user's question about their email inbox to exactly ONE metric from the catalogue below.
-            Reply with a single line in the form: METRIC | PERIOD_DAYS | TYPE
-            - METRIC must be one of the catalogue names exactly.
-            - PERIOD_DAYS is one of 7, 30 or 90 (the reporting window the question implies; default 30).
-            - TYPE is required only for TYPE_COUNT (one of RFQ, STATUS_UPDATE, BOOKING_CONFIRM, INVOICE_QUERY, DOCUMENT_REQUEST, GENERAL); otherwise write NONE.
-            Do not explain. Output only that one line.
-
-            Catalogue:
-            {catalogue}
-
-            Question: {question}""";
-
-    /** Fallback phrasing prompt when the DB-backed {@code ai.inbox-answer-prompt} row is missing. Kept in sync with V25. */
-    private static final String DEFAULT_ANSWER_PROMPT = """
-            You are an analytics assistant for a UK freight email automation platform.
-            Answer the user's question in one or two short, friendly sentences, UK business English.
-            Use ONLY the figures provided — never invent or estimate numbers. If a figure is zero, say so plainly.
-
-            Question: {question}
-
-            Figures:
-            {facts}
-
-            Answer:""";
-
     private final InboxMetricResolver metricResolver;
     private final SettingsService settingsService;
     private final InboxQueryOllamaClient ollamaClient;
@@ -119,14 +82,15 @@ public class InboxQueryService {
     @Transactional(readOnly = true)
     public InboxAnswer ask(String question) {
         if (question == null || question.isBlank()) {
-            return new InboxAnswer(question, GUIDANCE, InboxMetric.UNKNOWN, AnalyticsService.DEFAULT_PERIOD_DAYS);
+            return new InboxAnswer(question, InboxQueryPrompts.GUIDANCE, InboxMetric.UNKNOWN,
+                    AnalyticsService.DEFAULT_PERIOD_DAYS);
         }
 
         QueryIntent intent = route(question);
         meterRegistry.counter("smartfreight_inbox_queries_total", "metric", intent.metric().name()).increment();
 
         if (intent.metric() == InboxMetric.UNKNOWN) {
-            return new InboxAnswer(question, GUIDANCE, InboxMetric.UNKNOWN, intent.periodDays());
+            return new InboxAnswer(question, InboxQueryPrompts.GUIDANCE, InboxMetric.UNKNOWN, intent.periodDays());
         }
 
         MetricResult result = metricResolver.resolve(intent);
@@ -136,9 +100,8 @@ public class InboxQueryService {
 
     /** LLM step 1: question → structured intent. Tolerant parse; LLM failure → UNKNOWN (guidance). */
     private QueryIntent route(String question) {
-        String prompt = settingsService.getString(KEY_QUERY_PROMPT, DEFAULT_QUERY_PROMPT)
-                .replace("{catalogue}", InboxMetric.catalogue())
-                .replace("{question}", question.strip());
+        String prompt = InboxQueryPrompts.routing(
+                settingsService.getString(KEY_QUERY_PROMPT, InboxQueryPrompts.DEFAULT_QUERY_PROMPT), question);
 
         return ollamaClient.generate(routingModel, prompt)
                 .map(InboxQueryService::parseIntent)
@@ -178,9 +141,8 @@ public class InboxQueryService {
 
     /** LLM step 3: phrase the figures conversationally. Empty when the model gives nothing usable. */
     private Optional<String> phrase(String question, String facts) {
-        String prompt = settingsService.getString(KEY_ANSWER_PROMPT, DEFAULT_ANSWER_PROMPT)
-                .replace("{question}", question.strip())
-                .replace("{facts}", facts);
+        String prompt = InboxQueryPrompts.answer(
+                settingsService.getString(KEY_ANSWER_PROMPT, InboxQueryPrompts.DEFAULT_ANSWER_PROMPT), question, facts);
         return ollamaClient.generate(phrasingModel, prompt);
     }
 
