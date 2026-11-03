@@ -65,8 +65,7 @@ public class TicketProcessingService {
 
     private final EmailTicketRepository emailTicketRepository;
     private final EmailClassificationService emailClassificationService;
-    private final AiExtractionService aiExtractionService;
-    private final ItemLookupService itemLookupService;
+    private final IdentifierLookupStep identifierLookupStep;
     private final AiDraftingService aiDraftingService;
     private final RateSheetService rateSheetService;
     private final GmailDraftService gmailDraftService;
@@ -98,8 +97,7 @@ public class TicketProcessingService {
 
     public TicketProcessingService(EmailTicketRepository emailTicketRepository,
                                    EmailClassificationService emailClassificationService,
-                                   AiExtractionService aiExtractionService,
-                                   ItemLookupService itemLookupService,
+                                   IdentifierLookupStep identifierLookupStep,
                                    AiDraftingService aiDraftingService,
                                    RateSheetService rateSheetService,
                                    GmailDraftService gmailDraftService,
@@ -116,8 +114,7 @@ public class TicketProcessingService {
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailClassificationService = emailClassificationService;
-        this.aiExtractionService = aiExtractionService;
-        this.itemLookupService = itemLookupService;
+        this.identifierLookupStep = identifierLookupStep;
         this.aiDraftingService = aiDraftingService;
         this.rateSheetService = rateSheetService;
         this.gmailDraftService = gmailDraftService;
@@ -290,17 +287,13 @@ public class TicketProcessingService {
         String aiInput = buildAiInput(ticket);
 
         log.info("Step 1/3: Extracting item identifier via Qwen 2.5");
-        String identifier = aiExtractionService.extractIdentifier(aiInput);
+        String identifier = identifierLookupStep.extract(aiInput);
         ticket.setExtractedIdentifier(identifier.isEmpty() ? null : identifier);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
 
         log.info("Step 2/3: Looking up item '{}' via backend", identifier);
-        Optional<TrackedItem> itemOpt = identifier.isEmpty()
-                ? Optional.empty()
-                : itemLookupService.findByIdentifier(identifier);
-
-        TrackedItem item = itemOpt.orElse(null);
+        TrackedItem item = identifierLookupStep.lookup(identifier);
         if (item == null) {
             log.warn("Item '{}' not found — draft will reflect missing data", identifier);
         }

@@ -61,8 +61,8 @@ class TicketProcessingPipelineTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         service = new TicketProcessingService(
-                emailTicketRepository, emailClassificationService, aiExtractionService,
-                itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
+                emailTicketRepository, emailClassificationService,
+                new IdentifierLookupStep(aiExtractionService, itemLookupService), aiDraftingService, rateSheetService, gmailDraftService,
                 slaService, autoSendService, shipmentWatchService, documentRequestService,
                 feedbackLoopService, knowledgeBaseService, embeddingService, settingsService,
                 webhookEventPublisher, ticketAuditService, meterRegistry);
