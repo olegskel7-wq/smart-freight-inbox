@@ -2,8 +2,9 @@ package com.smartfreight.inbox.tenancy;
 
 import com.smartfreight.inbox.TestcontainersConfiguration;
 import com.smartfreight.inbox.controller.TicketApiController;
+import com.smartfreight.inbox.controller.TicketAssignmentController;
+import com.smartfreight.inbox.controller.TicketAssignmentController.AssignRequest;
 import com.smartfreight.inbox.controller.TicketReplyController;
-import com.smartfreight.inbox.controller.TicketApiController.AssignRequest;
 import com.smartfreight.inbox.controller.TicketReplyController.AttachRequest;
 import com.smartfreight.inbox.controller.TicketReplyController.DraftRequest;
 import com.smartfreight.inbox.entity.EmailTicket;
@@ -36,8 +37,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>This is the end-to-end wiring the existing tests cover only in halves:
  * {@link TenantFilterTest} proves the {@code Jwt} {@code tenant_id} claim maps onto
  * {@link TenantContext} (no DB), and {@link TenantIsolationTest} proves {@code TenantContext} →
- * Postgres RLS isolates at the repository layer (no controller). Here the REAL
- * {@link TicketApiController} runs inside the attacker tenant's context against a real RLS-backed
+ * Postgres RLS isolates at the repository layer (no controller). Here the REAL ticket
+ * controllers ({@link TicketApiController}, {@link TicketReplyController},
+ * {@link TicketAssignmentController}) run inside the attacker tenant's context against a real RLS-backed
  * database, so the full chain (tenant scope → {@code requireTicket} → {@code findById} → RLS) is
  * exercised: every id-bearing endpoint must answer {@code 404 NOT FOUND} for a foreign ticket
  * (the row is invisible, so the controller can't even reach its mutation), and the victim's row
@@ -48,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * connecting as {@code smartfreight_app} (RLS does not bind the container superuser), cleanup is a
  * hard DELETE under the system context.
  *
- * <p>First slice covers {@link TicketApiController} (the richest, most sensitive surface). The
+ * <p>First slice covers the {@code /api/tickets} controllers (the richest, most sensitive surface). The
  * other id-bearing controllers ({@code /api/documents/{id}/download}, {@code /api/rates/{id}},
  * {@code /api/training-examples/{id}}) are the next slices of the same hardening item.
  */
@@ -64,6 +66,9 @@ class CrossTenantApiAccessTest {
 
     @Autowired
     private TicketReplyController replies;
+
+    @Autowired
+    private TicketAssignmentController assignments;
 
     @Autowired
     private EmailTicketRepository ticketRepository;
@@ -139,12 +144,12 @@ class CrossTenantApiAccessTest {
 
     @Test
     void attacker_cannotAssignForeignTicket() {
-        assertCrossTenant404(() -> tickets.assign(victimTicketId, new AssignRequest("attacker-user"), attackerJwt()));
+        assertCrossTenant404(() -> assignments.assign(victimTicketId, new AssignRequest("attacker-user"), attackerJwt()));
     }
 
     @Test
     void attacker_cannotUnassignForeignTicket() {
-        assertCrossTenant404(() -> tickets.unassign(victimTicketId));
+        assertCrossTenant404(() -> assignments.unassign(victimTicketId));
     }
 
     // ---- after every mutation attempt, the victim's row must be byte-for-byte untouched ----
@@ -154,8 +159,8 @@ class CrossTenantApiAccessTest {
         assertCrossTenant404(() -> replies.updateDraft(victimTicketId, new DraftRequest("send", "HACKED"), null));
         assertCrossTenant404(() -> tickets.close(victimTicketId));
         assertCrossTenant404(() -> replies.attachDocument(victimTicketId, new AttachRequest(null)));
-        assertCrossTenant404(() -> tickets.assign(victimTicketId, new AssignRequest("attacker-user"), attackerJwt()));
-        assertCrossTenant404(() -> tickets.unassign(victimTicketId));
+        assertCrossTenant404(() -> assignments.assign(victimTicketId, new AssignRequest("attacker-user"), attackerJwt()));
+        assertCrossTenant404(() -> assignments.unassign(victimTicketId));
         assertCrossTenant404(() -> tickets.delete(victimTicketId));
 
         // Read the raw row under the system context (bypasses RLS, sees the physical row even if a

@@ -25,15 +25,12 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +40,7 @@ import java.util.Set;
  * JSON API backing the React {@code /tickets} pages. It speaks DTOs over
  * {@code /api/tickets} and is secured by the stateless resource-server chain (bearer JWT).
  * This controller serves the list, the summary strip and the ticket itself (detail, close, delete);
- * the reply lives in {@link TicketReplyController}.
+ * the reply lives in {@link TicketReplyController}, ownership in {@link TicketAssignmentController}.
  */
 @RestController
 @RequestMapping("/api/tickets")
@@ -89,9 +86,6 @@ public class TicketApiController {
         this.keycloakAdminService = keycloakAdminService;
         this.details = details;
     }
-
-    /** Request body for {@code POST /api/tickets/{id}/assign}: null/blank userId self-claims. */
-    public record AssignRequest(String userId) {}
 
     /**
      * GET /api/tickets — paginated, sorted, optionally status-filtered list. The {@code assignee}
@@ -204,47 +198,6 @@ public class TicketApiController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * POST /api/tickets/{id}/assign — claims the ticket. A blank/absent {@code userId}
-     * self-claims (any operator); assigning to a different operator requires ADMIN (403 otherwise).
-     * The {@code @PostUpdate} live event refreshes every operator's list. Independent of status —
-     * ownership is orthogonal to the ticket lifecycle.
-     */
-    @Transactional
-    @PostMapping("/{id}/assign")
-    public TicketDetailDto assign(@PathVariable Long id,
-                                  @RequestBody(required = false) AssignRequest request,
-                                  @AuthenticationPrincipal Jwt jwt) {
-        EmailTicket ticket = details.requireTicket(id);
-        String me = jwt == null ? null : jwt.getSubject();
-        if (me == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No authenticated operator.");
-        }
-        String target = (request == null || request.userId() == null || request.userId().isBlank())
-                ? me : request.userId().trim();
-        if (!target.equals(me) && !isAdmin(jwt)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Only an admin can assign tickets to other operators.");
-        }
-        ticket.setAssigneeUserId(target);
-        ticket.setUpdatedAt(LocalDateTime.now());
-        emailTicketRepository.save(ticket);
-        auditService.record(id, TicketAuditService.ACTION_ASSIGN, "to=" + target);
-        return details.buildDetail(ticket);
-    }
-
-    /** POST /api/tickets/{id}/unassign — releases the ticket back to the unclaimed queue. */
-    @Transactional
-    @PostMapping("/{id}/unassign")
-    public TicketDetailDto unassign(@PathVariable Long id) {
-        EmailTicket ticket = details.requireTicket(id);
-        ticket.setAssigneeUserId(null);
-        ticket.setUpdatedAt(LocalDateTime.now());
-        emailTicketRepository.save(ticket);
-        auditService.record(id, TicketAuditService.ACTION_UNASSIGN, null);
-        return details.buildDetail(ticket);
-    }
-
     // ---- helpers ----
 
     /**
@@ -267,23 +220,6 @@ public class TicketApiController {
             log.warn("Could not resolve assignee emails: {}", e.getMessage());
             return Map.of();
         }
-    }
-
-    /** True if the bearer carries the ADMIN or SUPER_ADMIN realm role (assign-to-other gate). */
-    private boolean isAdmin(Jwt jwt) {
-        if (jwt == null) {
-            return false;
-        }
-        Object raw = jwt.getClaim("roles");
-        if (raw instanceof Collection<?> roles) {
-            for (Object r : roles) {
-                String role = String.valueOf(r);
-                if ("ADMIN".equals(role) || "SUPER_ADMIN".equals(role)) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     /**

@@ -73,7 +73,7 @@ Step by step, with the class to open:
    - **draft** (`AiDraftingService`) and score a heuristic *confidence*.
    - **route** (`AutoSendService`): auto-send or leave `DRAFT_READY` for an operator.
 4. **Review** — the SPA's `/tickets` list updates live (STOMP over `/ws`, refetch on signal). The
-   operator edits and sends (`controller/TicketApiController`). The reply leaves through the mailbox
+   operator edits and sends (`controller/TicketReplyController`). The reply leaves through the mailbox
    the email came in on (`MailSenderProvider`) and is signed with the operator's name
    (`ReplySignatureService`).
 5. **After sending** — an edited draft becomes a *training example* (feedback loop); a sent quote

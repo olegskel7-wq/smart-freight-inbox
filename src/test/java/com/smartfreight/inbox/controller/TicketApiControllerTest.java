@@ -85,7 +85,9 @@ class TicketApiControllerTest {
         TicketReplyController replies = new TicketReplyController(
                 emailTicketRepository, emailReplyService, auditService, sendRateLimiter,
                 quoteFollowUpService, documentRepository, feedbackLoopService, webhookEventPublisher, details);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller, replies)
+        TicketAssignmentController assignments =
+                new TicketAssignmentController(emailTicketRepository, auditService, details);
+        mockMvc = MockMvcBuilders.standaloneSetup(controller, replies, assignments)
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
     }
