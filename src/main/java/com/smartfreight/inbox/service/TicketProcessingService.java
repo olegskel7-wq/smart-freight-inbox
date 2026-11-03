@@ -2,13 +2,7 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.TrackedItem;
 import com.smartfreight.inbox.entity.EmailTicket;
-import com.smartfreight.inbox.entity.TenantDocument;
-import com.smartfreight.inbox.entity.enums.DocumentType;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
-import com.smartfreight.inbox.entity.enums.TicketType;
-import com.smartfreight.inbox.webhook.WebhookEventPublisher;
-import com.smartfreight.inbox.webhook.WebhookEventType;
-import com.smartfreight.inbox.webhook.WebhookPayloads;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.Counter;
@@ -25,8 +19,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
-import java.util.function.Supplier;
 
 /**
  * AI pipeline orchestrator for ticket processing.
@@ -35,9 +27,16 @@ import java.util.function.Supplier;
  * 0. Relevance + type classification (Qwen 2.5) for RECEIVED tickets — non-freight mail is
  *    parked as IRRELEVANT and never reaches the heavier steps;
  *    relevant mail gets its business type (RFQ/STATUS_UPDATE/…) in the same call
+ *    ({@link TicketClassificationStep})
  * 1. Item identifier extraction (Qwen 2.5) from the email body
- * 2. Item lookup via the backend ({@link ItemLookupService})
- * 3. Reply draft generation (Llama 3.1)
+ * 2. Item lookup via the backend ({@link ItemLookupService}) — both in {@link IdentifierLookupStep}
+ * 3. Reply draft generation (Llama 3.1) and its confidence score — {@link ReplyDraftStep}, context
+ *    from {@link DraftContextAssembler}
+ * then shipment watch, auto-send decision and Gmail draft ({@link DraftRoutingStep}).
+ *
+ * This class owns every ticket status transition, every save of the ticket and the transaction /
+ * retry semantics around them. The steps set ticket fields and may record side effects (audit row,
+ * webhook delivery, shipment watch, Gmail draft) inside the attempt's transaction.
  *
  * Executed synchronously in the calling thread — the RabbitMQ
  * consumer ({@link com.smartfreight.inbox.messaging.TicketEventConsumer}), never the
@@ -64,28 +63,15 @@ public class TicketProcessingService {
     public static final String SETTING_ESCALATION_ASSIGNEE = "routing.escalation-assignee";
 
     private final EmailTicketRepository emailTicketRepository;
-    private final EmailClassificationService emailClassificationService;
-    private final AiExtractionService aiExtractionService;
-    private final ItemLookupService itemLookupService;
-    private final AiDraftingService aiDraftingService;
-    private final RateSheetService rateSheetService;
-    private final GmailDraftService gmailDraftService;
-    private final SlaService slaService;
+    private final TicketClassificationStep ticketClassificationStep;
+    private final IdentifierLookupStep identifierLookupStep;
+    private final ReplyDraftStep replyDraftStep;
+    private final DraftRoutingStep draftRoutingStep;
     private final AutoSendService autoSendService;
-    private final ShipmentWatchService shipmentWatchService;
-    private final DocumentRequestService documentRequestService;
-    private final FeedbackLoopService feedbackLoopService;
-    private final KnowledgeBaseService knowledgeBaseService;
-    private final EmbeddingService embeddingService;
-    private final SettingsService settingsService;
-    private final WebhookEventPublisher webhookEventPublisher;
-    private final TicketAuditService ticketAuditService;
     private final Timer processingTimer;
     private final Counter draftReadyCounter;
     private final Counter failedCounter;
     private final Counter parkedCounter;
-    private final Counter documentAttachedCounter;
-    private final Counter documentEscalatedCounter;
 
     /**
      * Self-reference to the Spring proxy so that @Transactional on processAttempt()
@@ -97,40 +83,18 @@ public class TicketProcessingService {
     private TicketProcessingService self;
 
     public TicketProcessingService(EmailTicketRepository emailTicketRepository,
-                                   EmailClassificationService emailClassificationService,
-                                   AiExtractionService aiExtractionService,
-                                   ItemLookupService itemLookupService,
-                                   AiDraftingService aiDraftingService,
-                                   RateSheetService rateSheetService,
-                                   GmailDraftService gmailDraftService,
-                                   SlaService slaService,
+                                   TicketClassificationStep ticketClassificationStep,
+                                   IdentifierLookupStep identifierLookupStep,
+                                   ReplyDraftStep replyDraftStep,
+                                   DraftRoutingStep draftRoutingStep,
                                    AutoSendService autoSendService,
-                                   ShipmentWatchService shipmentWatchService,
-                                   DocumentRequestService documentRequestService,
-                                   FeedbackLoopService feedbackLoopService,
-                                   KnowledgeBaseService knowledgeBaseService,
-                                   EmbeddingService embeddingService,
-                                   SettingsService settingsService,
-                                   WebhookEventPublisher webhookEventPublisher,
-                                   TicketAuditService ticketAuditService,
                                    MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
-        this.emailClassificationService = emailClassificationService;
-        this.aiExtractionService = aiExtractionService;
-        this.itemLookupService = itemLookupService;
-        this.aiDraftingService = aiDraftingService;
-        this.rateSheetService = rateSheetService;
-        this.gmailDraftService = gmailDraftService;
-        this.slaService = slaService;
+        this.ticketClassificationStep = ticketClassificationStep;
+        this.identifierLookupStep = identifierLookupStep;
+        this.replyDraftStep = replyDraftStep;
+        this.draftRoutingStep = draftRoutingStep;
         this.autoSendService = autoSendService;
-        this.shipmentWatchService = shipmentWatchService;
-        this.documentRequestService = documentRequestService;
-        this.feedbackLoopService = feedbackLoopService;
-        this.knowledgeBaseService = knowledgeBaseService;
-        this.embeddingService = embeddingService;
-        this.settingsService = settingsService;
-        this.webhookEventPublisher = webhookEventPublisher;
-        this.ticketAuditService = ticketAuditService;
         this.processingTimer = Timer.builder("smartfreight_processing_duration_seconds")
                 .description("Duration of ticket processing through AI pipeline")
                 .register(meterRegistry);
@@ -144,14 +108,6 @@ public class TicketProcessingService {
                 .register(meterRegistry);
         this.parkedCounter = Counter.builder("smartfreight_tickets_parked_total")
                 .description("Tickets parked as RETRY_LATER because a circuit breaker was open")
-                .register(meterRegistry);
-        this.documentAttachedCounter = Counter.builder("smartfreight_document_requests_total")
-                .tag("result", "attached")
-                .description("Document requests resolved by the Phase 2.7 pipeline")
-                .register(meterRegistry);
-        this.documentEscalatedCounter = Counter.builder("smartfreight_document_requests_total")
-                .tag("result", "escalated")
-                .description("Document requests resolved by the Phase 2.7 pipeline")
                 .register(meterRegistry);
     }
 
@@ -237,48 +193,17 @@ public class TicketProcessingService {
             return false;
         }
 
-        // Classification happens here, off the IMAP thread.
-        // The same call also assigns the business type (RFQ/STATUS_UPDATE/…).
-        // In typed mode the retry path re-enters classification when ticketType
-        // is still null — such a ticket never got a verdict (it was parked by an open
-        // breaker before step 0 completed, or swept out of RECEIVED). This is a first
-        // classification, not a re-judgement: tickets the operator sent back for a redraft
-        // carry their type and are not re-classified. Binary mode persists no verdict
-        // marker, so there the retry path keeps its historical fail-open skip.
-        if (ticket.getStatus() == TicketStatus.RECEIVED
-                || (ticket.getTicketType() == null && emailClassificationService.isTypedMode())) {
+        // The AI sees the email body plus any parsed attachment text as one input.
+        String aiInput = buildAiInput(ticket);
+
+        if (ticketClassificationStep.needsClassification(ticket)) {
             log.info("Step 0: Classifying email relevance and type via Qwen 2.5");
-            EmailClassificationService.ClassificationResult classification =
-                    emailClassificationService.classify(ticket.getSubject(), buildAiInput(ticket));
-            if (!classification.relevant()) {
+            if (!ticketClassificationStep.classify(ticket, aiInput)) {
                 ticket.setStatus(TicketStatus.IRRELEVANT);
-                // Spam carries no SLA — drop the provisional deadline set at ingest.
-                ticket.setSlaDeadlineAt(null);
                 ticket.setUpdatedAt(LocalDateTime.now());
                 emailTicketRepository.save(ticket);
                 log.info("Ticket classified as IRRELEVANT — pipeline stopped, kept for audit");
                 return false;
-            }
-            // Persisted together with the PROCESSING transition below — no extra UPDATE.
-            ticket.setTicketType(classification.type());
-            // Smart-routing signals from the same classification call.
-            ticket.setUrgency(classification.urgency());
-            ticket.setSentimentNegative(classification.sentimentNegative());
-            // Refine the provisional (GENERAL) deadline to the per-type window.
-            // Still anchored to createdAt — the customer's clock started at receipt.
-            // An escalated ticket (HIGH urgency / negative tone) gets a tighter window.
-            if (slaService.isEnabled()) {
-                ticket.setSlaDeadlineAt(slaService.deadlineFor(classification.type(),
-                        classification.isEscalated(), ticket.getCreatedAt()));
-            }
-            // Route an escalated, still-unclaimed ticket to the configured escalation operator.
-            applyEscalationRouting(ticket, classification);
-            // The customer is booking — notify the CRM. Fires once: a typed ticket is not
-            // re-classified (the retry path only re-enters this block when ticketType is still null), and
-            // this runs inside the pipeline transaction so the delivery is queued atomically with the verdict.
-            if (classification.type() == TicketType.BOOKING_CONFIRM) {
-                webhookEventPublisher.publish(WebhookEventType.BOOKING_CONFIRMED, ticket.getTenantId(),
-                        WebhookPayloads.ticketData(ticket));
             }
         }
 
@@ -286,82 +211,20 @@ public class TicketProcessingService {
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.saveAndFlush(ticket);
 
-        // The AI sees the email body plus any parsed attachment text as one input.
-        String aiInput = buildAiInput(ticket);
-
         log.info("Step 1/3: Extracting item identifier via Qwen 2.5");
-        String identifier = aiExtractionService.extractIdentifier(aiInput);
+        String identifier = identifierLookupStep.extract(aiInput);
         ticket.setExtractedIdentifier(identifier.isEmpty() ? null : identifier);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
 
         log.info("Step 2/3: Looking up item '{}' via backend", identifier);
-        Optional<TrackedItem> itemOpt = identifier.isEmpty()
-                ? Optional.empty()
-                : itemLookupService.findByIdentifier(identifier);
-
-        TrackedItem item = itemOpt.orElse(null);
+        TrackedItem item = identifierLookupStep.lookup(identifier);
         if (item == null) {
             log.warn("Item '{}' not found — draft will reflect missing data", identifier);
         }
 
         log.info("Step 3/3: Generating reply draft via Llama 3.1");
-        // Matched carrier rates (if any) let the model quote a real price.
-        String rateContext = rateSheetService.buildRateContext(aiInput);
-
-        String draft;
-        // A document request takes a dedicated path — determine which document is wanted,
-        // attach it if on file (it then rides the same auto-send/operator gate as any reply), else
-        // escalate: draft an acknowledgement and flag the requested type for the operator. The
-        // detection call propagates an open-breaker exception, so a parked ticket re-runs cleanly.
-        if (ticket.getTicketType() == TicketType.DOCUMENT_REQUEST
-                && settingsService.isFeatureEnabled(DocumentService.FEATURE_KEY, true)) {
-            DocumentType requested = documentRequestService.detectRequestedType(aiInput);
-            ticket.setRequestedDocType(requested);
-            Optional<TenantDocument> doc = identifier.isEmpty()
-                    ? Optional.empty()
-                    : documentRequestService.findDocument(identifier, requested);
-            if (doc.isPresent()) {
-                ticket.setAttachedDocumentId(doc.get().getId());
-                draft = aiDraftingService.generateDocumentReply(aiInput, requested, item, true);
-                documentAttachedCounter.increment();
-                log.info("Document request: attaching {} for '{}'", requested, identifier);
-            } else {
-                draft = aiDraftingService.generateDocumentReply(aiInput, requested, item, false);
-                documentEscalatedCounter.increment();
-                log.info("Document request: {} not on file for '{}' — escalating to operator",
-                        requested, identifier);
-            }
-        } else {
-            // Both the feedback loop and the knowledge base rank by semantic
-            // similarity to the SAME enquiry, so share ONE memoised embedding supplier — the enquiry is
-            // embedded at most once per draft, lazily, and only if a retriever (after its own feature /
-            // blank checks) actually needs the vector. Each retriever owns its own feature gate, so the
-            // pipeline stays out of that decision.
-            Supplier<Optional<float[]>> enquiryEmbedding =
-                    memoize(() -> embeddingService.embed(aiInput));
-            // Inject the most similar past operator corrections (this tenant, this type)
-            // as few-shot examples so the draft improves as corrections accumulate.
-            String exampleContext = feedbackLoopService.retrieveExamples(
-                    ticket.getTicketType(), aiInput, enquiryEmbedding);
-            // Ground the draft with the tenant's knowledge base (FAQs / policies / rules) so
-            // typical "how / where / when" enquiries get a substantive answer even without backend data.
-            String knowledgeContext = knowledgeBaseService.retrieveContext(aiInput, enquiryEmbedding);
-            draft = aiDraftingService.generateDraft(
-                    new ReplyDraftRequest(aiInput, item, rateContext, exampleContext, knowledgeContext));
-        }
-        ticket.setDraftReply(draft);
-        // Preserve the unmodified AI draft so the feedback loop can compare it against
-        // what the operator actually sends. draftReply gets overwritten on edit; this does not.
-        ticket.setAiOriginalDraft(draft);
-
-        // Confidence is computed and stored on every run (even with auto-send off)
-        // so the score distribution accumulates for threshold tuning.
-        ticket.setAiConfidence(autoSendService.confidenceFor(
-                ticket.getTicketType(),
-                ticket.getExtractedIdentifier() != null,
-                item != null,
-                rateContext != null && !rateContext.isBlank()));
+        replyDraftStep.draft(ticket, aiInput, identifier, item);
 
         ticket.setStatus(TicketStatus.DRAFT_READY);
         ticket.setUpdatedAt(LocalDateTime.now());
@@ -371,47 +234,7 @@ public class TicketProcessingService {
         processingTimer.record(System.nanoTime() - startTime, java.util.concurrent.TimeUnit.NANOSECONDS);
         log.info("Ticket processing finished: DRAFT_READY (confidence {})", ticket.getAiConfidence());
 
-        // A STATUS_UPDATE enquiry grounded in real backend data becomes a proactive
-        // subscription — StatusWatchScheduler keeps this customer posted about this shipment
-        // until it is delivered. Recorded unconditionally (cheap); the scheduler is gated by
-        // feature.status-update-automation, so enabling the flag activates recent enquiries at once.
-        if (ticket.getTicketType() == TicketType.STATUS_UPDATE
-                && ticket.getExtractedIdentifier() != null
-                && item != null) {
-            shipmentWatchService.upsertFromTicket(ticket, item);
-        }
-
-        // The auto-send decision is made here (one settings read, one log line), but the SMTP
-        // call belongs to the caller — after this transaction commits. An eligible ticket also
-        // skips the Gmail draft: it is about to be answered, a lingering draft would be noise.
-        boolean autoSendEligible = autoSendService.shouldAutoSend(ticket);
-        if (!autoSendEligible) {
-            gmailDraftService.saveDraft(ticket);
-        }
-        return autoSendEligible;
-    }
-
-    /**
-     * Auto-assigns an escalated ticket to the tenant's configured escalation operator.
-     *
-     * Routing is deliberately deterministic, not LLM-chosen: the classifier only flags HIGH urgency /
-     * negative tone (it does not know the tenant's operators), and a tenant opts in by setting
-     * {@link #SETTING_ESCALATION_ASSIGNEE} on {@code /settings}. We only ever claim an UNassigned
-     * ticket, so a manual assignment is never overwritten. With no assignee configured the
-     * ticket simply stays unclaimed — escalation still tightened the SLA and floats it to the top.
-     * Mutating {@code assigneeUserId} fires the existing {@code @PostUpdate} live event for free.
-     */
-    private void applyEscalationRouting(EmailTicket ticket, EmailClassificationService.ClassificationResult classification) {
-        if (!classification.isEscalated() || ticket.getAssigneeUserId() != null) {
-            return;
-        }
-        String target = settingsService.getString(SETTING_ESCALATION_ASSIGNEE, "").trim();
-        if (target.isEmpty()) {
-            return;
-        }
-        ticket.setAssigneeUserId(target);
-        ticketAuditService.record(ticket.getId(), TicketAuditService.ACTION_ASSIGN, "auto-escalation to=" + target);
-        log.info("Auto-assigned escalated ticket {} to escalation operator {}", ticket.getId(), target);
+        return draftRoutingStep.route(ticket, item);
     }
 
     /**
@@ -431,36 +254,6 @@ public class TicketProcessingService {
         return body + "\n\n" + attachments;
     }
 
-    /**
-     * Wraps a supplier so its value is computed at most once, on first {@code get()}. Used to share a
-     * single lazy enquiry-embedding across the feedback-loop and knowledge-base retrievers: the
-     * embedding call happens once if either retriever asks, and not at all if neither does. Called only
-     * on the single ticket-processing thread, so no synchronisation is needed.
-     */
-    private static <T> Supplier<T> memoize(Supplier<T> delegate) {
-        return new Supplier<>() {
-            private boolean computed;
-            private T value;
-
-            @Override
-            public T get() {
-                if (!computed) {
-                    value = delegate.get();
-                    computed = true;
-                }
-                return value;
-            }
-        };
-    }
-
-    /**
-     * Marks a ticket as FAILED in its own transaction.
-     *
-     * Public and REQUIRES_NEW so it can be called through the Spring proxy from
-     * {@link #process} after a failed attempt's transaction has already been rolled back.
-     *
-     * @param ticketId ticket identifier
-     */
     /**
      * Parks a ticket as RETRY_LATER because a circuit breaker rejected a pipeline call.
      * Runs in its own transaction for the same reason as {@link #markFailed}:
@@ -483,6 +276,14 @@ public class TicketProcessingService {
         });
     }
 
+    /**
+     * Marks a ticket as FAILED in its own transaction.
+     *
+     * Public and REQUIRES_NEW so it can be called through the Spring proxy from
+     * {@link #process} after a failed attempt's transaction has already been rolled back.
+     *
+     * @param ticketId ticket identifier
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(Long ticketId) {
         emailTicketRepository.findById(ticketId).ifPresent(t -> {

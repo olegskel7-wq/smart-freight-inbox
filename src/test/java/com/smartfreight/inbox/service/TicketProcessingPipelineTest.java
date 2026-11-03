@@ -61,11 +61,15 @@ class TicketProcessingPipelineTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         service = new TicketProcessingService(
-                emailTicketRepository, emailClassificationService, aiExtractionService,
-                itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
-                slaService, autoSendService, shipmentWatchService, documentRequestService,
-                feedbackLoopService, knowledgeBaseService, embeddingService, settingsService,
-                webhookEventPublisher, ticketAuditService, meterRegistry);
+                emailTicketRepository,
+                new TicketClassificationStep(emailClassificationService, slaService, settingsService,
+                        ticketAuditService, webhookEventPublisher),
+                new IdentifierLookupStep(aiExtractionService, itemLookupService),
+                new ReplyDraftStep(settingsService, documentRequestService, aiDraftingService,
+                        new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
+                        autoSendService, meterRegistry),
+                new DraftRoutingStep(autoSendService, shipmentWatchService, gmailDraftService),
+                autoSendService, meterRegistry);
         // process() calls through `self` (the Spring proxy in production); the plain instance is enough here.
         ReflectionTestUtils.setField(service, "self", service);
     }
@@ -250,6 +254,19 @@ class TicketProcessingPipelineTest {
 
         service.processAttempt(1L, System.nanoTime());
 
+        verify(autoSendService).confidenceFor(TicketType.RFQ, true, false, false);
+    }
+
+    /** RateSheetService never returns null today; the guard keeps a null from failing the draft. */
+    @Test
+    void nullRateContext_doesNotCountAsRateMatched() {
+        EmailTicket ticket = typedTicket(TicketType.RFQ);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        stubDraftPath("MSCU1234567", Optional.empty(), null);
+
+        service.processAttempt(1L, System.nanoTime());
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
         verify(autoSendService).confidenceFor(TicketType.RFQ, true, false, false);
     }
 

@@ -33,7 +33,7 @@ import java.util.Map;
  * email is treated as RELEVANT (type GENERAL when typed) so that no real customer
  * request is lost due to an AI outage.
  *
- * Execution context: called from TicketProcessingService inside
+ * Execution context: called from TicketClassificationStep inside
  * the RabbitMQ consumer for tickets in RECEIVED status — never on the IMAP thread.
  */
 @Service
@@ -76,7 +76,7 @@ public class EmailClassificationService {
         /**
          * The single definition of "escalated" (docs/adr/0012-smart-routing.md): HIGH urgency or a negative tone. Drives the
          * tighter SLA window and the escalation auto-assign — see {@link SlaService#deadlineFor} and
-         * {@link TicketProcessingService}. (The escalated-first list sort re-encodes this as column order,
+         * {@link TicketClassificationStep}. (The escalated-first list sort re-encodes this as column order,
          * and the metric counts the two reasons separately, so those two stay self-contained by design.)
          */
         public boolean isEscalated() {
@@ -172,7 +172,7 @@ public class EmailClassificationService {
         } catch (CallNotPermittedException e) {
             // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
             // ticket as RETRY_LATER — a real classification verdict will be made
-            // on retry (see TicketProcessingService: unclassified typed tickets re-enter step 0).
+            // on retry (see TicketClassificationStep#needsClassification: unclassified typed tickets re-enter step 0).
             log.warn("Ollama circuit breaker is open — classification call not attempted");
             throw e;
         } catch (Exception e) {

@@ -20,7 +20,7 @@ import java.util.Optional;
  *
  * Simulates a real integration with a port cargo management system (TOS/CMS). For a different
  * vertical a different {@link ItemLookupService} implementation would be wired in instead; the
- * pipeline ({@link TicketProcessingService}) is unaware of this concrete backend.
+ * pipeline ({@link IdentifierLookupStep}) is unaware of this concrete backend.
  *
  * If port-service is unavailable or the item is not found, {@link Optional#empty()} is returned and
  * the AI will generate a draft without data.

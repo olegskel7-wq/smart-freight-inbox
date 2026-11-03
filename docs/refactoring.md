@@ -177,9 +177,21 @@ Branch coverage of the classes the plan touches (clean run):
    +12 tests. Stage 1.3 is complete.
 
 **Stage 2 — pipeline core, medium risk**
-1. `TicketProcessingService.processAttempt` (~174 lines, 23 dependencies) → steps (classify, extract,
-   context assembly, draft, route) with the service as the orchestrator. Transaction boundaries and
-   retry semantics (`markRetryLater` / `markFailed`) must stay identical.
+1. ✅ `TicketProcessingService.processAttempt` (165 → ~60 lines; 23 fields → 10, constructor 18 → 7
+   params) → five package-private `@Component` steps in `service`: `TicketClassificationStep` (relevance
+   guard, verdict, SLA window, escalation routing, `booking.confirmed`), `IdentifierLookupStep`
+   (extraction + backend lookup), `DraftContextAssembler` (rates, memoised enquiry embedding, few-shot
+   examples, knowledge base; Spring `SingletonSupplier` replaces the hand-rolled memoiser), `ReplyDraftStep`
+   (document-request path or generic draft, AI original draft, confidence score, document counters),
+   `DraftRoutingStep` (shipment watch, auto-send decision, Gmail draft). The steps set ticket
+   fields and record their side effects (audit, webhook, shipment watch, Gmail draft), and carry no
+   `@Transactional`: the orchestrator keeps every status transition, every ticket save in its old order,
+   `REQUIRES_NEW`, the retry loop and `markRetryLater` / `markFailed`; open-breaker exceptions pass through the steps untouched. Branch `refactor/2.1-processing-steps`; first commit
+   pins the null rate-context guard. Test bodies untouched — only the two `setUp`s wire the real steps
+   over the same mocks. Branches 73/74 (the miss is unreachable: no identifier ⇒ no lookup ⇒ no item);
+   764 tests green; golden set identical to `baseline-2.1-main-68e369a` across 18 scenarios (after `/simplify`:
+   only the known `felixstowe-invoice` urgency noise). Two log
+   lines (document attach/escalate, auto-assign) now log under their step's class.
 2. `TicketApiController` → split by sub-resource; URLs and `@PreAuthorize` unchanged.
 3. `InboxQueryService`, then `EmailTicketRepository` (group queries, SQL unchanged).
 

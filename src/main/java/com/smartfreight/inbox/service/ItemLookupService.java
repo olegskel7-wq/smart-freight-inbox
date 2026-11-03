@@ -7,7 +7,7 @@ import java.util.Optional;
 /**
  * Vertical-neutral lookup of a tracked item by its key identifier.
  *
- * <p>The AI pipeline ({@link TicketProcessingService}) depends on this abstraction rather than a
+ * <p>The AI pipeline ({@link IdentifierLookupStep}) depends on this abstraction rather than a
  * concrete backend, so a new vertical can plug in a different data source (a real TMS, a CRM, a
  * case-management system) without changing the orchestrator. The freight implementation
  * ({@link PortServiceItemLookup}) talks to the external port-service over HTTP.
