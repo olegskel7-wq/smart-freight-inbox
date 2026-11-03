@@ -1,10 +1,11 @@
 package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.service.AnalyticsService.AnalyticsSummary;
-import com.smartfreight.inbox.service.InboxQueryService.QueryIntent;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -15,6 +16,10 @@ import java.util.Locale;
 @Component
 class InboxMetricResolver {
 
+    /** The non-terminal stages, in pipeline order — where open work can pile up. */
+    private static final List<TicketStatus> OPEN_STAGES = List.of(TicketStatus.RECEIVED, TicketStatus.NEW,
+            TicketStatus.PROCESSING, TicketStatus.DRAFT_READY, TicketStatus.RETRY_LATER, TicketStatus.FAILED);
+
     private final AnalyticsService analyticsService;
 
     InboxMetricResolver(AnalyticsService analyticsService) {
@@ -24,8 +29,7 @@ class InboxMetricResolver {
     /** Turn the intent into a correct headline sentence + a figures block. */
     MetricResult resolve(QueryIntent intent) {
         AnalyticsSummary s = analyticsService.summarise(intent.periodDays());
-        int p = intent.periodDays();
-        String win = "the last " + p + " days";
+        String win = "the last " + intent.periodDays() + " days";
 
         return switch (intent.metric()) {
             case EMAILS_RECEIVED -> result(
@@ -102,7 +106,7 @@ class InboxMetricResolver {
 
             case BOTTLENECKS -> {
                 TicketStatus busiest = busiestOpenStage(s);
-                long backlog = busiest == null ? 0L : s.byStatus().getOrDefault(busiest, 0L);
+                long backlog = s.byStatus().getOrDefault(busiest, 0L);
                 String facts = fmt("Backlog by open stage (newest work first):\n"
                         + "  RECEIVED: %d\n  NEW: %d\n  PROCESSING: %d\n  DRAFT_READY (awaiting operator): %d\n"
                         + "  RETRY_LATER: %d\n  FAILED: %d\n"
@@ -114,7 +118,7 @@ class InboxMetricResolver {
                         s.byStatus().getOrDefault(TicketStatus.RETRY_LATER, 0L),
                         s.byStatus().getOrDefault(TicketStatus.FAILED, 0L),
                         s.slaBreached(), s.slaBreachedPct(), s.avgResponseFormatted());
-                String headline = busiest == null || backlog == 0
+                String headline = backlog == 0
                         ? fmt("Over %s nothing is backed up — no open tickets are piling up at any stage.", win)
                         : fmt("Over %s the biggest backlog is %d ticket(s) at the %s stage; %d SLA breaches.",
                                 win, backlog, busiest.name(), s.slaBreached());
@@ -125,12 +129,14 @@ class InboxMetricResolver {
         };
     }
 
-    /** The non-terminal stage holding the most tickets — where work is actually piling up. */
+    /**
+     * The open stage holding the most tickets — where work is actually piling up. Never null: the
+     * first stage wins a tie, so with nothing open it is RECEIVED with a backlog of zero.
+     */
     private static TicketStatus busiestOpenStage(AnalyticsSummary s) {
         TicketStatus busiest = null;
         long max = -1;
-        for (TicketStatus st : new TicketStatus[]{TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.PROCESSING,
-                TicketStatus.DRAFT_READY, TicketStatus.RETRY_LATER, TicketStatus.FAILED}) {
+        for (TicketStatus st : OPEN_STAGES) {
             long n = s.byStatus().getOrDefault(st, 0L);
             if (n > max) {
                 max = n;
@@ -155,6 +161,10 @@ class InboxMetricResolver {
     /** Flattens a multi-line "k: v" block to a single inline clause for the headline sentence. */
     private static String inline(String block) {
         return block.strip().replace("\n", ", ");
+    }
+
+    /** Routed question: which metric, over what window, optionally for one type. */
+    record QueryIntent(InboxMetric metric, int periodDays, TicketType type) {
     }
 
     /** Deterministic result of a metric: a complete headline answer + the figures fed to phrasing. */

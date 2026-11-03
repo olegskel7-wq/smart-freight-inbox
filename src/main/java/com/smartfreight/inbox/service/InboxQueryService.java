@@ -2,6 +2,7 @@ package com.smartfreight.inbox.service;
 
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.service.InboxMetricResolver.MetricResult;
+import com.smartfreight.inbox.service.InboxMetricResolver.QueryIntent;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -144,10 +145,6 @@ public class InboxQueryService {
         String prompt = InboxQueryPrompts.answer(
                 settingsService.getString(KEY_ANSWER_PROMPT, InboxQueryPrompts.DEFAULT_ANSWER_PROMPT), question, facts);
         return ollamaClient.generate(phrasingModel, prompt);
-    }
-
-    /** Routed question: which metric, over what window, optionally for one type. */
-    record QueryIntent(InboxMetric metric, int periodDays, TicketType type) {
     }
 
     /**

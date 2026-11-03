@@ -5,7 +5,7 @@ import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.service.AnalyticsService.AnalyticsSummary;
 import com.smartfreight.inbox.service.AnalyticsService.DayVolume;
 import com.smartfreight.inbox.service.InboxQueryService.InboxAnswer;
-import com.smartfreight.inbox.service.InboxQueryService.QueryIntent;
+import com.smartfreight.inbox.service.InboxMetricResolver.QueryIntent;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
