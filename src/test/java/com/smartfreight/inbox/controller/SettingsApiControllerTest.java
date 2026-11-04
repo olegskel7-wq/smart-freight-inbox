@@ -97,9 +97,12 @@ class SettingsApiControllerTest {
         when(mailboxHealth.health(7L)).thenReturn(Optional.of(new MailboxHealthMonitor.MailboxHealth(
                 1L, false, Instant.now(), null, "AUTHENTICATIONFAILED Invalid credentials")));
 
+        SettingsSnapshotAssembler assembler = new SettingsSnapshotAssembler(
+                settingsService, mailboxService, adapterManager, mailboxHealth, secretCipher);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new SettingsApiController(
-                        settingsService, mailboxService, adapterManager, mailboxHealth, secretCipher))
+                .standaloneSetup(
+                        new SettingsApiController(settingsService, assembler),
+                        new MailboxSettingsController(mailboxService, assembler))
                 .build();
     }
 

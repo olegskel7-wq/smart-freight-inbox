@@ -78,13 +78,15 @@ class SettingsApiControllerCharacterizationTest {
         when(settingsService.getTenantOverride(anyString())).thenReturn(Optional.empty());
         when(mailboxService.findAll()).thenReturn(List.of());
 
-        SettingsApiController controller = new SettingsApiController(
+        SettingsSnapshotAssembler assembler = new SettingsSnapshotAssembler(
                 settingsService, mailboxService, adapterManager, mailboxHealth, secretCipher);
-        ReflectionTestUtils.setField(controller, "smtpHost", "smtp.platform.test");
-        ReflectionTestUtils.setField(controller, "smtpPort", 2525);
-        ReflectionTestUtils.setField(controller, "smtpUser", "platform@test");
-        ReflectionTestUtils.setField(controller, "platformOllamaUrl", "http://ollama.platform:11434");
-        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        ReflectionTestUtils.setField(assembler, "smtpHost", "smtp.platform.test");
+        ReflectionTestUtils.setField(assembler, "smtpPort", 2525);
+        ReflectionTestUtils.setField(assembler, "smtpUser", "platform@test");
+        ReflectionTestUtils.setField(assembler, "platformOllamaUrl", "http://ollama.platform:11434");
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                new SettingsApiController(settingsService, assembler),
+                new MailboxSettingsController(mailboxService, assembler)).build();
     }
 
     private ResultActions postJson(String path, String json) throws Exception {

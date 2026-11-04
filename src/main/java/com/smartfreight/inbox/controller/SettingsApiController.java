@@ -1,80 +1,43 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.controller.dto.SettingsResponse;
-import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.entity.enums.TicketType;
-import com.smartfreight.inbox.integration.MailboxHealthMonitor;
-import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler;
 import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
 import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.EmailClassificationService;
-import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
-import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
 import com.smartfreight.inbox.service.TicketProcessingService;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Arrays;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /settings} page. It mirrors {@link SettingsController}
- * (the Thymeleaf settings UI) but speaks DTOs over {@code /api/settings} and is secured by the stateless
- * resource-server chain (bearer JWT). The two controllers run side by side during the migration; this one
- * collapses to the only one when Thymeleaf is removed.
+ * JSON API backing the React {@code /settings} page; the mailbox rows live in
+ * {@link MailboxSettingsController}.
  *
- * <p>Validation matches the form controller exactly (threshold clamped to [0,1], type allow-list
- * normalised against {@link TicketType}, delay a non-negative whole number, Ollama URL scheme-checked).
- * A rejected value answers {@code 400}/{@code 404}/{@code 409} with a plain message; a successful mutation
- * returns the refreshed {@link SettingsResponse} so the SPA re-renders without a second round-trip.
+ * <p>The threshold is clamped to [0,1], the type allow-list normalised against {@link TicketType}, the delay
+ * is a non-negative whole number and the Ollama URL scheme-checked. A rejected value answers {@code 400} with
+ * a plain message; a successful mutation returns the refreshed {@link SettingsResponse} so the SPA re-renders
+ * without a second round trip.
  */
 @RestController
 @RequestMapping("/api/settings")
 public class SettingsApiController {
 
-    @Value("${smtp.host}")
-    private String smtpHost;
-
-    @Value("${smtp.port:587}")
-    private int smtpPort;
-
-    @Value("${smtp.username}")
-    private String smtpUser;
-
-    /** Platform Ollama URL — shown as the inherited default next to the override field. */
-    @Value("${ollama.base-url:http://localhost:11434}")
-    private String platformOllamaUrl;
-
     private final SettingsService settingsService;
-    private final MailboxManagementService mailboxService;
-    private final MailboxImapAdapterManager adapterManager;
-    private final MailboxHealthMonitor mailboxHealth;
-    private final SecretCipher secretCipher;
+    private final SettingsSnapshotAssembler snapshotAssembler;
 
-    public SettingsApiController(SettingsService settingsService,
-                                 MailboxManagementService mailboxService,
-                                 MailboxImapAdapterManager adapterManager,
-                                 MailboxHealthMonitor mailboxHealth,
-                                 SecretCipher secretCipher) {
+    SettingsApiController(SettingsService settingsService, SettingsSnapshotAssembler snapshotAssembler) {
         this.settingsService = settingsService;
-        this.mailboxService = mailboxService;
-        this.adapterManager = adapterManager;
-        this.mailboxHealth = mailboxHealth;
-        this.secretCipher = secretCipher;
+        this.snapshotAssembler = snapshotAssembler;
     }
 
     /** Request body for {@code POST /api/settings/autosend}. */
@@ -85,16 +48,6 @@ public class SettingsApiController {
 
     /** Request body for {@code POST /api/settings/quotefollowup}. */
     public record QuoteFollowUpRequest(boolean enabled, String delayHours) {}
-
-    /**
-     * Request body for {@code POST /api/settings/mailboxes} and {@code PUT /api/settings/mailboxes/{id}}
-     * (on PUT a blank password keeps the stored one).
-     */
-    public record MailboxRequest(String host, Integer port, String username, String password,
-                                 String smtpHost, Integer smtpPort, String fromAddress) {}
-
-    /** Request body for {@code POST /api/settings/mailboxes/{id}/toggle}. */
-    public record ToggleRequest(boolean enabled) {}
 
     /** Request body for {@code POST /api/settings/ollama}. */
     public record OllamaRequest(String ollamaBaseUrl) {}
@@ -111,7 +64,7 @@ public class SettingsApiController {
     /** GET /api/settings — the full settings snapshot for the current tenant. */
     @GetMapping
     public SettingsResponse get() {
-        return buildResponse();
+        return snapshotAssembler.snapshot();
     }
 
     /**
@@ -137,12 +90,12 @@ public class SettingsApiController {
         settingsService.setString(AutoSendService.FEATURE_KEY, request.enabled() ? "true" : "false");
         settingsService.setString(AutoSendService.KEY_THRESHOLD, String.valueOf(parsed));
         settingsService.setString(AutoSendService.KEY_TYPES, String.join(",", validTypes));
-        return buildResponse();
+        return snapshotAssembler.snapshot();
     }
 
     /**
-     * POST /api/settings/statusupdate — updates the proactive status-update gates. Milestone
-     * names are stored upper-cased and de-blanked; enabling with no milestones is rejected so nothing is
+     * POST /api/settings/statusupdate — updates the proactive status-update gates. The milestone
+     * list is stored trimmed as a whole; enabling with no milestones is rejected so nothing is
      * silently armed with an empty trigger set.
      */
     @PostMapping("/statusupdate")
@@ -154,7 +107,7 @@ public class SettingsApiController {
         }
         settingsService.setString(StatusWatchScheduler.FEATURE_KEY, request.enabled() ? "true" : "false");
         settingsService.setString(StatusWatchScheduler.KEY_MILESTONES, normalised);
-        return buildResponse();
+        return snapshotAssembler.snapshot();
     }
 
     /**
@@ -176,7 +129,7 @@ public class SettingsApiController {
         }
         settingsService.setString(QuoteFollowUpScheduler.FEATURE_KEY, request.enabled() ? "true" : "false");
         settingsService.setString(QuoteFollowUpScheduler.KEY_DELAY_HOURS, String.valueOf(parsed));
-        return buildResponse();
+        return snapshotAssembler.snapshot();
     }
 
     /**
@@ -192,72 +145,7 @@ public class SettingsApiController {
                 request.smartRoutingEnabled() ? "true" : "false");
         String assignee = request.escalationAssignee() == null ? "" : request.escalationAssignee().trim();
         settingsService.setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, assignee);
-        return buildResponse();
-    }
-
-    /**
-     * POST /api/settings/mailboxes — adds a mailbox for the current tenant. The reconciler
-     * starts its IMAP adapter within one pass (~30 s) — no restart.
-     */
-    @PostMapping("/mailboxes")
-    public SettingsResponse addMailbox(@RequestBody MailboxRequest request) {
-        try {
-            mailboxService.create(request.host(), request.port(), request.username(), request.password(),
-                    request.smtpHost(), request.smtpPort(), request.fromAddress());
-        } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "This mailbox (host + username) is already configured.");
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
-        return buildResponse();
-    }
-
-    /**
-     * PUT /api/settings/mailboxes/{id} — edits a mailbox in place: new password, server or SMTP
-     * settings without delete + re-add, so open tickets keep their {@code mailbox_id} and keep replying
-     * through it. The reconciler rebuilds the adapter within one pass. Unknown/foreign id → 404, invalid
-     * input or a re-point without the password → 400, a (host, username) clash with another mailbox or
-     * renaming the account of a mailbox that has received mail → 409.
-     */
-    @PutMapping("/mailboxes/{id}")
-    public SettingsResponse updateMailbox(@PathVariable Long id, @RequestBody MailboxRequest request) {
-        try {
-            mailboxService.update(id, request.host(), request.port(), request.username(), request.password(),
-                    request.smtpHost(), request.smtpPort(), request.fromAddress());
-        } catch (MailboxManagementService.MailboxNotFoundException e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
-        } catch (MailboxManagementService.MailboxInUseException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
-        } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Another mailbox with this host + username is already configured.");
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
-        return buildResponse();
-    }
-
-    /** POST /api/settings/mailboxes/{id}/toggle — pauses/resumes a mailbox without losing its credentials. */
-    @PostMapping("/mailboxes/{id}/toggle")
-    public SettingsResponse toggleMailbox(@PathVariable Long id, @RequestBody ToggleRequest request) {
-        try {
-            mailboxService.setEnabled(id, request.enabled());
-        } catch (MailboxManagementService.MailboxNotFoundException e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
-        }
-        return buildResponse();
-    }
-
-    /** DELETE /api/settings/mailboxes/{id} — removes a mailbox; its adapter stops on the next pass. */
-    @DeleteMapping("/mailboxes/{id}")
-    public ResponseEntity<Void> deleteMailbox(@PathVariable Long id) {
-        try {
-            mailboxService.delete(id);
-        } catch (MailboxManagementService.MailboxNotFoundException e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
-        }
-        return ResponseEntity.noContent().build();
+        return snapshotAssembler.snapshot();
     }
 
     /**
@@ -272,14 +160,14 @@ public class SettingsApiController {
                     "Ollama URL must start with http:// or https://.");
         }
         settingsService.setString(OllamaClientProvider.KEY_OLLAMA_BASE_URL, trimmed);
-        return buildResponse();
+        return snapshotAssembler.snapshot();
     }
 
     /** POST /api/settings/notifications — toggles operator draft-ready email notifications. */
     @PostMapping("/notifications")
     public SettingsResponse saveNotifications(@RequestBody NotificationsRequest request) {
         settingsService.setDraftEnabled(request.draftEnabled());
-        return buildResponse();
+        return snapshotAssembler.snapshot();
     }
 
     /**
@@ -291,10 +179,8 @@ public class SettingsApiController {
     public SettingsResponse savePrompts(@RequestBody PromptsRequest request) {
         settingsService.setString(SettingsService.KEY_EXTRACTION_PROMPT, request.extractionPrompt());
         settingsService.setString(SettingsService.KEY_DRAFTING_PROMPT, request.draftingPrompt());
-        return buildResponse();
+        return snapshotAssembler.snapshot();
     }
-
-    // ---- helpers ----
 
     private boolean isKnownType(String name) {
         try {
@@ -303,44 +189,5 @@ public class SettingsApiController {
         } catch (IllegalArgumentException e) {
             return false;
         }
-    }
-
-    /** Snapshots the current tenant's settings into the response DTO (mirrors the Thymeleaf model). */
-    private SettingsResponse buildResponse() {
-        List<SettingsResponse.MailboxDto> mailboxes = mailboxService.findAll().stream()
-                .map(m -> SettingsResponse.MailboxDto.from(m, adapterManager.isRunning(m.getId()),
-                        mailboxHealth.health(m.getId()).orElse(null)))
-                .toList();
-
-        String autoSendTypesCsv = settingsService.getString(AutoSendService.KEY_TYPES, "STATUS_UPDATE");
-        List<String> autoSendTypes = Arrays.stream(autoSendTypesCsv.split(","))
-                .map(String::trim)
-                .filter(t -> !t.isEmpty())
-                .toList();
-
-        List<String> allTypes = Arrays.stream(TicketType.values()).map(Enum::name).toList();
-
-        return new SettingsResponse(
-                secretCipher.isConfigured(),
-                platformOllamaUrl,
-                settingsService.getTenantOverride(OllamaClientProvider.KEY_OLLAMA_BASE_URL).orElse(""),
-                smtpHost,
-                smtpPort,
-                smtpUser,
-                settingsService.isDraftEnabled(),
-                settingsService.getString(SettingsService.KEY_EXTRACTION_PROMPT, ""),
-                settingsService.getString(SettingsService.KEY_DRAFTING_PROMPT, ""),
-                settingsService.isFeatureEnabled(AutoSendService.FEATURE_KEY, false),
-                settingsService.getString(AutoSendService.KEY_THRESHOLD, "0.8"),
-                autoSendTypes,
-                allTypes,
-                settingsService.isFeatureEnabled(StatusWatchScheduler.FEATURE_KEY, false),
-                settingsService.getString(StatusWatchScheduler.KEY_MILESTONES, StatusWatchScheduler.DEFAULT_MILESTONES),
-                settingsService.isFeatureEnabled(QuoteFollowUpScheduler.FEATURE_KEY, false),
-                settingsService.getString(QuoteFollowUpScheduler.KEY_DELAY_HOURS,
-                        String.valueOf(QuoteFollowUpScheduler.DEFAULT_DELAY_HOURS)),
-                settingsService.isFeatureEnabled(EmailClassificationService.FEATURE_SMART_ROUTING, true),
-                settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""),
-                mailboxes);
     }
 }
