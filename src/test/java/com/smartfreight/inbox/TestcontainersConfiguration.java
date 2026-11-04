@@ -60,6 +60,16 @@ public class TestcontainersConfiguration {
 	}
 
 	/**
+	 * Keycloak в общем контексте нет. Дефолт http://keycloak:8081 на машине разработчика ведёт в живой
+	 * dev-Keycloak (запись в hosts + порт из compose), поэтому админ-клиент смотрит в закрытый порт:
+	 * любой вызов падает сразу и одинаково везде, и тест не может завести или удалить настоящего пользователя.
+	 */
+	@Bean
+	public DynamicPropertyRegistrar keycloakProperties() {
+		return registry -> registry.add("keycloak.admin.server-url", () -> "http://127.0.0.1:1");
+	}
+
+	/**
 	 * RabbitMQ контейнер для асинхронного AI-пайплайна (Phase 1.3).
 	 *
 	 * Smoke-тест с реальным брокером проверяет всю messaging-инфраструктуру:

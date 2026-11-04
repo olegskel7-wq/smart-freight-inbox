@@ -113,8 +113,23 @@ Branch coverage of the classes the plan touches (clean run):
   and the chain's wiring of `KeycloakJwtRoleConverter`, because swapping the decoder would fork the context. Dropping that
   wiring from `SecurityConfig` stays green here (tried), so a real token against the live stack is the only check of it.
   One Spring context across the whole run. 933 tests, 89.4 % / 77.3 %.
-- Still untested through the chain: the same rules for `/api/admin/**`, `/api/admin/tenants/**`, `/api/users/**` and
-  `/api/webhooks/**`. `SettingsAdminRuleTest` is the pattern to copy.
+- ✅ The other role rules are now pinned the same way (branch `test/admin-rules`): `ApiRoleRuleSupport` holds the harness,
+  one subclass per rule, 29 routes in all. `/api/admin/**` 4 routes, `/api/users/**` 5, `/api/webhooks/**` 6 (ADMIN, denied
+  OPERATOR); `/api/admin/tenants/**` 2 (SUPER_ADMIN, denied ADMIN, whose token also carries OPERATOR). Weakening the rules
+  fails only the class of that rule, `SettingsAdminRuleTest` stays green throughout: `authenticated()` fails 4 / 5 / 6 / 2
+  denied-role cases, `permitAll()` adds the same number of no-token cases, deleting the tenants rule fails the 2 ADMIN cases,
+  and requiring SUPER_ADMIN on the ADMIN rules fails the 4 / 5 / 6 allowed cases.
+  Keycloak: the default `http://keycloak:8081` reaches the live dev Keycloak on a machine with the hosts entry and the
+  compose port, so `TestcontainersConfiguration` points the admin client at a closed port. A property in that shared
+  configuration does not fork the context. Routes with nothing to reject before their Keycloak call (`GET /api/users`,
+  `DELETE /api/users/{id}`, `GET /api/admin/tenants`) answer 500, and the test checks the cause is `WebClientRequestException`.
+  Purge has no rejecting path, so it really empties the DLQ of the test broker; no test reads that queue.
+  One Spring context across the whole run. 984 tests, 89.5 % / 77.4 %.
+- `jwt()` still skips the decoder and the chain's wiring of the role converter, see above. The JWKS URI keeps its default,
+  so a future shared-context test with a real bearer token would depend on the dev stack being up.
+- The Javadoc of `AdminController` says `/api/admin/**` is gated with ROLE_OPERATOR, and that of `UserApiController` says
+  `/api/users/**` falls under `authenticated()`. Both are ADMIN in `SecurityConfig` and the tests above. Comment-only fix,
+  left out of this test branch.
 - A settings body without a primitive field (`enabled` on `/autosend`) answers 500, not 400: `GlobalExceptionHandler`
   has no case for unreadable JSON, so it lands in the catch-all. The SPA always sends the field.
 - A ticket whose deadline passes and which is sent before the next `SlaBreachScheduler` tick is never flagged, for
