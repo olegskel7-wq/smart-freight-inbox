@@ -372,7 +372,7 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
      * the StuckTicketSweeper relies on and keep genuinely stuck tickets unswept.
      *
      * @param now              breach cutoff (deadlines strictly before this are overdue)
-     * @param exemptStatuses   statuses outside the SLA clock (CLOSED, IRRELEVANT)
+     * @param exemptStatuses   statuses outside the SLA clock (CLOSED, AUTO_SENT, IRRELEVANT)
      * @return number of tickets newly flagged
      */
     @Modifying

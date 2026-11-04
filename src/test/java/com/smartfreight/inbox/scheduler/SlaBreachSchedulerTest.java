@@ -1,5 +1,6 @@
 package com.smartfreight.inbox.scheduler;
 
+import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.SlaService;
 import com.smartfreight.inbox.testutil.TestTransactions;
@@ -66,5 +67,11 @@ class SlaBreachSchedulerTest {
         scheduler.markBreachedTickets();
 
         verifyNoInteractions(emailTicketRepository);
+    }
+
+    @Test
+    void clockStopsOnceTheCustomerHasAReplyOrTheMailIsSpam_butNotForAnUnsentDraft() {
+        assertThat(SlaBreachScheduler.SLA_EXEMPT_STATUSES).containsExactlyInAnyOrder(
+                TicketStatus.CLOSED, TicketStatus.AUTO_SENT, TicketStatus.IRRELEVANT);
     }
 }

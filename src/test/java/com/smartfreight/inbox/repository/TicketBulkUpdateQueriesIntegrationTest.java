@@ -4,6 +4,7 @@ import com.smartfreight.inbox.TestcontainersConfiguration;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.Tenant;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
+import com.smartfreight.inbox.scheduler.SlaBreachScheduler;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -215,18 +216,18 @@ class TicketBulkUpdateQueriesIntegrationTest {
 
     @Test
     void markSlaBreached_flagsOverdueOpenTickets_withoutTouchingUpdatedAt() {
-        List<TicketStatus> exempt = List.of(TicketStatus.CLOSED, TicketStatus.IRRELEVANT);
         Long overdue = ticket(tenantA, t -> t.status(TicketStatus.DRAFT_READY)
                 .slaDeadlineAt(AN_HOUR_AGO).updatedAt(A_DAY_AGO));
         Long notYetDue = ticket(tenantA, t -> t.status(TicketStatus.DRAFT_READY).slaDeadlineAt(NOW.plusHours(1)));
         Long noDeadline = ticket(tenantA, t -> t.status(TicketStatus.DRAFT_READY));
         Long closed = ticket(tenantA, t -> t.status(TicketStatus.CLOSED).slaDeadlineAt(AN_HOUR_AGO));
         Long irrelevant = ticket(tenantA, t -> t.status(TicketStatus.IRRELEVANT).slaDeadlineAt(AN_HOUR_AGO));
+        Long autoSent = ticket(tenantA, t -> t.status(TicketStatus.AUTO_SENT).slaDeadlineAt(AN_HOUR_AGO));
         Long alreadyBreached = ticket(tenantA, t -> t.status(TicketStatus.DRAFT_READY)
                 .slaDeadlineAt(AN_HOUR_AGO).slaBreached(true));
         Long dueExactlyNow = ticket(tenantA, t -> t.status(TicketStatus.DRAFT_READY).slaDeadlineAt(NOW));
 
-        int breached = asTenant(tenantA, () -> tickets.markSlaBreached(NOW, exempt));
+        int breached = asTenant(tenantA, () -> tickets.markSlaBreached(NOW, SlaBreachScheduler.SLA_EXEMPT_STATUSES));
 
         assertThat(breached).isEqualTo(1);
         assertThat(slaBreached(overdue)).isTrue();
@@ -236,9 +237,28 @@ class TicketBulkUpdateQueriesIntegrationTest {
         assertThat(slaBreached(noDeadline)).isFalse();
         assertThat(slaBreached(closed)).isFalse();
         assertThat(slaBreached(irrelevant)).isFalse();
+        assertThat(slaBreached(autoSent)).isFalse();
         assertThat(slaBreached(alreadyBreached)).isTrue();
         // strictly before now: a deadline that is exactly now is not breached yet
         assertThat(slaBreached(dueExactlyNow)).isFalse();
+    }
+
+    /**
+     * What the analytics SLA KPI reads. A ticket auto-sent in time stays out of it once its deadline passes;
+     * one flagged while it waited (Ollama down, say) and only then auto-sent stays in, because it was late.
+     */
+    @Test
+    void markSlaBreached_analyticsCountsOnlyTicketsThatWereLate() {
+        ticket(tenantA, t -> t.status(TicketStatus.AUTO_SENT).slaDeadlineAt(AN_HOUR_AGO));
+        ticket(tenantA, t -> t.status(TicketStatus.AUTO_SENT).slaDeadlineAt(AN_HOUR_AGO).slaBreached(true));
+        ticket(tenantA, t -> t.status(TicketStatus.DRAFT_READY).slaDeadlineAt(AN_HOUR_AGO));
+
+        long count = asTenant(tenantA, () -> {
+            tickets.markSlaBreached(NOW, SlaBreachScheduler.SLA_EXEMPT_STATUSES);
+            return tickets.countByCreatedAtGreaterThanEqualAndSlaBreachedTrue(A_DAY_AGO);
+        });
+
+        assertThat(count).isEqualTo(2);
     }
 
     @Test

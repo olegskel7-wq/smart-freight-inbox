@@ -22,8 +22,8 @@ import java.util.List;
  * (only rows with slaBreached = false are touched), so concurrent instances or
  * overlapping runs are harmless.
  *
- * CLOSED and IRRELEVANT tickets are excluded — a ticket answered in time never
- * becomes breached, and spam carries no SLA. DRAFT_READY and FAILED still count
+ * CLOSED, AUTO_SENT and IRRELEVANT tickets are excluded — a ticket answered in time
+ * never becomes breached, and spam carries no SLA. DRAFT_READY and FAILED still count
  * as open: the SLA promise is a *reply*, and an unsent draft is not a reply.
  *
  * Once set, the flag is never cleared (including by a later reply) — breaches are
@@ -35,8 +35,8 @@ public class SlaBreachScheduler {
     private static final Logger log = LoggerFactory.getLogger(SlaBreachScheduler.class);
 
     /** Statuses where the SLA clock no longer applies. */
-    static final List<TicketStatus> SLA_EXEMPT_STATUSES =
-            List.of(TicketStatus.CLOSED, TicketStatus.IRRELEVANT);
+    public static final List<TicketStatus> SLA_EXEMPT_STATUSES =
+            List.of(TicketStatus.CLOSED, TicketStatus.AUTO_SENT, TicketStatus.IRRELEVANT);
 
     private final EmailTicketRepository emailTicketRepository;
     private final SlaService slaService;
