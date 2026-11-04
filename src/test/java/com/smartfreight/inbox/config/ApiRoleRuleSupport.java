@@ -16,6 +16,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.context.WebApplicationContext;
@@ -51,10 +52,7 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 @Import(TestcontainersConfiguration.class)
 abstract class ApiRoleRuleSupport {
 
-    /**
-     * The answer of a route with nothing to reject before its Keycloak call. {@link TestcontainersConfiguration} points
-     * the admin client at a closed port, so that call fails here and no request can reach a real Keycloak.
-     */
+    /** The answer of a route with nothing to reject before its Keycloak call, see {@link TestcontainersConfiguration}. */
     static final int KEYCLOAK_DOWN = 500;
 
     record Route(HttpMethod method, String path, String body, int allowedStatus, Class<?> controller) {
@@ -123,14 +121,13 @@ abstract class ApiRoleRuleSupport {
     @ParameterizedTest(name = "{0}")
     @MethodSource("routes")
     void allowedRole_reachesTheController(Route route) throws Exception {
-        mvc.perform(route.toRequest().with(tokenWithRole(allowedRole)))
+        MvcResult result = mvc.perform(route.toRequest().with(tokenWithRole(allowedRole)))
                 .andExpect(status().is(route.allowedStatus()))
                 .andExpect(handler().handlerType(route.controller()))
-                .andExpect(result -> {
-                    if (route.allowedStatus() == KEYCLOAK_DOWN) {
-                        assertThat(result.getResolvedException()).isInstanceOf(WebClientRequestException.class);
-                    }
-                });
+                .andReturn();
+        if (route.allowedStatus() == KEYCLOAK_DOWN) {
+            assertThat(result.getResolvedException()).isInstanceOf(WebClientRequestException.class);
+        }
     }
 
     private RequestPostProcessor tokenWithRole(String role) {

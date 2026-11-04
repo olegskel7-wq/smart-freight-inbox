@@ -6,8 +6,8 @@ import org.springframework.http.HttpMethod;
 import java.util.stream.Stream;
 
 /**
- * {@code /api/webhooks/**} is ADMIN. No subscription is created: the empty create is rejected and an unknown id reads
- * as not found, in the tenant created for the test.
+ * {@code /api/webhooks/**} is ADMIN. No subscription is created: the empty create and an unknown id answer 400, and the
+ * delivery log of an unknown id is empty, in the tenant created for the test.
  */
 class WebhooksAdminRuleTest extends ApiRoleRuleSupport {
 
