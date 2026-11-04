@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 /**
@@ -228,12 +229,30 @@ public class AutoSendService {
     /** Threshold from settings, defaulting and clamping malformed values to a sane [0,1]. */
     double threshold() {
         String raw = settingsService.getString(KEY_THRESHOLD, String.valueOf(DEFAULT_THRESHOLD));
-        try {
-            double parsed = Double.parseDouble(raw.trim());
-            return Math.min(1.0, Math.max(0.0, parsed));
-        } catch (NumberFormatException e) {
+        OptionalDouble parsed = parseThreshold(raw);
+        if (parsed.isEmpty()) {
             log.warn("Malformed {} value '{}' — using default {}", KEY_THRESHOLD, raw, DEFAULT_THRESHOLD);
             return DEFAULT_THRESHOLD;
+        }
+        return parsed.getAsDouble();
+    }
+
+    /**
+     * Parses a threshold, clamped to [0,1]; empty when it is missing or not a number. {@code NaN} counts as
+     * not a number even though it parses: {@code confidence < NaN} is never true, so it would open the gate
+     * in {@link #shouldAutoSend} for every ticket.
+     */
+    public static OptionalDouble parseThreshold(String raw) {
+        if (raw == null) {
+            return OptionalDouble.empty();
+        }
+        try {
+            double parsed = Double.parseDouble(raw.trim());
+            return Double.isNaN(parsed)
+                    ? OptionalDouble.empty()
+                    : OptionalDouble.of(Math.min(1.0, Math.max(0.0, parsed)));
+        } catch (NumberFormatException e) {
+            return OptionalDouble.empty();
         }
     }
 

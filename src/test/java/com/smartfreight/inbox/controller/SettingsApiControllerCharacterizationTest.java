@@ -158,7 +158,7 @@ class SettingsApiControllerCharacterizationTest extends SettingsApiMockMvcSuppor
     // ------------------------------------------------------------------------- auto-send
 
     @ParameterizedTest
-    @CsvSource({"' 0.7 ',0.7", "-3,0.0", "7,1.0", "0,0.0", "1,1.0"})
+    @CsvSource({"' 0.7 ',0.7", "-3,0.0", "7,1.0", "0,0.0", "1,1.0", "Infinity,1.0", "-Infinity,0.0"})
     void autoSend_trimsAndClampsTheThreshold(String sent, String stored) throws Exception {
         postJson("/api/settings/autosend", "{\"enabled\":false,\"threshold\":\"" + sent + "\",\"types\":[]}")
                 .andExpect(status().isOk());
@@ -166,17 +166,9 @@ class SettingsApiControllerCharacterizationTest extends SettingsApiMockMvcSuppor
         verify(settingsService).setString(AutoSendService.KEY_THRESHOLD, stored);
     }
 
-    /** A known bug pinned as-is: {@code NaN} parses and survives the clamp, and it disables the gate. See docs/refactoring.md. */
-    @Test
-    void autoSend_storesNaNAsTheThreshold() throws Exception {
-        postJson("/api/settings/autosend", "{\"enabled\":true,\"threshold\":\"NaN\",\"types\":[]}")
-                .andExpect(status().isOk());
-
-        verify(settingsService).setString(AutoSendService.KEY_THRESHOLD, "NaN");
-    }
-
     @ParameterizedTest
-    @ValueSource(strings = {"{\"enabled\":true,\"types\":[]}", "{\"enabled\":true,\"threshold\":\"high\"}"})
+    @ValueSource(strings = {"{\"enabled\":true,\"types\":[]}", "{\"enabled\":true,\"threshold\":\"high\"}",
+            "{\"enabled\":true,\"threshold\":\"NaN\"}", "{\"enabled\":true,\"threshold\":\" -NaN \"}"})
     void autoSend_rejectsAMissingOrMalformedThreshold_storingNothing(String json) throws Exception {
         postJson("/api/settings/autosend", json)
                 .andExpect(status().isBadRequest())
@@ -194,6 +186,14 @@ class SettingsApiControllerCharacterizationTest extends SettingsApiMockMvcSuppor
 
         verify(settingsService).setString(AutoSendService.FEATURE_KEY, "false");
         verify(settingsService).setString(AutoSendService.KEY_TYPES, "GENERAL,RFQ");
+    }
+
+    @Test
+    void autoSend_dropsANullType() throws Exception {
+        postJson("/api/settings/autosend", "{\"enabled\":false,\"threshold\":\"0.5\",\"types\":[null,\"RFQ\"]}")
+                .andExpect(status().isOk());
+
+        verify(settingsService).setString(AutoSendService.KEY_TYPES, "RFQ");
     }
 
     @Test
