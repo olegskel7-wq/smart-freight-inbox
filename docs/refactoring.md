@@ -110,7 +110,8 @@ Branch coverage of the classes the plan touches (clean run):
   context: no token 401, OPERATOR 403, ADMIN reaches the controller. Loosening the rule to `authenticated()` fails the 12
   OPERATOR cases; `permitAll()` fails those and the 12 no-token cases. `jwt()` skips the decoder (signature, issuer, `azp`)
   and the chain's wiring of `KeycloakJwtRoleConverter`, because swapping the decoder would fork the context. Dropping that
-  wiring from `SecurityConfig` would stay green here; only the live 401/200 checks would see it.
+  wiring from `SecurityConfig` stays green here (tried), so a real token against the live stack is the only check of it.
+  One Spring context across the whole run. 933 tests, 89.4 % / 77.3 %.
 - Still untested through the chain: the same rules for `/api/admin/**`, `/api/admin/tenants/**`, `/api/users/**` and
   `/api/webhooks/**`. `SettingsAdminRuleTest` is the pattern to copy.
 - A settings body without a primitive field (`enabled` on `/autosend`) answers 500, not 400: `GlobalExceptionHandler`
