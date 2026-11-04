@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * JSON API backing the React {@code /settings} page; the mailbox rows live in
@@ -69,26 +70,23 @@ public class SettingsApiController {
 
     /**
      * POST /api/settings/autosend — updates the auto-send gates. The threshold is clamped to
-     * [0,1]; the type list is normalised against {@link TicketType} (unknown names dropped, mirroring the
+     * [0,1]; the type list is normalised against {@link TicketType} (null and unknown names dropped, mirroring the
      * tolerant read path). Enabling auto-send with no allowed types is saved as-is — the SPA flags it.
      */
     @PostMapping("/autosend")
     public SettingsResponse saveAutoSend(@RequestBody AutoSendRequest request) {
-        double parsed;
-        try {
-            parsed = Math.min(1.0, Math.max(0.0, Double.parseDouble(request.threshold().trim())));
-        } catch (NullPointerException | NumberFormatException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Threshold must be a number between 0 and 1.");
-        }
+        double threshold = AutoSendService.parseThreshold(request.threshold())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Threshold must be a number between 0 and 1."));
 
         List<String> validTypes = (request.types() == null ? List.<String>of() : request.types()).stream()
+                .filter(Objects::nonNull)
                 .map(t -> t.trim().toUpperCase())
                 .filter(this::isKnownType)
                 .toList();
 
         settingsService.setString(AutoSendService.FEATURE_KEY, String.valueOf(request.enabled()));
-        settingsService.setString(AutoSendService.KEY_THRESHOLD, String.valueOf(parsed));
+        settingsService.setString(AutoSendService.KEY_THRESHOLD, String.valueOf(threshold));
         settingsService.setString(AutoSendService.KEY_TYPES, String.join(",", validTypes));
         return snapshotAssembler.snapshot();
     }

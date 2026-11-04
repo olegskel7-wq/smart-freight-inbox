@@ -161,6 +161,23 @@ class AutoSendServiceTest {
     }
 
     @Test
+    void storedNaNThreshold_fallsBackToDefault() {
+        when(settingsService.getString(eq(AutoSendService.KEY_THRESHOLD), anyString())).thenReturn("NaN");
+
+        assertThat(service.threshold()).isEqualTo(AutoSendService.DEFAULT_THRESHOLD);
+    }
+
+    /** {@code confidence < NaN} is never true, so a NaN that reached the gate would let every ticket through. */
+    @Test
+    void storedNaNThreshold_stillBlocksLowConfidence() {
+        stubEnabledDefaults();
+        lenient().when(settingsService.getString(eq(AutoSendService.KEY_THRESHOLD), anyString())).thenReturn("NaN");
+
+        assertThat(service.shouldAutoSend(ticket(TicketStatus.DRAFT_READY, TicketType.STATUS_UPDATE, 0.1))).isFalse();
+        assertThat(service.shouldAutoSend(ticket(TicketStatus.DRAFT_READY, TicketType.STATUS_UPDATE, 0.9))).isTrue();
+    }
+
+    @Test
     void thresholdOutOfRange_isClamped() {
         when(settingsService.getString(eq(AutoSendService.KEY_THRESHOLD), anyString()))
                 .thenReturn("7");

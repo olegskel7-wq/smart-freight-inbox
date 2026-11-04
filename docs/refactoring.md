@@ -91,11 +91,12 @@ Branch coverage of the classes the plan touches (clean run):
 - `@EnableScheduling` has no off switch, so the real schedulers run inside the shared Spring test context.
   `WebhookTenantIsolationTest` and `TicketBulkUpdateQueriesIntegrationTest` date their rows ahead to stay out of
   reach. If another test has to do this, or a scheduler causes a flake, make scheduling switchable for all tests.
-- 🔴 `POST /api/settings/autosend` stores `NaN` as the threshold (it parses as a double and survives the clamp), and
-  `AutoSendService` then compares `confidence < NaN`, which is never true: the confidence gate is off and every
-  allowlisted ticket is emailed unreviewed. Admin-only input. Pinned as-is by the characterisation test; fix in a
-  separate branch, on both the save and the read. A `null` element in `types` answers 500; a missing prompt answers
-  500 after the other prompt was stored (the writes are separate transactions; the SPA always sends both).
+- ✅ A `NaN` threshold switched the auto-send confidence gate off: it parsed as a double, survived the clamp, and
+  `confidence < NaN` is never true, so every allowlisted ticket was emailed unreviewed. `POST /api/settings/autosend`
+  accepted it from a direct API call (the page's number field cannot send it). Fixed in `fix/autosend-threshold-validation`:
+  `AutoSendService.parseThreshold` is the one parser for the save (400) and the read (default), and a `null` type is dropped
+  instead of a 500. Still open: a missing prompt answers 500 after the other prompt was stored (separate transactions; the
+  SPA always sends both).
 - ✅ CI was red from 3 Nov because the runner moved to Ubuntu 26.04 with Docker 29, not because of this work: the
   previously green `68e369a` failed the same way when re-run. Testcontainers 1.21.3 asked for an API version
   Docker 29 refuses, so every container test failed with "Could not find a valid Docker environment". Local runs
@@ -262,8 +263,8 @@ Branch coverage of the classes the plan touches (clean run):
    deleted Thymeleaf controller, and the milestones Javadoc no longer claims an upper-casing the code never did.
    `/simplify` then folded the wiring into `SettingsApiMockMvcSupport`, the mailbox failures into two tables, removed
    nine older test cases the characterisation test covers more strictly, and took the auto-send defaults from
-   `AutoSendService`. Left for later: the save rules belong in a service next to the read rules, so that the threshold
-   is not parsed in two places; that is a behaviour change once the saves become atomic.
+   `AutoSendService`. Left for later: the other save rules belong in a service next to the read rules; that is a behaviour
+   change once the saves become atomic.
    889 tests green, 89 % / 77 %. Live on the rebuilt image: all 8 sampled endpoints answer 401 without a token, the page
    loads, a save and a mailbox toggle answer 200. Golden set identical to `after-2.3` across 18 scenarios (it exercises
    the pipeline, not this API). Not tested anywhere: an OPERATOR token getting 403 here (no `spring-security-test`).
