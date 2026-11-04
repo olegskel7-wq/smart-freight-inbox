@@ -349,9 +349,8 @@
 						<phase>verify</phase>
 						<goals><goal>report</goal></goals>
 					</execution>
-					<!-- Coverage gate: the build fails below 85 % instructions / 70 % branches. The suite
-					     measured 89 % / 76 % after the Nov 2026 refactoring (docs/refactoring.md); the gate
-					     sits a few points under that so a real drop fails CI while noise does not. -->
+					<!-- Coverage gate: kept a few points under what the suite measures, so that a real drop
+					     fails CI while ordinary noise does not. -->
 					<execution>
 						<id>check</id>
 						<goals><goal>check</goal></goals>

@@ -82,6 +82,12 @@ Branch coverage of the classes the plan touches (clean run):
 - `smartfreight_ollama_request_seconds{operation="drafting"}` carries a hard-coded `model="llama3.1:8b"`
   tag whatever `ollama.drafting-model` is set to (now in `OllamaDraftClient`; pinned by
   `AiDraftingPromptCharacterizationTest`). Tag from the configured model in a separate small fix.
+- `SLA_EXEMPT_STATUSES` omits `AUTO_SENT` and auto-send does not clear `sla_deadline_at`, so a ticket answered
+  in time is flagged breached once its deadline passes, and the analytics SLA count (no status filter)
+  includes it. Fix in a separate branch.
+- `existsInboundReplyFrom` is a plain substring match: a quote to `an@acme.test` counts `jan@acme.test` as
+  the reply and drops the follow-up (it fails toward not nudging); `_` and `%` in an address act as wildcards.
+  Pinned as a known limitation by `TicketBulkUpdateQueriesIntegrationTest`.
 
 ## Plan
 
@@ -227,7 +233,16 @@ Branch coverage of the classes the plan touches (clean run):
    (behaviour changes): `ask` holds its read-only transaction across both Ollama calls (narrow it to
    `summarise`); `answer()` substitutes the untrusted question before the trusted `{facts}`, unlike the
    drafting prompts' trusted-first order.
-4. `EmailTicketRepository` (group queries, SQL unchanged).
+4. ✅ `EmailTicketRepository`: the planned regrouping was dropped. 258 of its 414 lines are Javadoc and it
+   holds no logic, so moving declarations around would change nothing a reader feels. The real gap was
+   that the SQL ran unchecked: the callers are tested over a mocked repository. Branch
+   `refactor/2.4-repository-safety-net` adds `TicketBulkUpdateQueriesIntegrationTest` (real Postgres, RLS
+   on): the four bulk updates and `existsInboundReplyFrom` — rows touched, columns written, strict cutoffs,
+   soft-deleted rows, tenant isolation, the system context. The real schedulers run in that shared context,
+   so its dates sit a week ahead and its retry counts are exhausted; system-context checks roll back. The
+   JaCoCo gate goes from 60 % instructions to 85 % instructions / 70 % branches.
+5. `SettingsApiController` (346 lines, 50 % branches; no step until now): characterisation tests first, then a
+   split by sub-resource as in step 2.
 
 **Stage 3 — only on a separate decision**
 1. Remove the binary (pre-1.4) classifier mode — a behaviour change; first confirm no tenant has

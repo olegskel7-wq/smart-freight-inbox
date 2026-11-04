@@ -22,24 +22,39 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 /**
  * Pins the bulk JPQL statements of {@link EmailTicketRepository} against a real PostgreSQL
  * (Testcontainers, RLS on): which rows each one touches, which columns it writes, what it counts,
- * and that a tenant context cannot reach another tenant's rows. The schedulers that call them
- * ({@code StuckTicketRecovery}, {@code StuckTicketSweeper}, {@code SlaBreachScheduler},
+ * that soft-deleted rows stay out, and that a tenant context cannot reach another tenant's rows. The
+ * callers ({@code StuckTicketRecovery}, {@code StuckTicketSweeper}, {@code SlaBreachScheduler},
  * {@code TicketProcessingService.prepareForRetry}, {@code QuoteFollowUpScheduler}) are unit-tested
- * over a mocked repository, so until now the SQL itself ran unchecked.
+ * over a mocked repository, so these tests are the only ones that run the statements themselves.
  *
- * <p>Not {@code @Transactional}: bulk updates bypass the persistence context, so every read here is a
- * fresh session or plain JDBC. Two tenants are created per test and hard-deleted afterwards under the
- * system context. Schedulers run under the system context and therefore across tenants, so the row
- * counts they get include whatever else is in the database; the exact-count assertions run under a
- * tenant context, where RLS leaves only that tenant's rows in reach.
+ * <p>Not {@code @Transactional}: the rows must be committed for RLS and the bulk statements to see
+ * them the way production does. Two tenants are created per test and hard-deleted afterwards.
+ *
+ * <p>The real schedulers keep running in this shared Spring context, across all tenants, so the test
+ * data stays out of their reach: see {@link #NOW} and {@link #RETRIES_EXHAUSTED}. Exact counts are
+ * asserted under a tenant context, where RLS leaves only that tenant's rows. The system context
+ * reaches the whole shared database, so those checks roll back ({@link #asSystemThenRollBack}).
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class TicketBulkUpdateQueriesIntegrationTest {
+
+    /**
+     * The test's "now", a week ahead of the wall clock. Every date here derives from it, so to the live
+     * {@code SlaBreachScheduler} no deadline is overdue and to the {@code StuckTicketSweeper} no row is
+     * stale; only the explicit arguments in these tests make them so.
+     */
+    private static final LocalDateTime NOW = LocalDateTime.now().plusDays(7).truncatedTo(ChronoUnit.MILLIS);
+    private static final LocalDateTime AN_HOUR_AGO = NOW.minusHours(1);
+    private static final LocalDateTime A_DAY_AGO = NOW.minusDays(1);
+
+    /** The live {@code RetryScheduler} picks up RETRY_LATER rows only below this retry count. */
+    private static final int RETRIES_EXHAUSTED = 5;
 
     @Autowired
     private EmailTicketRepository tickets;
@@ -52,10 +67,6 @@ class TicketBulkUpdateQueriesIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
-
-    private static final LocalDateTime NOW = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS);
-    private static final LocalDateTime AN_HOUR_AGO = NOW.minusHours(1);
-    private static final LocalDateTime A_DAY_AGO = NOW.minusDays(1);
 
     private Long tenantA;
     private Long tenantB;
@@ -89,7 +100,7 @@ class TicketBulkUpdateQueriesIntegrationTest {
 
         assertThat(moved).isEqualTo(1);
         assertThat(status(processing)).isEqualTo(TicketStatus.RETRY_LATER);
-        assertThat(updatedAt(processing)).isAfter(AN_HOUR_AGO);
+        assertUpdatedAtIsTheWallClock(processing);
         assertThat(status(draft)).isEqualTo(TicketStatus.DRAFT_READY);
         assertThat(updatedAt(draft)).isEqualTo(A_DAY_AGO);
     }
@@ -99,12 +110,14 @@ class TicketBulkUpdateQueriesIntegrationTest {
         Long a = ticket(tenantA, t -> t.status(TicketStatus.PROCESSING));
         Long b = ticket(tenantB, t -> t.status(TicketStatus.PROCESSING));
 
-        int moved = asSystem(() -> tickets.bulkTransitionStatus(
-                TicketStatus.PROCESSING, TicketStatus.RETRY_LATER));
+        asSystemThenRollBack(() -> {
+            tickets.bulkTransitionStatus(TicketStatus.PROCESSING, TicketStatus.RETRY_LATER);
 
-        assertThat(moved).isGreaterThanOrEqualTo(2);
-        assertThat(status(a)).isEqualTo(TicketStatus.RETRY_LATER);
-        assertThat(status(b)).isEqualTo(TicketStatus.RETRY_LATER);
+            assertThat(status(a)).isEqualTo(TicketStatus.RETRY_LATER);
+            assertThat(status(b)).isEqualTo(TicketStatus.RETRY_LATER);
+        });
+
+        assertThat(status(a)).isEqualTo(TicketStatus.PROCESSING);
     }
 
     @Test
@@ -153,11 +166,26 @@ class TicketBulkUpdateQueriesIntegrationTest {
         assertThat(status(staleReceived)).isEqualTo(TicketStatus.RETRY_LATER);
         assertThat(status(staleNew)).isEqualTo(TicketStatus.RETRY_LATER);
         assertThat(status(staleProcessing)).isEqualTo(TicketStatus.RETRY_LATER);
-        assertThat(updatedAt(staleProcessing)).isAfter(AN_HOUR_AGO);
+        assertUpdatedAtIsTheWallClock(staleProcessing);
         assertThat(status(freshProcessing)).isEqualTo(TicketStatus.PROCESSING);
         assertThat(status(staleDraft)).isEqualTo(TicketStatus.DRAFT_READY);
         // strictly older than the cutoff: a row updated exactly at the cutoff is not stale yet
         assertThat(status(onTheCutoff)).isEqualTo(TicketStatus.NEW);
+    }
+
+    @Test
+    void bulkTransitionStaleStatus_underTheSystemContext_reachesEveryTenant() {
+        Long a = ticket(tenantA, t -> t.status(TicketStatus.NEW).updatedAt(A_DAY_AGO));
+        Long b = ticket(tenantB, t -> t.status(TicketStatus.NEW).updatedAt(A_DAY_AGO));
+
+        asSystemThenRollBack(() -> {
+            tickets.bulkTransitionStaleStatus(List.of(TicketStatus.NEW), TicketStatus.RETRY_LATER, AN_HOUR_AGO);
+
+            assertThat(status(a)).isEqualTo(TicketStatus.RETRY_LATER);
+            assertThat(status(b)).isEqualTo(TicketStatus.RETRY_LATER);
+        });
+
+        assertThat(status(a)).isEqualTo(TicketStatus.NEW);
     }
 
     @Test
@@ -171,6 +199,18 @@ class TicketBulkUpdateQueriesIntegrationTest {
         assertThat(swept).isEqualTo(1);
         assertThat(status(a)).isEqualTo(TicketStatus.RETRY_LATER);
         assertThat(status(b)).isEqualTo(TicketStatus.NEW);
+    }
+
+    @Test
+    void bulkTransitionStaleStatus_skipsSoftDeletedRows() {
+        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.NEW).updatedAt(A_DAY_AGO));
+        softDelete(deleted);
+
+        int swept = asTenant(tenantA, () -> tickets.bulkTransitionStaleStatus(
+                List.of(TicketStatus.NEW), TicketStatus.RETRY_LATER, AN_HOUR_AGO));
+
+        assertThat(swept).isZero();
+        assertThat(status(deleted)).isEqualTo(TicketStatus.NEW);
     }
 
     // ------------------------------------------------------------------- markSlaBreached
@@ -204,6 +244,21 @@ class TicketBulkUpdateQueriesIntegrationTest {
     }
 
     @Test
+    void markSlaBreached_underTheSystemContext_reachesEveryTenant() {
+        Long a = ticket(tenantA, t -> t.status(TicketStatus.NEW).slaDeadlineAt(AN_HOUR_AGO));
+        Long b = ticket(tenantB, t -> t.status(TicketStatus.NEW).slaDeadlineAt(AN_HOUR_AGO));
+
+        asSystemThenRollBack(() -> {
+            tickets.markSlaBreached(NOW, List.of(TicketStatus.CLOSED));
+
+            assertThat(slaBreached(a)).isTrue();
+            assertThat(slaBreached(b)).isTrue();
+        });
+
+        assertThat(slaBreached(a)).isFalse();
+    }
+
+    @Test
     void markSlaBreached_underATenantContext_leavesOtherTenantsAlone() {
         Long a = ticket(tenantA, t -> t.status(TicketStatus.NEW).slaDeadlineAt(AN_HOUR_AGO));
         Long b = ticket(tenantB, t -> t.status(TicketStatus.NEW).slaDeadlineAt(AN_HOUR_AGO));
@@ -215,58 +270,111 @@ class TicketBulkUpdateQueriesIntegrationTest {
         assertThat(slaBreached(b)).isFalse();
     }
 
+    @Test
+    void markSlaBreached_skipsSoftDeletedRows() {
+        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.NEW).slaDeadlineAt(AN_HOUR_AGO));
+        softDelete(deleted);
+
+        int breached = asTenant(tenantA, () -> tickets.markSlaBreached(NOW, List.of(TicketStatus.CLOSED)));
+
+        assertThat(breached).isZero();
+        assertThat(slaBreached(deleted)).isFalse();
+    }
+
     // ------------------------------------------------------------------ resetFailedToNew
 
     @Test
     void resetFailedToNew_resetsStatusAndRetryCount_andBumpsUpdatedAt() {
-        Long failed = ticket(tenantA, t -> t.status(TicketStatus.FAILED).retryCount(3).updatedAt(A_DAY_AGO));
-        Long retryLater = ticket(tenantA, t -> t.status(TicketStatus.RETRY_LATER).retryCount(2).updatedAt(A_DAY_AGO));
+        Long failed = ticket(tenantA, t -> t.status(TicketStatus.FAILED).updatedAt(A_DAY_AGO));
+        Long retryLater = ticket(tenantA, t -> t.status(TicketStatus.RETRY_LATER).updatedAt(A_DAY_AGO));
 
         int reset = asTenant(tenantA, () -> tickets.resetFailedToNew(TicketStatus.NEW, TicketStatus.FAILED));
 
         assertThat(reset).isEqualTo(1);
         assertThat(status(failed)).isEqualTo(TicketStatus.NEW);
         assertThat(retryCount(failed)).isZero();
-        assertThat(updatedAt(failed)).isAfter(AN_HOUR_AGO);
+        assertUpdatedAtIsTheWallClock(failed);
         assertThat(status(retryLater)).isEqualTo(TicketStatus.RETRY_LATER);
-        assertThat(retryCount(retryLater)).isEqualTo(2);
+        assertThat(retryCount(retryLater)).isEqualTo(RETRIES_EXHAUSTED);
+        assertThat(updatedAt(retryLater)).isEqualTo(A_DAY_AGO);
+    }
+
+    @Test
+    void resetFailedToNew_underATenantContext_leavesOtherTenantsAlone() {
+        Long a = ticket(tenantA, t -> t.status(TicketStatus.FAILED));
+        Long b = ticket(tenantB, t -> t.status(TicketStatus.FAILED));
+
+        int reset = asTenant(tenantA, () -> tickets.resetFailedToNew(TicketStatus.NEW, TicketStatus.FAILED));
+
+        assertThat(reset).isEqualTo(1);
+        assertThat(status(a)).isEqualTo(TicketStatus.NEW);
+        assertThat(status(b)).isEqualTo(TicketStatus.FAILED);
+    }
+
+    @Test
+    void resetFailedToNew_skipsSoftDeletedRows() {
+        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.FAILED));
+        softDelete(deleted);
+
+        int reset = asTenant(tenantA, () -> tickets.resetFailedToNew(TicketStatus.NEW, TicketStatus.FAILED));
+
+        assertThat(reset).isZero();
+        assertThat(status(deleted)).isEqualTo(TicketStatus.FAILED);
     }
 
     // ------------------------------------------------------------- existsInboundReplyFrom
 
     @Test
     void existsInboundReplyFrom_matchesALaterInboundFromThatSender_caseInsensitively() {
-        ticket(tenantA, t -> t.senderEmail("Jane.Doe@Customer.test").createdAt(NOW));
+        ticket(tenantA, t -> t.senderEmail("Jane.Doe@Customer.test"));
 
-        assertThat(asTenant(tenantA, () -> tickets.existsInboundReplyFrom("jane.doe@customer.test", AN_HOUR_AGO)))
-                .isTrue();
-        // the query is a substring match on the lower-cased sender: a bare address inside a display-name form
-        assertThat(asTenant(tenantA, () -> tickets.existsInboundReplyFrom("doe@customer", AN_HOUR_AGO)))
-                .isTrue();
-        assertThat(asTenant(tenantA, () -> tickets.existsInboundReplyFrom("someone.else@customer.test", AN_HOUR_AGO)))
-                .isFalse();
+        assertThat(replyExists(tenantA, "jane.doe@customer.test", AN_HOUR_AGO)).isTrue();
+        assertThat(replyExists(tenantA, "someone.else@customer.test", AN_HOUR_AGO)).isFalse();
+    }
+
+    @Test
+    void existsInboundReplyFrom_findsTheAddressInsideADisplayNameForm() {
+        ticket(tenantA, t -> t.senderEmail("Jane Doe <jane.doe@customer.test>"));
+
+        assertThat(replyExists(tenantA, "jane.doe@customer.test", AN_HOUR_AGO)).isTrue();
+    }
+
+    /**
+     * Records a known limitation, not a wish (docs/refactoring.md, "Found while writing the safety net"):
+     * the match is a plain substring, so a different customer whose address ends the same way counts as
+     * the reply and the follow-up is dropped. It fails toward not nudging.
+     */
+    @Test
+    void existsInboundReplyFrom_alsoMatchesALongerAddressEndingTheSameWay() {
+        ticket(tenantA, t -> t.senderEmail("jan@customer.test"));
+
+        assertThat(replyExists(tenantA, "an@customer.test", AN_HOUR_AGO)).isTrue();
     }
 
     @Test
     void existsInboundReplyFrom_ignoresProactiveMail_olderMail_andOtherTenants() {
-        ticket(tenantA, t -> t.senderEmail("jane@customer.test").createdAt(NOW).proactive(true));
+        ticket(tenantA, t -> t.senderEmail("jane@customer.test").proactive(true));
         ticket(tenantA, t -> t.senderEmail("jane@customer.test").createdAt(A_DAY_AGO));
-        ticket(tenantB, t -> t.senderEmail("jane@customer.test").createdAt(NOW));
+        ticket(tenantB, t -> t.senderEmail("jane@customer.test"));
 
-        assertThat(asTenant(tenantA, () -> tickets.existsInboundReplyFrom("jane@customer.test", AN_HOUR_AGO)))
-                .isFalse();
-        assertThat(asTenant(tenantB, () -> tickets.existsInboundReplyFrom("jane@customer.test", AN_HOUR_AGO)))
-                .isTrue();
+        assertThat(replyExists(tenantA, "jane@customer.test", AN_HOUR_AGO)).isFalse();
+        assertThat(replyExists(tenantB, "jane@customer.test", AN_HOUR_AGO)).isTrue();
+    }
+
+    @Test
+    void existsInboundReplyFrom_ignoresSoftDeletedMail() {
+        Long deleted = ticket(tenantA, t -> t.senderEmail("jane@customer.test"));
+        softDelete(deleted);
+
+        assertThat(replyExists(tenantA, "jane@customer.test", AN_HOUR_AGO)).isFalse();
     }
 
     @Test
     void existsInboundReplyFrom_requiresMailStrictlyAfterSince() {
         ticket(tenantA, t -> t.senderEmail("jane@customer.test").createdAt(AN_HOUR_AGO));
 
-        assertThat(asTenant(tenantA, () -> tickets.existsInboundReplyFrom("jane@customer.test", AN_HOUR_AGO)))
-                .isFalse();
-        assertThat(asTenant(tenantA, () -> tickets.existsInboundReplyFrom("jane@customer.test", A_DAY_AGO)))
-                .isTrue();
+        assertThat(replyExists(tenantA, "jane@customer.test", AN_HOUR_AGO)).isFalse();
+        assertThat(replyExists(tenantA, "jane@customer.test", A_DAY_AGO)).isTrue();
     }
 
     // ------------------------------------------------------------------------- helpers
@@ -277,44 +385,64 @@ class TicketBulkUpdateQueriesIntegrationTest {
                 .senderEmail("customer@acme.test")
                 .subject("bulk query test")
                 .body("test")
+                .retryCount(RETRIES_EXHAUSTED)
                 .createdAt(NOW)
                 .updatedAt(NOW);
         customise.accept(builder);
         return TenantContext.callAs(tenant, () -> tickets.save(builder.build()).getId());
     }
 
-    /** Runs a bulk statement the way the schedulers do: one transaction, inside a tenant context. */
+    private boolean replyExists(Long tenant, String email, LocalDateTime since) {
+        return asTenant(tenant, () -> tickets.existsInboundReplyFrom(email, since));
+    }
+
+    /** One transaction inside a tenant context; the checks after it read what was committed. */
     private <T> T asTenant(Long tenant, Supplier<T> work) {
         return TenantContext.callAs(tenant, () -> tx.execute(status -> work.get()));
     }
 
-    private <T> T asSystem(Supplier<T> work) {
-        return TenantContext.callAsSystem(() -> tx.execute(status -> work.get()));
+    /**
+     * The context the schedulers run under. A statement here reaches every row of the shared database,
+     * so the statement and its checks share one transaction that never commits.
+     */
+    private void asSystemThenRollBack(Runnable statementAndChecks) {
+        TenantContext.runAsSystem(() -> tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            statementAndChecks.run();
+        }));
     }
 
     private void softDelete(Long id) {
         TenantContext.runAsSystem(() -> jdbc.update("UPDATE email_ticket SET deleted = true WHERE id = ?", id));
     }
 
-    // Reads go through JDBC under the system context: they must see soft-deleted rows and rows of
-    // every tenant, and must not be served from a persistence context the bulk statement bypassed.
+    /** The statements write the database clock, far behind every date the rows were created with. */
+    private void assertUpdatedAtIsTheWallClock(Long id) {
+        assertThat(updatedAt(id)).isCloseTo(LocalDateTime.now(), within(1, ChronoUnit.MINUTES));
+    }
+
     private TicketStatus status(Long id) {
-        return TicketStatus.valueOf(TenantContext.callAsSystem(() -> jdbc.queryForObject(
-                "SELECT status FROM email_ticket WHERE id = ?", String.class, id)));
+        return TicketStatus.valueOf(column(id, "status", String.class));
     }
 
     private LocalDateTime updatedAt(Long id) {
-        return TenantContext.callAsSystem(() -> jdbc.queryForObject(
-                "SELECT updated_at FROM email_ticket WHERE id = ?", LocalDateTime.class, id));
+        return column(id, "updated_at", LocalDateTime.class);
     }
 
     private boolean slaBreached(Long id) {
-        return Boolean.TRUE.equals(TenantContext.callAsSystem(() -> jdbc.queryForObject(
-                "SELECT sla_breached FROM email_ticket WHERE id = ?", Boolean.class, id)));
+        return column(id, "sla_breached", Boolean.class);
     }
 
     private int retryCount(Long id) {
+        return column(id, "retry_count", Integer.class);
+    }
+
+    /**
+     * Plain JDBC under the system context: it sees soft-deleted rows and every tenant's rows, and is
+     * never served from a persistence context the bulk statement bypassed.
+     */
+    private <T> T column(Long id, String name, Class<T> type) {
         return TenantContext.callAsSystem(() -> jdbc.queryForObject(
-                "SELECT retry_count FROM email_ticket WHERE id = ?", Integer.class, id));
+                "SELECT " + name + " FROM email_ticket WHERE id = ?", type, id));
     }
 }
