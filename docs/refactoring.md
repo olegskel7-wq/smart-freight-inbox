@@ -86,8 +86,9 @@ Branch coverage of the classes the plan touches (clean run):
   in time was flagged breached once its deadline passed, and the analytics SLA count (no status filter) included
   it. Fixed in `fix/sla-auto-sent`: `AUTO_SENT` is exempt, and a ticket flagged while it waited and only then
   auto-sent stays counted, because it was late. No migration: the flag cannot be cleared by status alone (such a
-  late ticket looks the same), it takes the first `AUTO_SEND` audit row against `sla_deadline_at`. The dev DB holds
-  one wrong row (ticket 102, demo tenant, sent 18 s after receipt, deadline 4 h), left as is; no production data exists yet.
+  late ticket looks the same), it takes the first `AUTO_SEND` audit row against `sla_deadline_at`. The dev DB held
+  one wrong row (ticket 102, demo tenant, sent 18 s after receipt, deadline 4 h), cleared by hand under that check; no
+  production data exists yet.
 - `existsInboundReplyFrom` is a plain substring match: a quote to `an@acme.test` counts `jan@acme.test` as
   the reply and drops the follow-up (it fails toward not nudging); `_` and `%` in an address act as wildcards.
   Pinned as a known limitation by `TicketBulkUpdateQueriesIntegrationTest`.
