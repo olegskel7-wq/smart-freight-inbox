@@ -26,8 +26,8 @@ public class MailboxSettingsController {
     private final MailboxManagementService mailboxService;
     private final SettingsSnapshotAssembler snapshotAssembler;
 
-    MailboxSettingsController(MailboxManagementService mailboxService,
-                              SettingsSnapshotAssembler snapshotAssembler) {
+    public MailboxSettingsController(MailboxManagementService mailboxService,
+                                     SettingsSnapshotAssembler snapshotAssembler) {
         this.mailboxService = mailboxService;
         this.snapshotAssembler = snapshotAssembler;
     }

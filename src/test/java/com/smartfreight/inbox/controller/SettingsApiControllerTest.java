@@ -50,7 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Standalone MockMvc tests for the JSON settings API (Phase 3.2). No security/tenant filter here
  * (covered by KeycloakJwtRoleConverterTest / TenantFilterTest); this verifies the DTO snapshot, the
- * validation guards mirrored from {@link SettingsController}, and the mailbox error mapping.
+ * validation guards, and the mailbox error mapping.
  * The {@code @Value} platform fields are unset under standalone setup — tests assert tenant-scoped data.
  */
 @ExtendWith(MockitoExtension.class)

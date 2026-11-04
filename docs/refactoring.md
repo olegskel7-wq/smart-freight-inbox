@@ -91,8 +91,11 @@ Branch coverage of the classes the plan touches (clean run):
 - `@EnableScheduling` has no off switch, so the real schedulers run inside the shared Spring test context.
   `WebhookTenantIsolationTest` and `TicketBulkUpdateQueriesIntegrationTest` date their rows ahead to stay out of
   reach. If another test has to do this, or a scheduler causes a flake, make scheduling switchable for all tests.
-- `POST /api/settings/autosend` stores `NaN` as the threshold (it parses as a double and survives the clamp), and a
-  `null` element in `types` is a 500. Admin-only input. Pinned as-is for `NaN`; validate in a separate small fix.
+- 🔴 `POST /api/settings/autosend` stores `NaN` as the threshold (it parses as a double and survives the clamp), and
+  `AutoSendService` then compares `confidence < NaN`, which is never true: the confidence gate is off and every
+  allowlisted ticket is emailed unreviewed. Admin-only input. Pinned as-is by the characterisation test; fix in a
+  separate branch, on both the save and the read. A `null` element in `types` answers 500; a missing prompt answers
+  500 after the other prompt was stored (the writes are separate transactions; the SPA always sends both).
 - ✅ CI was red from 3 Nov because the runner moved to Ubuntu 26.04 with Docker 29, not because of this work: the
   previously green `68e369a` failed the same way when re-run. Testcontainers 1.21.3 asked for an API version
   Docker 29 refuses, so every container test failed with "Could not find a valid Docker environment". Local runs

@@ -188,7 +188,7 @@ class SettingsApiControllerCharacterizationTest {
         verify(settingsService).setString(AutoSendService.KEY_THRESHOLD, stored);
     }
 
-    /** Pinned as-is: {@code NaN} parses as a double and survives the clamp. See docs/refactoring.md. */
+    /** A known bug pinned as-is: {@code NaN} parses and survives the clamp, and it disables the gate. See docs/refactoring.md. */
     @Test
     void autoSend_storesNaNAsTheThreshold() throws Exception {
         postJson("/api/settings/autosend", "{\"enabled\":true,\"threshold\":\"NaN\",\"types\":[]}")

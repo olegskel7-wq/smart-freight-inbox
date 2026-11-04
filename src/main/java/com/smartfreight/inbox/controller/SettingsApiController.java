@@ -35,7 +35,7 @@ public class SettingsApiController {
     private final SettingsService settingsService;
     private final SettingsSnapshotAssembler snapshotAssembler;
 
-    SettingsApiController(SettingsService settingsService, SettingsSnapshotAssembler snapshotAssembler) {
+    public SettingsApiController(SettingsService settingsService, SettingsSnapshotAssembler snapshotAssembler) {
         this.settingsService = settingsService;
         this.snapshotAssembler = snapshotAssembler;
     }
