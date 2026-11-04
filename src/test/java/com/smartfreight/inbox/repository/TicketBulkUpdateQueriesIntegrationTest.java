@@ -53,8 +53,8 @@ class TicketBulkUpdateQueriesIntegrationTest {
     private static final LocalDateTime AN_HOUR_AGO = NOW.minusHours(1);
     private static final LocalDateTime A_DAY_AGO = NOW.minusDays(1);
 
-    /** The live {@code RetryScheduler} picks up RETRY_LATER rows only below this retry count. */
-    private static final int RETRIES_EXHAUSTED = 5;
+    /** Far above any retry limit: the live {@code RetryScheduler} picks up RETRY_LATER rows only below its limit. */
+    private static final int RETRIES_EXHAUSTED = 1_000;
 
     @Autowired
     private EmailTicketRepository tickets;
@@ -136,8 +136,7 @@ class TicketBulkUpdateQueriesIntegrationTest {
     @Test
     void bulkTransitionStatus_skipsSoftDeletedRows() {
         Long live = ticket(tenantA, t -> t.status(TicketStatus.PROCESSING));
-        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.PROCESSING));
-        softDelete(deleted);
+        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.PROCESSING).deleted(true));
 
         int moved = asTenant(tenantA, () -> tickets.bulkTransitionStatus(
                 TicketStatus.PROCESSING, TicketStatus.RETRY_LATER));
@@ -203,8 +202,7 @@ class TicketBulkUpdateQueriesIntegrationTest {
 
     @Test
     void bulkTransitionStaleStatus_skipsSoftDeletedRows() {
-        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.NEW).updatedAt(A_DAY_AGO));
-        softDelete(deleted);
+        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.NEW).updatedAt(A_DAY_AGO).deleted(true));
 
         int swept = asTenant(tenantA, () -> tickets.bulkTransitionStaleStatus(
                 List.of(TicketStatus.NEW), TicketStatus.RETRY_LATER, AN_HOUR_AGO));
@@ -272,8 +270,7 @@ class TicketBulkUpdateQueriesIntegrationTest {
 
     @Test
     void markSlaBreached_skipsSoftDeletedRows() {
-        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.NEW).slaDeadlineAt(AN_HOUR_AGO));
-        softDelete(deleted);
+        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.NEW).slaDeadlineAt(AN_HOUR_AGO).deleted(true));
 
         int breached = asTenant(tenantA, () -> tickets.markSlaBreached(NOW, List.of(TicketStatus.CLOSED)));
 
@@ -313,8 +310,7 @@ class TicketBulkUpdateQueriesIntegrationTest {
 
     @Test
     void resetFailedToNew_skipsSoftDeletedRows() {
-        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.FAILED));
-        softDelete(deleted);
+        Long deleted = ticket(tenantA, t -> t.status(TicketStatus.FAILED).deleted(true));
 
         int reset = asTenant(tenantA, () -> tickets.resetFailedToNew(TicketStatus.NEW, TicketStatus.FAILED));
 
@@ -363,8 +359,7 @@ class TicketBulkUpdateQueriesIntegrationTest {
 
     @Test
     void existsInboundReplyFrom_ignoresSoftDeletedMail() {
-        Long deleted = ticket(tenantA, t -> t.senderEmail("jane@customer.test"));
-        softDelete(deleted);
+        ticket(tenantA, t -> t.senderEmail("jane@customer.test").deleted(true));
 
         assertThat(replyExists(tenantA, "jane@customer.test", AN_HOUR_AGO)).isFalse();
     }
@@ -410,10 +405,6 @@ class TicketBulkUpdateQueriesIntegrationTest {
             status.setRollbackOnly();
             statementAndChecks.run();
         }));
-    }
-
-    private void softDelete(Long id) {
-        TenantContext.runAsSystem(() -> jdbc.update("UPDATE email_ticket SET deleted = true WHERE id = ?", id));
     }
 
     /** The statements write the database clock, far behind every date the rows were created with. */

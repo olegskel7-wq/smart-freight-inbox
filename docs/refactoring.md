@@ -88,6 +88,9 @@ Branch coverage of the classes the plan touches (clean run):
 - `existsInboundReplyFrom` is a plain substring match: a quote to `an@acme.test` counts `jan@acme.test` as
   the reply and drops the follow-up (it fails toward not nudging); `_` and `%` in an address act as wildcards.
   Pinned as a known limitation by `TicketBulkUpdateQueriesIntegrationTest`.
+- `@EnableScheduling` has no off switch, so the real schedulers run inside the shared Spring test context.
+  `WebhookTenantIsolationTest` and `TicketBulkUpdateQueriesIntegrationTest` date their rows ahead to stay out of
+  reach. If another test has to do this, or a scheduler causes a flake, make scheduling switchable for all tests.
 
 ## Plan
 
@@ -238,8 +241,7 @@ Branch coverage of the classes the plan touches (clean run):
    that the SQL ran unchecked: the callers are tested over a mocked repository. Branch
    `refactor/2.4-repository-safety-net` adds `TicketBulkUpdateQueriesIntegrationTest` (real Postgres, RLS
    on): the four bulk updates and `existsInboundReplyFrom` — rows touched, columns written, strict cutoffs,
-   soft-deleted rows, tenant isolation, the system context. The real schedulers run in that shared context,
-   so its dates sit a week ahead and its retry counts are exhausted; system-context checks roll back. The
+   soft-deleted rows, tenant isolation, the system context. The
    JaCoCo gate goes from 60 % instructions to 85 % instructions / 70 % branches.
 5. `SettingsApiController` (346 lines, 50 % branches; no step until now): characterisation tests first, then a
    split by sub-resource as in step 2.
