@@ -91,6 +91,11 @@ Branch coverage of the classes the plan touches (clean run):
 - `@EnableScheduling` has no off switch, so the real schedulers run inside the shared Spring test context.
   `WebhookTenantIsolationTest` and `TicketBulkUpdateQueriesIntegrationTest` date their rows ahead to stay out of
   reach. If another test has to do this, or a scheduler causes a flake, make scheduling switchable for all tests.
+- 🔴 `POST /api/settings/autosend` stores `NaN` as the threshold (it parses as a double and survives the clamp), and
+  `AutoSendService` then compares `confidence < NaN`, which is never true: the confidence gate is off and every
+  allowlisted ticket is emailed unreviewed. Admin-only input. Pinned as-is by the characterisation test; fix in a
+  separate branch, on both the save and the read. A `null` element in `types` answers 500; a missing prompt answers
+  500 after the other prompt was stored (the writes are separate transactions; the SPA always sends both).
 - ✅ CI was red from 3 Nov because the runner moved to Ubuntu 26.04 with Docker 29, not because of this work: the
   previously green `68e369a` failed the same way when re-run. Testcontainers 1.21.3 asked for an API version
   Docker 29 refuses, so every container test failed with "Could not find a valid Docker environment". Local runs
@@ -247,8 +252,21 @@ Branch coverage of the classes the plan touches (clean run):
    on): the four bulk updates and `existsInboundReplyFrom` — rows touched, columns written, strict cutoffs,
    soft-deleted rows, tenant isolation, the system context. The
    JaCoCo gate goes from 60 % instructions to 85 % instructions / 70 % branches.
-5. `SettingsApiController` (346 lines, 50 % branches; no step until now): characterisation tests first, then a
-   split by sub-resource as in step 2.
+5. ✅ `SettingsApiController` (346 → 193 lines, 5 → 2 dependencies) split like step 2: it keeps the snapshot GET and
+   the settings saves; `MailboxSettingsController` takes add / edit / toggle / delete under the same
+   `/api/settings/mailboxes` paths; the package-private `SettingsSnapshotAssembler` builds the `SettingsResponse`
+   both answer with. Paths, bodies, status codes and messages are unchanged; `/api/settings/**` stays ADMIN in
+   `SecurityConfig`. Branch `refactor/2.5-settings-api-controller`; first commit
+   `SettingsApiControllerCharacterizationTest` (33 methods, 49 cases) — branches 50 → 100 %, eight mutations each
+   fail it; test bodies untouched afterwards, only the two `setUp`s. The class Javadoc no longer points at the
+   deleted Thymeleaf controller, and the milestones Javadoc no longer claims an upper-casing the code never did.
+   `/simplify` then folded the wiring into `SettingsApiMockMvcSupport`, the mailbox failures into two tables, removed
+   nine older test cases the characterisation test covers more strictly, and took the auto-send defaults from
+   `AutoSendService`. Left for later: the save rules belong in a service next to the read rules, so that the threshold
+   is not parsed in two places; that is a behaviour change once the saves become atomic.
+   889 tests green, 89 % / 77 %. Live on the rebuilt image: all 8 sampled endpoints answer 401 without a token, the page
+   loads, a save and a mailbox toggle answer 200. Golden set identical to `after-2.3` across 18 scenarios (it exercises
+   the pipeline, not this API). Not tested anywhere: an OPERATOR token getting 403 here (no `spring-security-test`).
 
 **Stage 3 — only on a separate decision**
 1. Remove the binary (pre-1.4) classifier mode — a behaviour change; first confirm no tenant has

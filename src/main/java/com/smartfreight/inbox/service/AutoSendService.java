@@ -66,8 +66,8 @@ public class AutoSendService {
     /** Comma-separated {@link TicketType} allowlist for automatic sends. */
     public static final String KEY_TYPES = "autosend.types";
 
-    static final double DEFAULT_THRESHOLD = 0.8;
-    static final String DEFAULT_TYPES = "STATUS_UPDATE";
+    public static final double DEFAULT_THRESHOLD = 0.8;
+    public static final String DEFAULT_TYPES = "STATUS_UPDATE";
 
     private static final double WEIGHT_TYPE_SPECIFIC = 0.3;
     private static final double WEIGHT_IDENTIFIER_EXTRACTED = 0.2;

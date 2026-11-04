@@ -2,29 +2,19 @@ package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.integration.MailboxHealthMonitor;
-import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler;
 import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
 import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
-import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
 import com.smartfreight.inbox.service.TicketProcessingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
 import java.util.List;
@@ -48,26 +38,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Standalone MockMvc tests for the JSON settings API (Phase 3.2). No security/tenant filter here
- * (covered by KeycloakJwtRoleConverterTest / TenantFilterTest); this verifies the DTO snapshot, the
- * validation guards mirrored from {@link SettingsController}, and the mailbox error mapping.
- * The {@code @Value} platform fields are unset under standalone setup — tests assert tenant-scoped data.
+ * Snapshot and mailbox-row cases of the JSON settings API over a stubbed snapshot. Exact messages and
+ * stored values are in {@link SettingsApiControllerCharacterizationTest}.
  */
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
-class SettingsApiControllerTest {
-
-    @Mock private SettingsService settingsService;
-    @Mock private MailboxManagementService mailboxService;
-    @Mock private MailboxImapAdapterManager adapterManager;
-    @Mock private MailboxHealthMonitor mailboxHealth;
-    @Mock private SecretCipher secretCipher;
-
-    private MockMvc mockMvc;
+class SettingsApiControllerTest extends SettingsApiMockMvcSupport {
 
     @BeforeEach
     void setUp() {
-        // Snapshot stubs — buildResponse() reads these on every GET and on each successful save.
+        // Snapshot stubs — the assembler reads these on every GET and on each successful save.
         when(secretCipher.isConfigured()).thenReturn(true);
         when(settingsService.isDraftEnabled()).thenReturn(true);
         when(settingsService.getTenantOverride(OllamaClientProvider.KEY_OLLAMA_BASE_URL))
@@ -96,11 +74,6 @@ class SettingsApiControllerTest {
         when(adapterManager.isRunning(7L)).thenReturn(true);
         when(mailboxHealth.health(7L)).thenReturn(Optional.of(new MailboxHealthMonitor.MailboxHealth(
                 1L, false, Instant.now(), null, "AUTHENTICATIONFAILED Invalid credentials")));
-
-        mockMvc = MockMvcBuilders
-                .standaloneSetup(new SettingsApiController(
-                        settingsService, mailboxService, adapterManager, mailboxHealth, secretCipher))
-                .build();
     }
 
     @Test
@@ -122,38 +95,6 @@ class SettingsApiControllerTest {
     }
 
     @Test
-    void autoSendNormalisesTypesAndClampsThreshold() throws Exception {
-        mockMvc.perform(post("/api/settings/autosend")
-                        .contentType("application/json")
-                        .content("{\"enabled\":true,\"threshold\":\"1.5\",\"types\":[\"RFQ\",\"bogus\",\"general\"]}"))
-                .andExpect(status().isOk());
-
-        verify(settingsService).setString(AutoSendService.FEATURE_KEY, "true");
-        verify(settingsService).setString(AutoSendService.KEY_THRESHOLD, "1.0");
-        verify(settingsService).setString(AutoSendService.KEY_TYPES, "RFQ,GENERAL");
-    }
-
-    @Test
-    void autoSendRejectsNonNumericThreshold() throws Exception {
-        mockMvc.perform(post("/api/settings/autosend")
-                        .contentType("application/json")
-                        .content("{\"enabled\":true,\"threshold\":\"high\",\"types\":[]}"))
-                .andExpect(status().isBadRequest());
-
-        verify(settingsService, never()).setString(eq(AutoSendService.KEY_THRESHOLD), anyString());
-    }
-
-    @Test
-    void statusUpdateEnabledWithBlankMilestonesIsRejected() throws Exception {
-        mockMvc.perform(post("/api/settings/statusupdate")
-                        .contentType("application/json")
-                        .content("{\"enabled\":true,\"milestones\":\"   \"}"))
-                .andExpect(status().isBadRequest());
-
-        verify(settingsService, never()).setString(eq(StatusWatchScheduler.KEY_MILESTONES), anyString());
-    }
-
-    @Test
     void quoteFollowUpRejectsNegativeDelay() throws Exception {
         mockMvc.perform(post("/api/settings/quotefollowup")
                         .contentType("application/json")
@@ -172,38 +113,6 @@ class SettingsApiControllerTest {
 
         verify(settingsService).setString(EmailClassificationService.FEATURE_SMART_ROUTING, "true");
         verify(settingsService).setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, "uuid-123");
-    }
-
-    @Test
-    void routingBlankAssigneeClearsIt() throws Exception {
-        mockMvc.perform(post("/api/settings/routing")
-                        .contentType("application/json")
-                        .content("{\"smartRoutingEnabled\":false,\"escalationAssignee\":null}"))
-                .andExpect(status().isOk());
-
-        verify(settingsService).setString(EmailClassificationService.FEATURE_SMART_ROUTING, "false");
-        verify(settingsService).setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, "");
-    }
-
-    @Test
-    void ollamaRejectsNonHttpUrl() throws Exception {
-        mockMvc.perform(post("/api/settings/ollama")
-                        .contentType("application/json")
-                        .content("{\"ollamaBaseUrl\":\"ftp://nope\"}"))
-                .andExpect(status().isBadRequest());
-
-        verify(settingsService, never()).setString(eq(OllamaClientProvider.KEY_OLLAMA_BASE_URL), anyString());
-    }
-
-    @Test
-    void addMailboxMapsDuplicateToConflict() throws Exception {
-        doThrow(new DataIntegrityViolationException("dup"))
-                .when(mailboxService).create(anyString(), any(), anyString(), anyString(), any(), any(), any());
-
-        mockMvc.perform(post("/api/settings/mailboxes")
-                        .contentType("application/json")
-                        .content("{\"host\":\"imap.x.com\",\"port\":993,\"username\":\"u\",\"password\":\"p\"}"))
-                .andExpect(status().isConflict());
     }
 
     @Test
@@ -230,13 +139,10 @@ class SettingsApiControllerTest {
     }
 
 
-    /** Every way update can fail → the status the SPA branches on (one table instead of a test each). */
+    /** The update failures without a fixed message of their own in the characterisation test. */
     static Stream<Arguments> updateFailures() {
         return Stream.of(
-                Arguments.of(new MailboxManagementService.MailboxNotFoundException(99L), 404),
-                Arguments.of(new IllegalArgumentException("Port must be between 1 and 65535."), 400),
-                Arguments.of(new IllegalStateException("MAILBOX_ENCRYPTION_KEY is not set"), 400),
-                Arguments.of(new DataIntegrityViolationException("dup"), 409),
+                                Arguments.of(new IllegalStateException("MAILBOX_ENCRYPTION_KEY is not set"), 400),
                 Arguments.of(new MailboxManagementService.MailboxInUseException(), 409));
     }
 
