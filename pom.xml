@@ -349,7 +349,8 @@
 						<phase>verify</phase>
 						<goals><goal>report</goal></goals>
 					</execution>
-					<!-- Tikrina minimalų padengimo procentą – žemiau 60% build'as nepavyks -->
+					<!-- Coverage gate: kept a few points under what the suite measures, so that a real drop
+					     fails CI while ordinary noise does not. -->
 					<execution>
 						<id>check</id>
 						<goals><goal>check</goal></goals>
@@ -360,7 +361,12 @@
 										<limit>
 											<counter>INSTRUCTION</counter>
 											<value>COVEREDRATIO</value>
-											<minimum>0.60</minimum>
+											<minimum>0.85</minimum>
+										</limit>
+										<limit>
+											<counter>BRANCH</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>0.70</minimum>
 										</limit>
 									</limits>
 								</rule>
