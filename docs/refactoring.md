@@ -260,6 +260,10 @@ Branch coverage of the classes the plan touches (clean run):
    `SettingsApiControllerCharacterizationTest` (33 methods, 49 cases) — branches 50 → 100 %, eight mutations each
    fail it; test bodies untouched afterwards, only the two `setUp`s. The class Javadoc no longer points at the
    deleted Thymeleaf controller, and the milestones Javadoc no longer claims an upper-casing the code never did.
+   `/simplify` then folded the wiring into `SettingsApiMockMvcSupport`, the mailbox failures into two tables, removed
+   nine older test cases the characterisation test covers more strictly, and took the auto-send defaults from
+   `AutoSendService`. Left for later: the save rules belong in a service next to the read rules, so that the threshold
+   is not parsed in two places; that is a behaviour change once the saves become atomic.
 
 **Stage 3 — only on a separate decision**
 1. Remove the binary (pre-1.4) classifier mode — a behaviour change; first confirm no tenant has

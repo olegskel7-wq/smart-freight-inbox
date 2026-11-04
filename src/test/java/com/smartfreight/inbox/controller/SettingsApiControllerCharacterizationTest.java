@@ -1,35 +1,28 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
-import com.smartfreight.inbox.integration.MailboxHealthMonitor;
-import com.smartfreight.inbox.integration.MailboxImapAdapterManager;
 import com.smartfreight.inbox.scheduler.QuoteFollowUpScheduler;
 import com.smartfreight.inbox.scheduler.StatusWatchScheduler;
 import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
-import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
 import com.smartfreight.inbox.service.TicketProcessingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
@@ -51,24 +44,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Records what the {@code /api/settings} endpoints do today, ahead of splitting the controller: the
  * snapshot fields and the defaults it reads with, each save's stored values, every rejection's status
- * and exact message, and that a rejected save stores nothing. {@link SettingsApiControllerTest} keeps
- * the earlier, broader cases. Some of this is pinned as-is rather than as a wish, see the comments.
+ * and exact message, and that a rejected save stores nothing. Some of this is pinned as-is rather than as a
+ * wish, see the comments.
  */
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
-class SettingsApiControllerCharacterizationTest {
+class SettingsApiControllerCharacterizationTest extends SettingsApiMockMvcSupport {
 
     private static final String MAILBOX_JSON = """
             {"host":"imap.x.com","port":993,"username":"u@x.com","password":"p",
              "smtpHost":"smtp.x.com","smtpPort":587,"fromAddress":"sales@x.com"}""";
-
-    @Mock private SettingsService settingsService;
-    @Mock private MailboxManagementService mailboxService;
-    @Mock private MailboxImapAdapterManager adapterManager;
-    @Mock private MailboxHealthMonitor mailboxHealth;
-    @Mock private SecretCipher secretCipher;
-
-    private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
@@ -78,15 +61,10 @@ class SettingsApiControllerCharacterizationTest {
         when(settingsService.getTenantOverride(anyString())).thenReturn(Optional.empty());
         when(mailboxService.findAll()).thenReturn(List.of());
 
-        SettingsSnapshotAssembler assembler = new SettingsSnapshotAssembler(
-                settingsService, mailboxService, adapterManager, mailboxHealth, secretCipher);
         ReflectionTestUtils.setField(assembler, "smtpHost", "smtp.platform.test");
         ReflectionTestUtils.setField(assembler, "smtpPort", 2525);
         ReflectionTestUtils.setField(assembler, "smtpUser", "platform@test");
         ReflectionTestUtils.setField(assembler, "platformOllamaUrl", "http://ollama.platform:11434");
-        mockMvc = MockMvcBuilders.standaloneSetup(
-                new SettingsApiController(settingsService, assembler),
-                new MailboxSettingsController(mailboxService, assembler)).build();
     }
 
     private ResultActions postJson(String path, String json) throws Exception {
@@ -375,64 +353,41 @@ class SettingsApiControllerCharacterizationTest {
         verify(mailboxService).create("imap.x.com", 993, "u@x.com", "p", "smtp.x.com", 587, "sales@x.com");
     }
 
-    @Test
-    void addMailbox_explainsADuplicate() throws Exception {
-        doThrow(new DataIntegrityViolationException("uq")).when(mailboxService)
-                .create(any(), any(), any(), any(), any(), any(), any());
+    static Stream<Arguments> createFailures() {
+        return Stream.of(
+                Arguments.of(new DataIntegrityViolationException("uq"), 409,
+                        "This mailbox (host + username) is already configured."),
+                Arguments.of(new IllegalArgumentException("Host is required"), 400, "Host is required"),
+                Arguments.of(new IllegalStateException("No encryption key"), 400, "No encryption key"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("createFailures")
+    void addMailbox_answersEachFailure(RuntimeException failure, int expectedStatus, String reason) throws Exception {
+        doThrow(failure).when(mailboxService).create(any(), any(), any(), any(), any(), any(), any());
 
         postJson("/api/settings/mailboxes", MAILBOX_JSON)
-                .andExpect(status().isConflict())
-                .andExpect(status().reason("This mailbox (host + username) is already configured."));
+                .andExpect(status().is(expectedStatus))
+                .andExpect(status().reason(reason));
     }
 
-    @Test
-    void addMailbox_passesOnTheValidationMessage() throws Exception {
-        doThrow(new IllegalArgumentException("Host is required")).when(mailboxService)
-                .create(any(), any(), any(), any(), any(), any(), any());
-
-        postJson("/api/settings/mailboxes", MAILBOX_JSON)
-                .andExpect(status().isBadRequest())
-                .andExpect(status().reason("Host is required"));
-    }
-
-    @Test
-    void addMailbox_passesOnTheStateMessage() throws Exception {
-        doThrow(new IllegalStateException("No encryption key")).when(mailboxService)
-                .create(any(), any(), any(), any(), any(), any(), any());
-
-        postJson("/api/settings/mailboxes", MAILBOX_JSON)
-                .andExpect(status().isBadRequest())
-                .andExpect(status().reason("No encryption key"));
-    }
-
-    @Test
-    void updateMailbox_explainsADuplicate() throws Exception {
-        doThrow(new DataIntegrityViolationException("uq")).when(mailboxService)
-                .update(any(), any(), any(), any(), any(), any(), any(), any());
-
-        putJson("/api/settings/mailboxes/7", MAILBOX_JSON)
-                .andExpect(status().isConflict())
-                .andExpect(status().reason("Another mailbox with this host + username is already configured."));
-    }
-
-    @Test
-    void updateMailbox_passesOnTheMessageOfAnUnknownMailbox() throws Exception {
+    static Stream<Arguments> updateFailures() {
         RuntimeException notFound = new MailboxManagementService.MailboxNotFoundException(99L);
-        doThrow(notFound).when(mailboxService).update(any(), any(), any(), any(), any(), any(), any(), any());
+        return Stream.of(
+                Arguments.of(new DataIntegrityViolationException("uq"), 409,
+                        "Another mailbox with this host + username is already configured."),
+                Arguments.of(notFound, 404, notFound.getMessage()),
+                Arguments.of(new IllegalArgumentException("Password required"), 400, "Password required"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("updateFailures")
+    void updateMailbox_answersEachFailure(RuntimeException failure, int expectedStatus, String reason) throws Exception {
+        doThrow(failure).when(mailboxService).update(any(), any(), any(), any(), any(), any(), any(), any());
 
         putJson("/api/settings/mailboxes/99", MAILBOX_JSON)
-                .andExpect(status().isNotFound())
-                .andExpect(status().reason(notFound.getMessage()));
-    }
-
-    @Test
-    void updateMailbox_passesOnTheValidationMessage() throws Exception {
-        doThrow(new IllegalArgumentException("Password required")).when(mailboxService)
-                .update(any(), any(), any(), any(), any(), any(), any(), any());
-
-        putJson("/api/settings/mailboxes/7", MAILBOX_JSON)
-                .andExpect(status().isBadRequest())
-                .andExpect(status().reason("Password required"));
+                .andExpect(status().is(expectedStatus))
+                .andExpect(status().reason(reason));
     }
 
     @ParameterizedTest

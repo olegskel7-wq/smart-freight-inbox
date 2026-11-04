@@ -64,7 +64,7 @@ class SettingsSnapshotAssembler {
                         mailboxHealth.health(m.getId()).orElse(null)))
                 .toList();
 
-        String autoSendTypesCsv = settingsService.getString(AutoSendService.KEY_TYPES, "STATUS_UPDATE");
+        String autoSendTypesCsv = settingsService.getString(AutoSendService.KEY_TYPES, AutoSendService.DEFAULT_TYPES);
         List<String> autoSendTypes = Arrays.stream(autoSendTypesCsv.split(","))
                 .map(String::trim)
                 .filter(t -> !t.isEmpty())
@@ -83,7 +83,7 @@ class SettingsSnapshotAssembler {
                 settingsService.getString(SettingsService.KEY_EXTRACTION_PROMPT, ""),
                 settingsService.getString(SettingsService.KEY_DRAFTING_PROMPT, ""),
                 settingsService.isFeatureEnabled(AutoSendService.FEATURE_KEY, false),
-                settingsService.getString(AutoSendService.KEY_THRESHOLD, "0.8"),
+                settingsService.getString(AutoSendService.KEY_THRESHOLD, String.valueOf(AutoSendService.DEFAULT_THRESHOLD)),
                 autoSendTypes,
                 allTypes,
                 settingsService.isFeatureEnabled(StatusWatchScheduler.FEATURE_KEY, false),

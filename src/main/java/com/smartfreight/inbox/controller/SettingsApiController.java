@@ -87,7 +87,7 @@ public class SettingsApiController {
                 .filter(this::isKnownType)
                 .toList();
 
-        settingsService.setString(AutoSendService.FEATURE_KEY, request.enabled() ? "true" : "false");
+        settingsService.setString(AutoSendService.FEATURE_KEY, String.valueOf(request.enabled()));
         settingsService.setString(AutoSendService.KEY_THRESHOLD, String.valueOf(parsed));
         settingsService.setString(AutoSendService.KEY_TYPES, String.join(",", validTypes));
         return snapshotAssembler.snapshot();
@@ -105,7 +105,7 @@ public class SettingsApiController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Status-update automation is on but no milestones are set — nothing would be sent.");
         }
-        settingsService.setString(StatusWatchScheduler.FEATURE_KEY, request.enabled() ? "true" : "false");
+        settingsService.setString(StatusWatchScheduler.FEATURE_KEY, String.valueOf(request.enabled()));
         settingsService.setString(StatusWatchScheduler.KEY_MILESTONES, normalised);
         return snapshotAssembler.snapshot();
     }
@@ -127,7 +127,7 @@ public class SettingsApiController {
         if (parsed < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Delay cannot be negative.");
         }
-        settingsService.setString(QuoteFollowUpScheduler.FEATURE_KEY, request.enabled() ? "true" : "false");
+        settingsService.setString(QuoteFollowUpScheduler.FEATURE_KEY, String.valueOf(request.enabled()));
         settingsService.setString(QuoteFollowUpScheduler.KEY_DELAY_HOURS, String.valueOf(parsed));
         return snapshotAssembler.snapshot();
     }
@@ -142,7 +142,7 @@ public class SettingsApiController {
     @PostMapping("/routing")
     public SettingsResponse saveRouting(@RequestBody RoutingRequest request) {
         settingsService.setString(EmailClassificationService.FEATURE_SMART_ROUTING,
-                request.smartRoutingEnabled() ? "true" : "false");
+                String.valueOf(request.smartRoutingEnabled()));
         String assignee = request.escalationAssignee() == null ? "" : request.escalationAssignee().trim();
         settingsService.setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, assignee);
         return snapshotAssembler.snapshot();
