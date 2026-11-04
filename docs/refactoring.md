@@ -104,6 +104,21 @@ Branch coverage of the classes the plan touches (clean run):
   previously green `68e369a` failed the same way when re-run. Testcontainers 1.21.3 asked for an API version
   Docker 29 refuses, so every container test failed with "Could not find a valid Docker environment". Local runs
   hid it because `~/.docker-java.properties` on the dev machine pins `api.version`. Fixed by Testcontainers 1.21.4.
+- ✅ Nothing tested the `/api/settings/**` ADMIN rule: the controller tests run without the filter chain, and
+  `spring-security-test` was on the classpath (through `spring-boot-starter-security-test`) but unused.
+  `SettingsAdminRuleTest` (branch `test/settings-admin-rule`) runs all 12 routes through the real chain in the shared
+  context: no token 401, OPERATOR 403, ADMIN reaches the controller. Loosening the rule to `authenticated()` fails the 12
+  OPERATOR cases; `permitAll()` fails those and the 12 no-token cases. `jwt()` skips the decoder (signature, issuer, `azp`)
+  and the chain's wiring of `KeycloakJwtRoleConverter`, because swapping the decoder would fork the context. Dropping that
+  wiring from `SecurityConfig` stays green here (tried), so a real token against the live stack is the only check of it.
+  One Spring context across the whole run. 933 tests, 89.4 % / 77.3 %.
+- Still untested through the chain: the same rules for `/api/admin/**`, `/api/admin/tenants/**`, `/api/users/**` and
+  `/api/webhooks/**`. `SettingsAdminRuleTest` is the pattern to copy.
+- A settings body without a primitive field (`enabled` on `/autosend`) answers 500, not 400: `GlobalExceptionHandler`
+  has no case for unreadable JSON, so it lands in the catch-all. The SPA always sends the field.
+- A ticket whose deadline passes and which is sent before the next `SlaBreachScheduler` tick is never flagged, for
+  both `CLOSED` and now `AUTO_SENT` (after a restart the first tick is 60 s away). Setting the flag at the two send
+  sites when the deadline has passed would close it.
 
 ## Plan
 
@@ -270,7 +285,7 @@ Branch coverage of the classes the plan touches (clean run):
    change once the saves become atomic.
    889 tests green, 89 % / 77 %. Live on the rebuilt image: all 8 sampled endpoints answer 401 without a token, the page
    loads, a save and a mailbox toggle answer 200. Golden set identical to `after-2.3` across 18 scenarios (it exercises
-   the pipeline, not this API). Not tested anywhere: an OPERATOR token getting 403 here (no `spring-security-test`).
+   the pipeline, not this API). An OPERATOR token getting 403 here is now tested, see `SettingsAdminRuleTest` above.
 
 **Stage 3 — only on a separate decision**
 1. Remove the binary (pre-1.4) classifier mode — a behaviour change; first confirm no tenant has
