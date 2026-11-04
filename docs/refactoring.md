@@ -91,6 +91,8 @@ Branch coverage of the classes the plan touches (clean run):
 - `@EnableScheduling` has no off switch, so the real schedulers run inside the shared Spring test context.
   `WebhookTenantIsolationTest` and `TicketBulkUpdateQueriesIntegrationTest` date their rows ahead to stay out of
   reach. If another test has to do this, or a scheduler causes a flake, make scheduling switchable for all tests.
+- `POST /api/settings/autosend` stores `NaN` as the threshold (it parses as a double and survives the clamp), and a
+  `null` element in `types` is a 500. Admin-only input. Pinned as-is for `NaN`; validate in a separate small fix.
 - ✅ CI was red from 3 Nov because the runner moved to Ubuntu 26.04 with Docker 29, not because of this work: the
   previously green `68e369a` failed the same way when re-run. Testcontainers 1.21.3 asked for an API version
   Docker 29 refuses, so every container test failed with "Could not find a valid Docker environment". Local runs
@@ -247,8 +249,14 @@ Branch coverage of the classes the plan touches (clean run):
    on): the four bulk updates and `existsInboundReplyFrom` — rows touched, columns written, strict cutoffs,
    soft-deleted rows, tenant isolation, the system context. The
    JaCoCo gate goes from 60 % instructions to 85 % instructions / 70 % branches.
-5. `SettingsApiController` (346 lines, 50 % branches; no step until now): characterisation tests first, then a
-   split by sub-resource as in step 2.
+5. ✅ `SettingsApiController` (346 → 193 lines, 5 → 2 dependencies) split like step 2: it keeps the snapshot GET and
+   the settings saves; `MailboxSettingsController` takes add / edit / toggle / delete under the same
+   `/api/settings/mailboxes` paths; the package-private `SettingsSnapshotAssembler` builds the `SettingsResponse`
+   both answer with. Paths, bodies, status codes and messages are unchanged; `/api/settings/**` stays ADMIN in
+   `SecurityConfig`. Branch `refactor/2.5-settings-api-controller`; first commit
+   `SettingsApiControllerCharacterizationTest` (33 methods, 49 cases) — branches 50 → 100 %, eight mutations each
+   fail it; test bodies untouched afterwards, only the two `setUp`s. The class Javadoc no longer points at the
+   deleted Thymeleaf controller, and the milestones Javadoc no longer claims an upper-casing the code never did.
 
 **Stage 3 — only on a separate decision**
 1. Remove the binary (pre-1.4) classifier mode — a behaviour change; first confirm no tenant has
