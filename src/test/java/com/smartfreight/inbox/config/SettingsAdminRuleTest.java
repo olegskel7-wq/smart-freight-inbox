@@ -39,9 +39,10 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
  * OPERATOR, and an ADMIN reaches the controller. The controller tests run without the chain, so they cannot see this.
  *
  * <p>{@code jwt()} stands in for the bearer token: the decoder needs Keycloak's JWKS, and swapping that bean would
- * fork the shared context. The claims still go through the real {@link KeycloakJwtRoleConverter} and
- * {@link TenantFilter}; only signature and issuer checks are skipped. For the same reason MockMvc is built by hand:
- * {@code @AutoConfigureMockMvc} would change the context cache key too.
+ * fork the shared context. The roles are mapped by {@link KeycloakJwtRoleConverter} and the tenant set by the real
+ * {@link TenantFilter}, but the decoder (signature, issuer, {@code azp}) does not run, and neither does the chain's own
+ * wiring of that converter. For the same reason MockMvc is built by hand: {@code @AutoConfigureMockMvc} would change
+ * the context cache key too.
  *
  * <p>The ADMIN case asserts the exact answer of each controller, so a route cannot pass by failing some other way.
  * Where a route can reject the request it does, and nothing is stored; the three that cannot write only the settings of

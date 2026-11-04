@@ -108,8 +108,9 @@ Branch coverage of the classes the plan touches (clean run):
   `spring-security-test` was on the classpath (through `spring-boot-starter-security-test`) but unused.
   `SettingsAdminRuleTest` (branch `test/settings-admin-rule`) runs all 12 routes through the real chain in the shared
   context: no token 401, OPERATOR 403, ADMIN reaches the controller. Loosening the rule to `authenticated()` fails the 12
-  OPERATOR cases; `permitAll()` fails those and the 12 no-token cases. `jwt()` skips the decoder (signature, issuer, `azp`),
-  because swapping it would fork the context.
+  OPERATOR cases; `permitAll()` fails those and the 12 no-token cases. `jwt()` skips the decoder (signature, issuer, `azp`)
+  and the chain's wiring of `KeycloakJwtRoleConverter`, because swapping the decoder would fork the context. Dropping that
+  wiring from `SecurityConfig` would stay green here; only the live 401/200 checks would see it.
 - Still untested through the chain: the same rules for `/api/admin/**`, `/api/admin/tenants/**`, `/api/users/**` and
   `/api/webhooks/**`. `SettingsAdminRuleTest` is the pattern to copy.
 - A settings body without a primitive field (`enabled` on `/autosend`) answers 500, not 400: `GlobalExceptionHandler`
