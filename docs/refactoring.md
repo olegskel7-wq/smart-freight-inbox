@@ -82,9 +82,12 @@ Branch coverage of the classes the plan touches (clean run):
 - `smartfreight_ollama_request_seconds{operation="drafting"}` carries a hard-coded `model="llama3.1:8b"`
   tag whatever `ollama.drafting-model` is set to (now in `OllamaDraftClient`; pinned by
   `AiDraftingPromptCharacterizationTest`). Tag from the configured model in a separate small fix.
-- `SLA_EXEMPT_STATUSES` omits `AUTO_SENT` and auto-send does not clear `sla_deadline_at`, so a ticket answered
-  in time is flagged breached once its deadline passes, and the analytics SLA count (no status filter)
-  includes it. Fix in a separate branch.
+- ✅ `SLA_EXEMPT_STATUSES` omitted `AUTO_SENT` and auto-send does not clear `sla_deadline_at`, so a ticket answered
+  in time was flagged breached once its deadline passed, and the analytics SLA count (no status filter) included
+  it. Fixed in `fix/sla-auto-sent`: `AUTO_SENT` is exempt, and a ticket flagged while it waited and only then
+  auto-sent stays counted, because it was late. No migration: the flag cannot be cleared by status alone (such a
+  late ticket looks the same), it takes the first `AUTO_SEND` audit row against `sla_deadline_at`. The dev DB holds
+  one wrong row (ticket 102, demo tenant, sent 18 s after receipt, deadline 4 h), left as is; no production data exists yet.
 - `existsInboundReplyFrom` is a plain substring match: a quote to `an@acme.test` counts `jan@acme.test` as
   the reply and drops the follow-up (it fails toward not nudging); `_` and `%` in an address act as wildcards.
   Pinned as a known limitation by `TicketBulkUpdateQueriesIntegrationTest`.
