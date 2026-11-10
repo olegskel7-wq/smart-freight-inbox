@@ -42,7 +42,8 @@ class DraftContextAssembler {
      * Builds the generic (non-document) draft request: the item, the rates, plus the retrieved
      * examples and knowledge.
      */
-    ReplyDraftRequest replyRequest(TicketType ticketType, String aiInput, TrackedItem item, String rateContext) {
+    ReplyDraftRequest replyRequest(TicketType ticketType, String aiInput, String identifier, TrackedItem item,
+                                   String rateContext) {
         // Both the feedback loop and the knowledge base rank by semantic
         // similarity to the SAME enquiry, so share ONE memoised embedding supplier — the enquiry is
         // embedded at most once per draft, lazily, and only if a retriever (after its own feature /
@@ -56,6 +57,6 @@ class DraftContextAssembler {
         // Ground the draft with the tenant's knowledge base (FAQs / policies / rules) so
         // typical "how / where / when" enquiries get a substantive answer even without backend data.
         String knowledgeContext = knowledgeBaseService.retrieveContext(aiInput, enquiryEmbedding);
-        return new ReplyDraftRequest(aiInput, item, rateContext, exampleContext, knowledgeContext);
+        return new ReplyDraftRequest(aiInput, item, rateContext, exampleContext, knowledgeContext, identifier);
     }
 }

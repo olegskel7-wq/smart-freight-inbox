@@ -88,7 +88,8 @@ class ReplyDraftStep {
             }
         } else {
             draft = aiDraftingService.generateDraft(
-                    draftContextAssembler.replyRequest(ticket.getTicketType(), aiInput, item, rateContext));
+                    draftContextAssembler.replyRequest(ticket.getTicketType(), aiInput, identifier, item,
+                            rateContext));
         }
         ticket.setDraftReply(draft);
         // Preserve the unmodified AI draft so the feedback loop can compare it against

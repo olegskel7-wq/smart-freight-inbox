@@ -19,6 +19,12 @@ final class DraftFallbacks {
             Please let me know if you have any questions or if you would like to go ahead — we would be glad to help.
             """;
 
+    /** Reply fallback for an email that named no reference: there was no lookup to report on. */
+    static final String NO_REFERENCE = """
+            Thank you for your enquiry.
+            Our team has received it and will reply to you shortly.
+            """;
+
     private DraftFallbacks() {
     }
 

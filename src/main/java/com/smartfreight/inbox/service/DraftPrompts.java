@@ -71,6 +71,14 @@ final class DraftPrompts {
     /** Substituted for {@code {rateContext}} when no rates matched the enquiry. */
     private static final String NO_RATES_NOTE = "No rate information available for this enquiry. Do not quote any price.";
 
+    /**
+     * Item block for an email that named no reference, so nothing was looked up — as opposed to
+     * {@link #itemContext}'s "not found", which is for a reference the backend does not know.
+     */
+    static final String NO_REFERENCE_NOTE = "The email does not name a shipment reference, so nothing was looked up. "
+            + "Do not tell the customer that an item, container or shipment could not be found; "
+            + "answer what they actually asked.";
+
     /** Header for the rate block when appended to a stored prompt that predates {@code {rateContext}}. */
     private static final String RATE_HEADER =
             "Rate information (prices already include our margin — quote them as-is, never mention margin):";

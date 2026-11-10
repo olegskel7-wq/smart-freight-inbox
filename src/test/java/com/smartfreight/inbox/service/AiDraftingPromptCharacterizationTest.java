@@ -128,7 +128,7 @@ class AiDraftingPromptCharacterizationTest {
     void replyPrompt_defaultTemplate_noContexts_usesNotesForEverySlot() {
         stubReply("ok");
 
-        service.generateDraft(new ReplyDraftRequest("Where is my container?", null, "", "", ""));
+        service.generateDraft(new ReplyDraftRequest("Where is my container?", null, "", "", "", "MSCU0000000"));
 
         assertEquals("""
                 You are a professional customer service representative for a freight logistics company near Felixstowe port, UK.
@@ -209,6 +209,45 @@ class AiDraftingPromptCharacterizationTest {
         assertTrue(sentPrompt().contains("No rate information available"));
     }
 
+    @Test
+    void replyPrompt_emailWithoutReference_saysNothingWasLookedUp() {
+        stubReply("ok");
+
+        service.generateDraft(new ReplyDraftRequest("Please quote 3 x 40HC Ningbo to Felixstowe", null, "", "", ""));
+
+        // A quote request is not a failed lookup: "Item not found" made every model apologise for a
+        // missing container nobody asked about.
+        assertTrue(sentPrompt().contains("does not name a shipment reference, so nothing was looked up"));
+        assertFalse(sentPrompt().contains("Item not found"));
+    }
+
+    @Test
+    void replyPrompt_referenceGivenButUnknown_staysNotFound() {
+        stubReply("ok");
+
+        service.generateDraft(new ReplyDraftRequest("Where is MSCU0000000?", null, "", "", "", "MSCU0000000"));
+
+        assertTrue(sentPrompt().contains("Item not found in our system."));
+        assertFalse(sentPrompt().contains("nothing was looked up"));
+    }
+
+    @Test
+    void replyFallback_emailWithoutReference_doesNotMentionAMissingReference() {
+        stubFailure();
+
+        assertEquals("""
+                Thank you for your enquiry.
+                Our team has received it and will reply to you shortly.
+                """, service.generateDraft(ReplyDraftRequest.of("Please quote Ningbo to Felixstowe", null)));
+    }
+
+    @Test
+    void lookupSkipped_onlyWhenNoItemAndNoReference() {
+        assertTrue(ReplyDraftRequest.of("Hi", null).lookupSkipped());
+        assertFalse(new ReplyDraftRequest("Hi", null, "", "", "", "MSCU0000000").lookupSkipped());
+        assertFalse(ReplyDraftRequest.of("Hi", item()).lookupSkipped());
+    }
+
     // ── Reply draft: stored templates ────────────────────────────────────────────────────────────
 
     @Test
@@ -217,7 +256,7 @@ class AiDraftingPromptCharacterizationTest {
                 .thenReturn("Item: {itemContext}\nEmail: {email}");
         stubReply("ok");
 
-        service.generateDraft(new ReplyDraftRequest("Quote please", null, "RATES", "EXAMPLES", "KB"));
+        service.generateDraft(new ReplyDraftRequest("Quote please", null, "RATES", "EXAMPLES", "KB", "MSCU0000000"));
 
         assertEquals("""
                 Item: Item not found in our system.
@@ -450,7 +489,7 @@ class AiDraftingPromptCharacterizationTest {
                 Thank you for your enquiry.
                 Unfortunately, we were unable to locate the reference in our system at this time.
                 Please contact our team for further assistance.
-                """, service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", "")));
+                """, service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", "", "MSCU0000000")));
     }
 
     @Test
@@ -499,7 +538,7 @@ class AiDraftingPromptCharacterizationTest {
     void ollamaCall_nullResponse_returnsFallback() {
         stubOllama(Mono.empty());
 
-        String draft = service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", ""));
+        String draft = service.generateDraft(new ReplyDraftRequest("Where?", null, "", "", "", "MSCU0000000"));
 
         assertTrue(draft.startsWith("Thank you for your enquiry.\nUnfortunately"));
         verify(ollamaClients).recordUsage(eq("drafting"), eq("llama3.1:8b"), isNull());
