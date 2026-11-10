@@ -31,13 +31,10 @@ final class AutoReplyDetector {
         if (autoSubmitted.startsWith("auto-replied")) {
             return true;
         }
-        // "auto-generated" alone is any machine-written mail - a customer's system sending booking
-        // requests is a real enquiry. Some servers (Exchange among them) put it on out-of-office
-        // replies as well; what tells those apart is that they answer an earlier message.
-        if (autoSubmitted.startsWith("auto-generated")
-                && (!header(message, "In-Reply-To").isEmpty() || !header(message, "References").isEmpty())) {
-            return true;
-        }
+        // "auto-generated" is deliberately NOT enough, even on a reply: it is any machine-stamped mail -
+        // a customer's system sending booking requests, or a person answering through a helpdesk tool
+        // that marks everything it sends. Some servers put it on out-of-office notes too; those are
+        // left to the classifier until a real sample shows a mark that is safe to rely on.
         // Pre-standard marks still sent by common vacation responders.
         String autoreply = header(message, "X-Autoreply");
         return (!autoreply.isEmpty() && !autoreply.equals("no"))

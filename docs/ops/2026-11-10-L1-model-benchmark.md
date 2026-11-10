@@ -92,7 +92,10 @@ every model's draft quality and are worth fixing before choosing between Haiku a
 
 Three of the findings above were fixed in code (branch `fix/l1-pipeline-findings`): an email that names
 no reference no longer gets "Item not found" as its item block; a rate is not offered for the opposite
-direction; automatic replies are kept out of the pipeline by their headers. The set was then run again.
+direction; automatic replies are kept out of the pipeline by their headers (`Auto-Submitted:
+auto-replied` and the legacy vacation headers - not `auto-generated`, which helpdesk tools also put on
+mail written by a person; whether Exchange out-of-office notes carry a safe mark is to be checked on a
+real sample). The set was then run again.
 
 | | qwen2.5:7b + llama3.1:8b | Claude Haiku 5.5 |
 |---|---|---|
