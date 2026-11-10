@@ -212,7 +212,7 @@ function New-DemoPdf([string[]]$Lines) {
     return [System.Text.Encoding]::ASCII.GetBytes($sb.ToString())
 }
 
-$selected = $scenarios | Where-Object { (($Tenant -eq 'all' -or $_.Tenant -eq $Tenant) -and $_.Name -like $Scenario) -and ($Set -eq 'all' -or (Get-Set $_) -eq $Set) }
+$selected = $scenarios | Where-Object { ($Tenant -eq 'all' -or $_.Tenant -eq $Tenant) -and $_.Name -like $Scenario -and ($Set -eq 'all' -or (Get-Set $_) -eq $Set) }
 if (-not $selected) {
     Write-Warning "No scenario matches Tenant='$Tenant' Scenario='$Scenario' Set='$Set'. Use -List."
     return

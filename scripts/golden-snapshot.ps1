@@ -169,7 +169,8 @@ if ($PSCmdlet.ParameterSetName -eq 'Score') {
         }
         if ($caseOk) { $perfect++ }
     }
-    $unscored = @($rows.Keys | Where-Object { $k = $_; -not ($spec.scenarios | Where-Object { $_.key -eq $k }) })
+    $specKeys = @($spec.scenarios | ForEach-Object { $_.key })
+    $unscored = @($rows.Keys | Where-Object { $specKeys -cnotcontains $_ })
     Write-Host "Scored $Score against $Expected`n"
     $tally.Values | Select-Object field, correct, total,
         @{ n = 'pct'; e = { if ($_.total) { [math]::Round(100 * $_.correct / $_.total) } else { '-' } } } | Format-Table -AutoSize
