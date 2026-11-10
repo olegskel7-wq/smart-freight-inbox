@@ -225,10 +225,14 @@ if (-not $selected) {
 # that has been up for a couple of months every rate is expired and no RFQ draft carries a price.
 # Push the working demo rates out again before sending. The two rows V31 expires on purpose (COSCO
 # Shanghai-Southampton, P&O Birmingham-Dublin) are not listed, so they stay expired.
+# Only a tenant that still has a demo inbox (*.example.com) is touched: once the harness is off
+# (ROADMAP Gate B14) this is a no-op, so a real rate of the same carrier and route is never revived.
 function Update-DemoRates {
     $sql = @'
 UPDATE carrier_rate SET valid_until = CURRENT_DATE + 60
  WHERE valid_until < CURRENT_DATE + 14
+   AND EXISTS (SELECT 1 FROM tenant_mailbox m
+                WHERE m.tenant_id = carrier_rate.tenant_id AND m.username LIKE '%.example.com')
    AND (tenant_id, lower(carrier), lower(origin), lower(destination)) IN (
         (1, 'maersk', 'shanghai', 'felixstowe'), (1, 'msc', 'ningbo', 'felixstowe'),
         (1, 'hapag-lloyd', 'rotterdam', 'felixstowe'), (90001, 'dfds', 'birmingham', 'rotterdam'),
