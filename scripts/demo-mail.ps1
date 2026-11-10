@@ -7,6 +7,9 @@
     inboxes over SMTP. The backend's IMAP IDLE adapters pick them up and run the REAL
     pipeline: ingestion -> classification -> extraction -> draft -> (auto-)reply. Replies
     land in Mailpit: http://localhost:8025.
+    Before sending it re-extends the demo rate sheet when its rates have expired, so RFQ
+    drafts keep quoting a price on a long-running stack (needs docker compose; warns and carries
+    on without it).
 
     HOW TO RUN THE HARNESS (the one place this is documented):
     - Compose: put these two lines in .env (MAILBOX_ENCRYPTION_KEY is a file in SECRETS_DIR), so every
@@ -217,6 +220,45 @@ if (-not $selected) {
     Write-Warning "No scenario matches Tenant='$Tenant' Scenario='$Scenario' Set='$Set'. Use -List."
     return
 }
+
+# The demo rate sheet (dev-seed V31) is stamped "valid until <load day> + 40..90 days", so on a stack
+# that has been up for a couple of months every rate is expired and no RFQ draft carries a price.
+# Push the working demo rates out again before sending. The two rows V31 expires on purpose (COSCO
+# Shanghai-Southampton, P&O Birmingham-Dublin) are not listed, so they stay expired.
+function Update-DemoRates {
+    $sql = @'
+UPDATE carrier_rate SET valid_until = CURRENT_DATE + 60
+ WHERE valid_until < CURRENT_DATE + 14
+   AND (tenant_id, lower(carrier), lower(origin), lower(destination)) IN (
+        (1, 'maersk', 'shanghai', 'felixstowe'), (1, 'msc', 'ningbo', 'felixstowe'),
+        (1, 'hapag-lloyd', 'rotterdam', 'felixstowe'), (90001, 'dfds', 'birmingham', 'rotterdam'),
+        (90001, 'ferrymasters', 'birmingham', 'hamburg'), (90001, 'stobart', 'birmingham', 'paris'))
+RETURNING 1;
+'@
+    # The backend caches each tenant's valid rates in Redis for 10 minutes (RateSheetCache) and a direct
+    # DB edit does not evict it. Sent over stdin to dodge native-argument quoting; the trailing '#'
+    # swallows the CR PowerShell appends to piped text.
+    $evict = '. /file-env.sh; REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli --scan --pattern "rateSheets::*" | REDISCLI_AUTH="$REDIS_PASSWORD" xargs -r redis-cli del >/dev/null #'
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'   # docker writes progress to stderr; the exit code decides
+    Push-Location (Split-Path -Parent $PSScriptRoot)
+    try {
+        $out = $sql | docker compose exec -T postgres psql -U postgres -d smartfreight -AtXq -v ON_ERROR_STOP=1 -f - 2>$null
+        if ($LASTEXITCODE -ne 0) { throw "psql exited with $LASTEXITCODE" }
+        $extended = @($out | Where-Object { $_ -eq '1' }).Count
+        if ($extended -gt 0) {
+            $evict | docker compose exec -T redis sh 2>$null
+            if ($LASTEXITCODE -ne 0) { throw "redis cache eviction exited with $LASTEXITCODE" }
+            Write-Host "Extended $extended expired demo rate(s) to today + 60 days."
+        }
+    } catch {
+        Write-Warning "Demo rates not refreshed ($($_.Exception.Message)) - RFQ drafts may come without a price."
+    } finally {
+        Pop-Location
+        $ErrorActionPreference = $prev
+    }
+}
+Update-DemoRates
 
 $client = New-Object System.Net.Mail.SmtpClient($SmtpHost, $SmtpPort)
 $total = @($selected).Count * $Repeat
