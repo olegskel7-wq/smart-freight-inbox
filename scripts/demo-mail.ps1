@@ -27,11 +27,15 @@
     .\scripts\demo-mail.ps1                                # every scenario, both tenants
     .\scripts\demo-mail.ps1 -Tenant midlands -Scenario rfq*
     .\scripts\demo-mail.ps1 -Repeat 5 -DelaySeconds 20     # slow drip for a live demo
+    .\scripts\demo-mail.ps1 -Set hard                     # only the hard LLM-eval cases (golden-snapshot sends -Set all)
 #>
 param(
     [ValidateSet('all', 'felixstowe', 'midlands')]
     [string]$Tenant = 'all',
     [string]$Scenario = '*',
+    # demo = the live-demo traffic (default); hard = messy real-inbox cases for LLM eval; all = both.
+    [ValidateSet('demo', 'hard', 'all')]
+    [string]$Set = 'demo',
     [int]$Repeat = 1,
     [int]$DelaySeconds = 2,
     [string]$SmtpHost = 'localhost',
@@ -54,6 +58,7 @@ $inboxes = @{
     midlands            = 'dispatch@midlands-haulage.example.com'
 }
 function Get-Inbox($s) { $inboxes[$(if ($s.Inbox) { $s.Inbox } else { $s.Tenant })] }
+function Get-Set($s) { if ($s.Set) { $s.Set } else { 'demo' } }
 
 # Container / job refs match the port-service seed (V2/V3 sea containers, V7 road jobs),
 # so status enquiries resolve to real tracking data.
@@ -137,11 +142,46 @@ $scenarios = @(
        From = 'Promo <promo@marketing.example.com>'
        Subject = 'You have won a free fleet dashcam!'
        Body = "Congratulations! Click the link to claim your prize dashcam. Offer ends today." }
+
+    # ---------------- Hard cases (Set = 'hard') - LLM eval only, not part of the live demo ----------------
+    # Real-inbox mess the demo set does not cover. Expected outcomes: scripts/golden-expected.json.
+    @{ Set = 'hard'; Tenant = 'felixstowe'; Name = 'hard-spaced-container'; Type = 'STATUS_UPDATE (id with spaces)'
+       From = 'Gary Nolan <gary.nolan@eastport-supplies.example.com>'
+       Subject = 'RE: RE: our PO 88231'
+       Body = "Hi guys,`r`n`r`nFollowing up below - any news on the box for PO 88231? Container is HLXU 876432-1 I think. Need to book the haulier.`r`n`r`nCheers`r`nGary Nolan | Eastport Supplies | Tel 01473 555 019`r`n`r`n-----Original Message-----`r`nFrom: Gary Nolan`r`nSent: 02 November 2026 09:14`r`nSubject: our PO 88231`r`n`r`nHello, please advise when our goods arrive at Felixstowe." }
+    @{ Set = 'hard'; Tenant = 'felixstowe'; Name = 'hard-two-asks'; Type = 'STATUS + DOCUMENT in one email'
+       From = 'Tom Fisher <tom.fisher@harbourline.example.com>'
+       Subject = 'CMAU5551234 - cleared yet? + customs paperwork'
+       Body = "Hi,`r`n`r`nTwo things on CMAU5551234: is it cleared yet, and can you send me the customs paperwork for it so I can file it on our side?`r`n`r`nThanks,`r`nTom" }
+    @{ Set = 'hard'; Tenant = 'felixstowe'; Name = 'hard-reefer-polite'; Type = 'urgent but polite'
+       From = 'Lucy Hart <lucy.hart@coldchain-foods.example.com>'
+       Subject = 'Temperature alarm on reefer SZLU9012345'
+       Body = "Good afternoon,`r`n`r`nThe terminal app shows a temperature alarm on our reefer SZLU9012345 (frozen fish, set to -18C) at Felixstowe. Could you kindly ask the terminal to check the unit and the plug-in within the next two hours?`r`n`r`nThank you so much for your help,`r`nLucy Hart`r`nColdchain Foods" }
+    @{ Set = 'hard'; Tenant = 'felixstowe'; Name = 'hard-out-of-office'; Type = 'IRRELEVANT (auto-reply)'
+       From = 'James Whitaker <james.whitaker@northgate-imports.example.com>'
+       Subject = 'Automatic reply: Quote request: 3 x 40HC Ningbo to Felixstowe'
+       Body = "Thank you for your email. I am out of the office until 17 November with limited access to email.`r`n`r`nFor urgent shipping matters please contact our logistics desk on logistics@northgate-imports.example.com.`r`n`r`nJames Whitaker" }
+    @{ Set = 'hard'; Tenant = 'midlands'; Name = 'hard-angry-low'; Type = 'angry but not urgent'
+       From = 'Karen Doyle <karen.doyle@westfield-retail.example.com>'
+       Subject = 'Wrong PO on invoice - again'
+       Body = "Honestly, this is the third invoice this quarter with the wrong PO number. INV-7902 says PO-1188 instead of PO-1211. I am getting tired of fixing your paperwork for you.`r`n`r`nPlease correct it when you get a chance - no rush on our side, it is not due until next month.`r`n`r`nKaren Doyle`r`nWestfield Retail" }
+    @{ Set = 'hard'; Tenant = 'midlands'; Name = 'hard-loose-ref'; Type = 'STATUS_UPDATE (sloppy job ref)'
+       From = 'Mark Evans <mark.evans@brightlogistics.example.com>'
+       Subject = 'quick one'
+       Body = "hi, any news on mid 2026 0481? customer chasing again. ta, mark" }
+    @{ Set = 'hard'; Tenant = 'midlands'; Name = 'hard-german-rfq'; Type = 'RFQ in German'
+       From = 'Stefan Weber <stefan.weber@weber-handel.example.com>'
+       Subject = 'Anfrage Komplettladung Birmingham - Hamburg'
+       Body = "Guten Tag,`r`n`r`nbitte senden Sie uns ein Angebot fuer eine Komplettladung (33 Paletten, Planensattel) von Birmingham nach Hamburg. Abholung am kommenden Dienstag, Zustellung bis Donnerstag.`r`n`r`nMit freundlichen Gruessen`r`nStefan Weber`r`nWeber Handel GmbH" }
+    @{ Set = 'hard'; Tenant = 'midlands'; Name = 'hard-vague'; Type = 'STATUS_UPDATE without any reference'
+       From = 'Paul Reid <paul.reid@reid-wholesale.example.com>'
+       Subject = 'Re: Friday'
+       Body = "Any update? Need to tell the warehouse." }
 )
 
 if ($List) {
     $scenarios | ForEach-Object {
-        [pscustomobject]@{ Tenant = $_.Tenant; Scenario = $_.Name; Expected = $_.Type; Inbox = (Get-Inbox $_); Subject = $_.Subject }
+        [pscustomobject]@{ Set = (Get-Set $_); Tenant = $_.Tenant; Scenario = $_.Name; Expected = $_.Type; Inbox = (Get-Inbox $_); Subject = $_.Subject }
     } | Format-Table -AutoSize
     return
 }
@@ -172,9 +212,9 @@ function New-DemoPdf([string[]]$Lines) {
     return [System.Text.Encoding]::ASCII.GetBytes($sb.ToString())
 }
 
-$selected = $scenarios | Where-Object { ($Tenant -eq 'all' -or $_.Tenant -eq $Tenant) -and $_.Name -like $Scenario }
+$selected = $scenarios | Where-Object { (($Tenant -eq 'all' -or $_.Tenant -eq $Tenant) -and $_.Name -like $Scenario) -and ($Set -eq 'all' -or (Get-Set $_) -eq $Set) }
 if (-not $selected) {
-    Write-Warning "No scenario matches Tenant='$Tenant' Scenario='$Scenario'. Use -List."
+    Write-Warning "No scenario matches Tenant='$Tenant' Scenario='$Scenario' Set='$Set'. Use -List."
     return
 }
 

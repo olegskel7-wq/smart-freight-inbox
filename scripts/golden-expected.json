@@ -1,0 +1,217 @@
+{
+  "about": "Golden set expected outcomes (ROADMAP L0). One entry per demo-mail.ps1 scenario, keyed tenant-name like the golden-snapshot.ps1 rows. 'expect' holds the snapshot fields a correct pipeline must produce: a value, or an array of acceptable values where the email is genuinely ambiguous; null and empty string both mean 'empty'; a field that is absent is not scored. urgency is written as LOW/NORMAL/HIGH (the snapshot's ordinal is mapped). 'draft' is the checklist for the reply text (must / must_not), judged by a human or an LLM judge in L1 - the snapshot holds no draft text. Facts behind the checklists come from the dev seeds: port-service tracking (V2/V3 sea, V7 road), carrier_rate and tenant_document (V31). Sell price = rate x (1 + margin%). Urgency and sentiment follow the classifier prompt (EmailClassificationService.typedRoutingPrompt): HIGH = time-critical, deadline, demurrage, stuck or held shipment, urgent/asap; NEGATIVE = angry, frustrated, complaining, threatening to leave.",
+  "version": 1,
+  "updated": "2026-11-10",
+  "scenarios": [
+    {
+      "key": "felixstowe-rfq-fcl",
+      "expect": { "status": "DRAFT_READY", "type": "RFQ", "urgency": "NORMAL", "angry": false, "identifier": "" },
+      "draft": {
+        "must": ["3 x 40HC Ningbo to Felixstowe", "the matched rate GBP 2,475 per container (MSC 2,250 + 10% margin), or a promise to confirm the price"],
+        "must_not": ["any other price", "state that THC, customs clearance or delivery to Chelmsford are included as fact - the rate sheet does not say so"]
+      }
+    },
+    {
+      "key": "felixstowe-rfq-quotes-desk",
+      "expect": { "status": "DRAFT_READY", "type": "RFQ", "urgency": "NORMAL", "angry": false, "identifier": "", "mailbox": "quotes@felixstowe-freight.example.com" },
+      "draft": {
+        "must": ["LCL 6 CBM / 2,100 kg Shanghai to Felixstowe, delivery Colchester", "a promise to come back with an LCL price"],
+        "must_not": ["quote the FCL container rate (GBP 2,688 per 40HC) as the LCL price - there is no LCL rate on file"]
+      },
+      "note": "The reply must leave through the quotes@ inbox it arrived on (V37)."
+    },
+    {
+      "key": "felixstowe-status-container",
+      "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "NORMAL", "angry": false, "identifier": "MSCU1234567" },
+      "draft": {
+        "must": ["MSCU1234567 is in transit on the vessel MSC Francesca, heading for Felixstowe"],
+        "must_not": ["a specific ETA date - tracking holds no ETA date"]
+      }
+    },
+    {
+      "key": "felixstowe-status-customs",
+      "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "HIGH", "angry": false, "identifier": "CMAU5551234" },
+      "draft": {
+        "must": ["CMAU5551234 is held at customs (HMRC Examination Bay 3, Felixstowe)"],
+        "must_not": ["name specific missing documents as fact - tracking does not say which are missing"]
+      },
+      "note": "HIGH by the prompt's own definition (held shipment, chasing today). The tone is factual, not angry: the baseline marked it angry, which wrongly escalates and auto-assigns it."
+    },
+    {
+      "key": "felixstowe-booking",
+      "expect": { "status": "DRAFT_READY", "type": "BOOKING_CONFIRM", "urgency": "NORMAL", "angry": false, "identifier": "" },
+      "draft": {
+        "must": ["1 x 20GP Felixstowe to Rotterdam on the 12 October sailing", "waiting for the shipper details and VGM"],
+        "must_not": ["a made-up booking reference", "a price: the only Rotterdam rate on file is Rotterdam to Felixstowe, the opposite direction"]
+      }
+    },
+    {
+      "key": "felixstowe-invoice",
+      "expect": { "status": "DRAFT_READY", "type": "INVOICE_QUERY", "urgency": ["NORMAL", "HIGH"], "angry": false, "identifier": "HLXU8764321" },
+      "draft": {
+        "must": ["invoice INV-20931, the GBP 640 demurrage on HLXU8764321", "the charge will be reviewed"],
+        "must_not": ["promise a credit note or admit the charge is wrong before the review"]
+      },
+      "note": "urgency: the word demurrage is in the HIGH definition, but a billing dispute is not time-critical, so both are accepted. A polite dispute, so not angry."
+    },
+    {
+      "key": "felixstowe-docs-bol",
+      "expect": { "status": "DRAFT_READY", "type": "DOCUMENT_REQUEST", "urgency": "NORMAL", "angry": false, "identifier": "OOLU9876543", "doc_type": "BILL_OF_LADING", "doc_attached": true },
+      "draft": {
+        "must": ["the Bill of Lading for OOLU9876543 is attached"],
+        "must_not": ["say the document will follow later - it is on file and attached"]
+      }
+    },
+    {
+      "key": "felixstowe-urgent-complaint",
+      "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "HIGH", "angry": true, "identifier": "EVRU3219876", "assigned": true },
+      "draft": {
+        "must": ["an apology", "EVRU3219876 is in transit on the Ever Gentle to Felixstowe", "a manager will call today"],
+        "must_not": ["a firm ETA date - tracking holds none", "compensation or a discount"]
+      },
+      "note": "Escalated (HIGH and angry), so tenant 1 auto-assigns it to the escalation operator."
+    },
+    {
+      "key": "felixstowe-rfq-attachment",
+      "expect": { "status": "DRAFT_READY", "type": "RFQ", "urgency": "NORMAL", "angry": false, "identifier": "" },
+      "draft": {
+        "must": ["facts from the PDF packing list: 12 pallets, 4.8 CBM, 3,250 kg", "LCL Hamburg to Felixstowe, delivery Ipswich"],
+        "must_not": ["any price - there is no Hamburg rate on file"]
+      },
+      "note": "Tests attachment parsing: the cargo details exist only in the PDF."
+    },
+    {
+      "key": "felixstowe-general-hazmat",
+      "expect": { "status": "DRAFT_READY", "type": "GENERAL", "urgency": ["NORMAL", "LOW"], "angry": false, "identifier": "" },
+      "draft": {
+        "must": ["acknowledge lithium batteries UN3480", "the team will confirm DG handling and the documents needed"],
+        "must_not": ["invent a DG policy, certification or document list as company fact - the knowledge base has nothing on DG"]
+      },
+      "note": "A question, not a price request. The baseline typed it RFQ."
+    },
+    {
+      "key": "felixstowe-spam",
+      "expect": { "status": "IRRELEVANT", "type": null }
+    },
+    {
+      "key": "midlands-rfq-ftl",
+      "expect": { "status": "DRAFT_READY", "type": "RFQ", "urgency": "NORMAL", "angry": false, "identifier": "" },
+      "draft": {
+        "must": ["full load, 26 pallets, curtainsider, Coventry CV3 to Glasgow G52", "collection Wednesday, delivery Thursday AM, tail-lift at delivery"],
+        "must_not": ["any price - there is no Coventry or Glasgow rate on file"]
+      }
+    },
+    {
+      "key": "midlands-status-job",
+      "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "NORMAL", "angry": false, "identifier": "MID-2026-0481" },
+      "draft": {
+        "must": ["MID-2026-0481 is in transit on the M20 toward Dover, heading for Rotterdam"],
+        "must_not": ["a specific arrival time - tracking holds none"]
+      }
+    },
+    {
+      "key": "midlands-booking-euro",
+      "expect": { "status": "DRAFT_READY", "type": "BOOKING_CONFIRM", "urgency": "NORMAL", "angry": false, "identifier": "" },
+      "draft": {
+        "must": ["8 pallets Birmingham B6 to Calais, collection Friday 08:00", "the customer arranges the T1"],
+        "must_not": ["a made-up booking reference", "the Birmingham to Paris rate presented as a Calais price"]
+      }
+    },
+    {
+      "key": "midlands-invoice-fuel",
+      "expect": { "status": "DRAFT_READY", "type": "INVOICE_QUERY", "urgency": "NORMAL", "angry": [false, true], "identifier": "" },
+      "draft": {
+        "must": ["INV-7810: an 18% fuel surcharge against the agreed 12% cap", "it will be checked"],
+        "must_not": ["confirm a reissue or a refund before checking"]
+      },
+      "note": "angry: firm but polite (please explain or reissue), so both are accepted."
+    },
+    {
+      "key": "midlands-docs-pod",
+      "expect": { "status": "DRAFT_READY", "type": "DOCUMENT_REQUEST", "urgency": "NORMAL", "angry": false, "identifier": "MID-2026-0523", "doc_type": "POD", "doc_attached": true },
+      "draft": {
+        "must": ["the signed POD for MID-2026-0523 is attached", "delivered at Solihull"],
+        "must_not": ["take a side in the delivery-time dispute"]
+      },
+      "note": "The dispute belongs to the sender's customer; the sender is neutral. The baseline marked it angry."
+    },
+    {
+      "key": "midlands-urgent-damage",
+      "expect": { "status": "DRAFT_READY", "type": "GENERAL", "urgency": "HIGH", "angry": true, "identifier": "" },
+      "draft": {
+        "must": ["an apology", "a claim form or the claim next steps", "a call back"],
+        "must_not": ["admit liability", "promise compensation or an amount"]
+      },
+      "note": "A damage claim, not an invoice question: the baseline typed it INVOICE_QUERY. assigned is not scored because escalation routing is per-tenant config."
+    },
+    {
+      "key": "midlands-spam",
+      "expect": { "status": "IRRELEVANT", "type": null }
+    },
+    {
+      "key": "felixstowe-hard-spaced-container",
+      "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "NORMAL", "angry": false, "identifier": "HLXU8764321" },
+      "draft": {
+        "must": ["HLXU8764321 is at the port: Felixstowe Terminal 2"],
+        "must_not": ["treat PO 88231 or the phone number as the container"]
+      },
+      "note": "Number written as HLXU 876432-1 inside a reply chain: the fallback regex cannot match it, only the model can normalise it."
+    },
+    {
+      "key": "felixstowe-hard-two-asks",
+      "expect": { "status": "DRAFT_READY", "type": ["STATUS_UPDATE", "DOCUMENT_REQUEST"], "urgency": ["HIGH", "NORMAL"], "angry": false, "identifier": "CMAU5551234" },
+      "draft": {
+        "must": ["answer both questions: CMAU5551234 is still held at customs (HMRC Examination Bay 3)", "and the customs paperwork, attached or to follow"],
+        "must_not": ["answer only one of the two questions"]
+      },
+      "note": "A customs document for CMAU5551234 is on file (V31), so a DOCUMENT_REQUEST verdict can attach it."
+    },
+    {
+      "key": "felixstowe-hard-reefer-polite",
+      "expect": { "status": "DRAFT_READY", "type": ["STATUS_UPDATE", "GENERAL"], "urgency": "HIGH", "angry": false, "identifier": "SZLU9012345" },
+      "draft": {
+        "must": ["acknowledge the urgency", "the terminal will be contacted about SZLU9012345"],
+        "must_not": ["claim the unit was already checked or fixed", "invent a status - SZLU9012345 is not in tracking"]
+      },
+      "note": "Urgent but polite: urgency and sentiment must be judged separately."
+    },
+    {
+      "key": "felixstowe-hard-out-of-office",
+      "expect": { "status": "IRRELEVANT", "type": null },
+      "note": "An auto-reply that mentions shipping. Nothing in the code detects auto-replies today, so a draft here, or an auto-send, would start a mail loop."
+    },
+    {
+      "key": "midlands-hard-angry-low",
+      "expect": { "status": "DRAFT_READY", "type": "INVOICE_QUERY", "urgency": ["LOW", "NORMAL"], "angry": true, "identifier": "" },
+      "draft": {
+        "must": ["an apology", "INV-7902 will be corrected to PO-1211"],
+        "must_not": ["treat it as urgent - the customer says there is no rush"]
+      },
+      "note": "Angry but explicitly not urgent."
+    },
+    {
+      "key": "midlands-hard-loose-ref",
+      "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "NORMAL", "angry": false, "identifier": "MID-2026-0481" },
+      "draft": {
+        "must": ["MID-2026-0481 is in transit on the M20 toward Dover, heading for Rotterdam"]
+      },
+      "note": "Ref written as mid 2026 0481: the model must normalise it, the fallback regex cannot."
+    },
+    {
+      "key": "midlands-hard-german-rfq",
+      "expect": { "status": "DRAFT_READY", "type": "RFQ", "urgency": "NORMAL", "angry": false, "identifier": "" },
+      "draft": {
+        "must": ["full load, 33 pallets, Birmingham to Hamburg", "the matched rate GBP 1,864.80 per load (Ferrymasters 1,680 + 11% margin)", "a reply in German (the target of F3 multi-language, not built yet)"],
+        "must_not": ["any other price"]
+      }
+    },
+    {
+      "key": "midlands-hard-vague",
+      "expect": { "status": "DRAFT_READY", "type": ["STATUS_UPDATE", "GENERAL"], "urgency": "NORMAL", "angry": false, "identifier": "" },
+      "draft": {
+        "must": ["ask for the job reference"],
+        "must_not": ["invent a status or a job"]
+      }
+    }
+  ]
+}
