@@ -18,15 +18,30 @@ a pure refactoring; features and fixes never ride along in the same branch.
 
 ## Golden-set snapshot
 
-`scripts/golden-snapshot.ps1` sends the 18 scenarios of `scripts/demo-mail.ps1` through the live
+`scripts/golden-snapshot.ps1` sends the scenarios of `scripts/demo-mail.ps1` through the live
 pipeline (real IMAP, RabbitMQ, Ollama), waits for every ticket to leave the pipeline and records one row
 per scenario: status, type, urgency, sentiment, identifier, document handling, mailbox, assignment,
 draft present, confidence, audit actions, shipment watch / quote follow-up armed. Snapshots go to
 `golden-snapshots/` (git-ignored — they depend on the local stack and model).
 
+Since 10 Nov 2026 a capture sends 26 scenarios by default (`-Set all`): the 18 live-demo ones plus 8
+"hard" cases written for LLM evaluation (sloppy references, two questions in one email, an auto-reply,
+German). `-Set demo` sends the original 18, so a capture stays comparable with the older snapshots
+named in the journal below.
+
 ```
 powershell -ExecutionPolicy Bypass -File scripts\golden-snapshot.ps1 -Capture -Label after-step-x
 powershell -ExecutionPolicy Bypass -File scripts\golden-snapshot.ps1 -Compare golden-snapshots\baseline-1.json -Against golden-snapshots\after-step-x.json
+```
+
+`-Compare` only says that something changed. `-Score` says whether one snapshot is *right*: it checks
+it against the hand-written expected outcomes in `scripts/golden-expected.json` and prints per-field
+accuracy and every miss. That is the yardstick for comparing models and prompts (ROADMAP, LLM strategy
+L0/L1). The same file holds a must / must-not checklist for each draft; the snapshot has no draft text,
+so those are judged separately.
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\golden-snapshot.ps1 -Score golden-snapshots\after-step-x.json
 ```
 
 Ollama samples with its default temperature, so outcomes are not fully deterministic. Two baseline runs

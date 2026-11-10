@@ -18,6 +18,11 @@
     deterministic. Capture the baseline twice and compare the two: whatever differs between
     them is natural LLM noise, not a regression.
 
+    Capture sends every set by default (-Set all): the live-demo scenarios plus the "hard" LLM-eval
+    cases from demo-mail.ps1. Score checks ONE snapshot against the hand-written expected outcomes in
+    scripts/golden-expected.json (ROADMAP L0) and prints per-field accuracy plus every miss - the
+    yardstick for comparing models or prompts, where Compare only says "something changed".
+
     Script execution is disabled by default on Windows - run it as:
       powershell -ExecutionPolicy Bypass -File scripts\golden-snapshot.ps1 [args]
 
@@ -25,6 +30,8 @@
     .\scripts\golden-snapshot.ps1 -Capture -Label baseline-1
     .\scripts\golden-snapshot.ps1 -Compare golden-snapshots\baseline-1.json -Against golden-snapshots\baseline-2.json
     .\scripts\golden-snapshot.ps1 -Compare a.json -Against b.json -Ignore confidence,has_draft
+    .\scripts\golden-snapshot.ps1 -Capture -Label qwen-1 -Set all
+    .\scripts\golden-snapshot.ps1 -Score golden-snapshots\qwen-1.json
 #>
 [CmdletBinding(DefaultParameterSetName = 'Capture')]
 param(
@@ -34,13 +41,21 @@ param(
     [string]$Label = '',
     [Parameter(ParameterSetName = 'Capture')]
     [int]$TimeoutMinutes = 15,
+    [Parameter(ParameterSetName = 'Capture')]
+    [ValidateSet('demo', 'hard', 'all')]
+    [string]$Set = 'all',
 
     [Parameter(ParameterSetName = 'Compare', Mandatory = $true)]
     [string]$Compare,
     [Parameter(ParameterSetName = 'Compare', Mandatory = $true)]
     [string]$Against,
     [Parameter(ParameterSetName = 'Compare')]
-    [string[]]$Ignore = @()
+    [string[]]$Ignore = @(),
+
+    [Parameter(ParameterSetName = 'Score', Mandatory = $true)]
+    [string]$Score,
+    [Parameter(ParameterSetName = 'Score')]
+    [string]$Expected = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -95,7 +110,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Capture') {
     if (-not $Label) { $Label = $runId }
     $path = Join-Path $repo "golden-snapshots\$Label.json"
     # demo-mail.ps1 reports through Write-Host; 6>&1 captures that stream to read back how many it sent.
-    $sendLog = & (Join-Path $PSScriptRoot 'demo-mail.ps1') -RunId $runId 6>&1
+    $sendLog = & (Join-Path $PSScriptRoot 'demo-mail.ps1') -RunId $runId -Set $Set 6>&1
     $sendLog | ForEach-Object { Write-Host $_ }
     $expected = [int](($sendLog | Select-String 'Sent (\d+) email').Matches[0].Groups[1].Value)
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
@@ -116,6 +131,54 @@ SELECT count(*) || ' ' || count(*) FILTER (WHERE status IN ('RECEIVED','NEW','PR
     }
     Write-Host "`nSaved $($rows.Count) ticket(s) of run $runId to $path"
     $rows | Format-Table key, status, type, urgency, angry, identifier, audit -AutoSize
+    return
+}
+
+# ---- Score: one snapshot against the hand-written expected outcomes (scripts/golden-expected.json) ----
+if ($PSCmdlet.ParameterSetName -eq 'Score') {
+    if (-not $Expected) { $Expected = Join-Path $PSScriptRoot 'golden-expected.json' }
+    # email_ticket.urgency is the Urgency enum stored as its ORDINAL (CLAUDE.md decision 21).
+    $urgencyNames = @('LOW', 'NORMAL', 'HIGH')
+    $rows = @{}
+    foreach ($r in @(Get-Content $Score -Raw | ConvertFrom-Json | ForEach-Object { $_ })) { $rows[$r.key] = $r }
+    $spec = Get-Content $Expected -Raw -Encoding UTF8 | ConvertFrom-Json
+    $fields = @('status', 'type', 'urgency', 'angry', 'identifier', 'doc_type', 'doc_attached', 'mailbox', 'assigned')
+    $tally = [ordered]@{}
+    foreach ($f in $fields) { $tally[$f] = [pscustomobject]@{ field = $f; correct = 0; total = 0 } }
+    $misses = New-Object System.Collections.Generic.List[object]
+    $absent = New-Object System.Collections.Generic.List[string]
+    $perfect = 0; $scored = 0
+    foreach ($case in $spec.scenarios) {
+        $row = $rows[$case.key]
+        # Not sent in this capture (e.g. -Set demo) or never ingested: listed, not scored.
+        if (-not $row) { $absent.Add($case.key); continue }
+        $scored++
+        $caseOk = $true
+        foreach ($f in $fields) {
+            $want = $case.expect.PSObject.Properties[$f]
+            if (-not $want) { continue }   # field not part of this scenario's expectation
+            $tally[$f].total++
+            $actual = "$($row.$f)"
+            if ($f -eq 'urgency' -and $actual -match '^[0-2]$') { $actual = $urgencyNames[[int]$actual] }
+            # A JSON array lists every acceptable value; null and "" both mean "empty".
+            $allowed = @($want.Value | ForEach-Object { "$_" })
+            if ($allowed -ccontains $actual) { $tally[$f].correct++; continue }
+            $caseOk = $false
+            $shown = @($allowed | ForEach-Object { if ($_ -eq '') { '(empty)' } else { $_ } }) -join ' | '
+            $misses.Add([pscustomobject]@{ key = $case.key; field = $f; expected = $shown; actual = $(if ($actual -eq '') { '(empty)' } else { $actual }) })
+        }
+        if ($caseOk) { $perfect++ }
+    }
+    $specKeys = @($spec.scenarios | ForEach-Object { $_.key })
+    $unscored = @($rows.Keys | Where-Object { $specKeys -cnotcontains $_ })
+    Write-Host "Scored $Score against $Expected`n"
+    $tally.Values | Select-Object field, correct, total,
+        @{ n = 'pct'; e = { if ($_.total) { [math]::Round(100 * $_.correct / $_.total) } else { '-' } } } | Format-Table -AutoSize
+    Write-Host "$perfect of $scored scenario(s) fully correct."
+    if ($misses.Count) { $misses | Format-Table key, field, expected, actual -AutoSize }
+    if ($absent.Count) { Write-Warning "Not in this snapshot (not scored): $($absent -join ', ')" }
+    if ($unscored.Count) { Write-Warning "No expectation for: $($unscored -join ', ')" }
+    Write-Host 'Draft checklists (draft.must / draft.must_not) are not scored here: the snapshot holds no draft text.'
     return
 }
 
