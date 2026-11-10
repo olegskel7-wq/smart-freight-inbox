@@ -32,7 +32,13 @@ mkdir -p scripts/eval/runs
 rm -f "$log"
 node scripts/eval/ollama-eval-proxy.mjs --port "$port" --short-model "$short" --draft-model "$draft" --log "$log" ${model_url:+--model-url "$model_url"} &
 proxy_pid=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null -m 2 "http://127.0.0.1:$port/api/tags" && break; sleep 1; done
+up=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -s -o /dev/null -m 2 "http://127.0.0.1:$port/api/tags"; then up=yes; break; fi
+  sleep 1
+done
+# A dead endpoint would park every ticket as RETRY_LATER and the capture would wait out its timeout.
+[ -n "$up" ] || { echo "The eval proxy did not start (key file missing? port $port busy?)." >&2; exit 1; }
 
 # Never overwrite an endpoint somebody set on purpose: DO NOTHING on conflict, then insist on ours.
 echo "INSERT INTO tenant_setting (tenant_id, key, value)

@@ -13,10 +13,10 @@
 // should not grade its own drafts. The key is read from SECRETS_DIR/ANTHROPIC_API_KEY.
 import Anthropic from "@anthropic-ai/sdk";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { createAnthropicClient } from "./anthropic-client.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { values: opt } = parseArgs({
@@ -48,9 +48,7 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8").replace(/^ï»
 const rows = new Map(readJson(opt.drafts).map((row) => [row.key, row]));
 const cases = readJson(opt.expected).scenarios.filter((c) => c.draft && rows.has(c.key));
 
-const secretsDir = process.env.SECRETS_DIR || path.join(os.homedir(), ".smartfreight", "secrets");
-const apiKey = fs.readFileSync(path.join(secretsDir, "ANTHROPIC_API_KEY"), "utf8").replace(/^ï»¿/, "").trim();
-const client = new Anthropic({ apiKey });
+const client = createAnthropicClient();
 
 const SYSTEM = `You grade one reply draft written by a freight company's email assistant.
 

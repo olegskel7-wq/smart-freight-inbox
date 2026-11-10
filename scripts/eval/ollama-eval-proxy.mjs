@@ -19,9 +19,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import http from "node:http";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { createAnthropicClient } from "./anthropic-client.mjs";
 
 const { values: opt } = parseArgs({
   options: {
@@ -44,13 +44,7 @@ if (!opt["short-model"] || !opt["draft-model"] || !opt.log) {
 }
 
 const isClaude = (model) => model.startsWith("claude-");
-let anthropic = null;
-if (isClaude(opt["short-model"]) || isClaude(opt["draft-model"])) {
-  const dir = process.env.SECRETS_DIR || path.join(os.homedir(), ".smartfreight", "secrets");
-  const apiKey = fs.readFileSync(path.join(dir, "ANTHROPIC_API_KEY"), "utf8").replace(/^﻿/, "").trim();
-  if (!apiKey) throw new Error(`ANTHROPIC_API_KEY in ${dir} is empty`);
-  anthropic = new Anthropic({ apiKey });
-}
+const anthropic = isClaude(opt["short-model"]) || isClaude(opt["draft-model"]) ? createAnthropicClient() : null;
 
 // Thinking is always on for the current Claude models; effort is the cost/latency dial. A label or an
 // identifier needs little of it, a customer-facing reply a bit more. max_tokens includes thinking.
@@ -123,7 +117,11 @@ async function handleGenerate(req, res, raw) {
 
 async function passThrough(req, res, raw) {
   try {
-    const upstream = await fetch(new URL(req.url, opt["ollama-url"]), {
+    // Path and query only, glued onto the Ollama origin: a request line such as "//other-host/x" or a
+    // full URL must not turn the proxy into a way to reach some other host.
+    const asked = new URL(req.url, "http://placeholder");
+    const target = new URL(asked.pathname + asked.search, new URL(opt["ollama-url"]).origin);
+    const upstream = await fetch(target, {
       method: req.method,
       headers: { "content-type": req.headers["content-type"] || "application/json" },
       body: req.method === "GET" || req.method === "HEAD" ? undefined : raw,
