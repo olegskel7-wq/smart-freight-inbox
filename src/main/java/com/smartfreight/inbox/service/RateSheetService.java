@@ -131,8 +131,9 @@ public class RateSheetService {
 
     /**
      * Builds the rate block for the drafting prompt: every non-expired rate whose origin AND
-     * destination both appear as whole words in the email text, formatted one per line with the
-     * sell price (margin already applied). Empty string when the feature is off or nothing matches.
+     * destination both appear as whole words in the email text - unless the email says the route
+     * runs the other way, see {@link #matchesRoute} - formatted one per line with the sell price
+     * (margin already applied). Empty string when the feature is off or nothing matches.
      *
      * @param emailText email body plus parsed attachment text
      * @return prompt-ready rate lines, or {@code ""}
@@ -146,7 +147,7 @@ public class RateSheetService {
         }
 
         List<String> lines = rateSheetCache.validRatesOn(LocalDate.now()).stream()
-                .filter(r -> containsWord(emailText, r.getOrigin()) && containsWord(emailText, r.getDestination()))
+                .filter(r -> matchesRoute(emailText, r.getOrigin(), r.getDestination()))
                 .limit(MAX_RATES_IN_PROMPT)
                 .map(this::formatRateLine)
                 .toList();
@@ -216,12 +217,32 @@ public class RateSheetService {
         return record.get(column).trim();
     }
 
+    /**
+     * Both ends of the route are named, and nothing in the email says it runs the other way.
+     *
+     * <p>Naming both places is not enough: "Felixstowe to Rotterdam" names the same two as the
+     * Rotterdam → Felixstowe rate and used to be quoted that price. "to &lt;origin&gt;" or
+     * "from &lt;destination&gt;" marks the opposite direction and drops the rate. Only that explicit
+     * wording does — an email that gives no direction keeps the match, because a missing price costs
+     * an operator a minute while a wrong price goes to the customer in writing.
+     */
+    private boolean matchesRoute(String text, String origin, String destination) {
+        return containsWord(text, origin) && containsWord(text, destination)
+                && !containsPhrase(text, "to", origin) && !containsPhrase(text, "from", destination);
+    }
+
     /** Whole-word, case-insensitive match so e.g. "Hull" does not match inside "fully". */
     private boolean containsWord(String text, String word) {
-        return Pattern.compile("\\b" + Pattern.quote(word) + "\\b",
-                        Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE)
-                .matcher(text)
-                .find();
+        return wholeWords(Pattern.quote(word)).matcher(text).find();
+    }
+
+    /** {@code preposition} directly followed by {@code place}, e.g. "to Rotterdam". */
+    private boolean containsPhrase(String text, String preposition, String place) {
+        return wholeWords(preposition + "\\s+" + Pattern.quote(place)).matcher(text).find();
+    }
+
+    private static Pattern wholeWords(String regex) {
+        return Pattern.compile("\\b" + regex + "\\b", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     }
 
     /** One prompt line per rate. Sell price only — the margin itself never reaches the LLM. */

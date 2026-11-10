@@ -5,7 +5,9 @@
 #
 #   scripts/eval/run-eval.sh l1-haiku  claude-haiku-5-5  claude-haiku-5-5
 #   scripts/eval/run-eval.sh l1-sonnet claude-sonnet-5-5 claude-sonnet-5-5
-#   scripts/eval/run-eval.sh l1-qwen35 qwen3.5:9b qwen3.5:9b http://localhost:11435
+#   EVAL_PROXY_ARGS="--short-think false" scripts/eval/run-eval.sh l1-qwen35 qwen3.5:9b gemma4:12b http://localhost:11435
+#
+# EVAL_PROXY_ARGS is passed to the proxy as is (see its header for the options).
 #
 # Run from Git Bash with the demo harness up (see scripts/demo-mail.ps1). It starts the eval proxy,
 # points the demo tenants' Ollama endpoint at it, sends the golden set through the pipeline, then puts
@@ -30,7 +32,7 @@ trap restore EXIT
 
 mkdir -p scripts/eval/runs
 rm -f "$log"
-node scripts/eval/ollama-eval-proxy.mjs --port "$port" --short-model "$short" --draft-model "$draft" --log "$log" ${model_url:+--model-url "$model_url"} &
+node scripts/eval/ollama-eval-proxy.mjs --port "$port" --short-model "$short" --draft-model "$draft" --log "$log" ${model_url:+--model-url "$model_url"} ${EVAL_PROXY_ARGS:-} &
 proxy_pid=$!
 up=""
 for _ in 1 2 3 4 5 6 7 8 9 10; do

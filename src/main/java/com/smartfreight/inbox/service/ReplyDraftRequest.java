@@ -11,9 +11,26 @@ import com.smartfreight.inbox.entity.TrackedItem;
  * @param rateContext      matched rate lines from {@link RateSheetService}, or empty
  * @param exampleContext   few-shot example block from {@link FeedbackLoopService}, or empty
  * @param knowledgeContext knowledge block from {@link KnowledgeBaseService}, or empty
+ * @param reference        the reference extracted from the email, empty when the email named none —
+ *                         tells "nothing to look up" apart from "looked up and not found"
  */
 public record ReplyDraftRequest(String emailBody, TrackedItem item, String rateContext,
-                                String exampleContext, String knowledgeContext) {
+                                String exampleContext, String knowledgeContext, String reference) {
+
+    /** A request for an email that named no reference. */
+    public ReplyDraftRequest(String emailBody, TrackedItem item, String rateContext,
+                             String exampleContext, String knowledgeContext) {
+        this(emailBody, item, rateContext, exampleContext, knowledgeContext, "");
+    }
+
+    /**
+     * No item because there was nothing to look up: the email named no reference. A quote request or a
+     * general question is not a failed lookup, and the draft must not tell the customer that something
+     * "was not found".
+     */
+    public boolean lookupSkipped() {
+        return item == null && (reference == null || reference.isBlank());
+    }
 
     /** A request with no rate, example or knowledge context. */
     public static ReplyDraftRequest of(String emailBody, TrackedItem item) {
@@ -26,7 +43,8 @@ public record ReplyDraftRequest(String emailBody, TrackedItem item, String rateC
         return "ReplyDraftRequest[emailBody=" + length(emailBody)
                 + " chars, item=" + (item == null ? "none" : item.getIdentifier())
                 + ", rateContext=" + length(rateContext) + " chars, exampleContext=" + length(exampleContext)
-                + " chars, knowledgeContext=" + length(knowledgeContext) + " chars]";
+                + " chars, knowledgeContext=" + length(knowledgeContext)
+                + " chars, reference=" + (reference == null || reference.isBlank() ? "none" : "given") + "]";
     }
 
     private static int length(String text) {

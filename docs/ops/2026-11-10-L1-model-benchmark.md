@@ -18,6 +18,8 @@ local 2024 models on our own mail, and what does it cost per email?
 - **Claude settings:** thinking is always on for these models; effort `low` for the short calls
   (classification, extraction, document type), `medium` for drafts. No sampling parameters.
 - **Reproduce:** `scripts/eval/run-eval.sh <label> <short-model> <draft-model>` (Git Bash, demo harness up).
+- **Which pipeline:** the "Results" section below is the pipeline as it was before the fixes described
+  further down; the later sections say which build they ran on.
 
 ## Results
 
@@ -86,5 +88,59 @@ Cloud models are clearly better on this set, at a cost that is negligible agains
 cent per email; Sonnet 5.5 writes the better drafts for half a cent. The pipeline issues above cap
 every model's draft quality and are worth fixing before choosing between Haiku and Sonnet for drafts.
 
-Newer local models (Qwen3.5 9B, Gemma 4 12B on a current Ollama) are measured separately — see the
-ROADMAP L1 row for the status.
+## After the pipeline fixes (same evening)
+
+Three of the findings above were fixed in code (branch `fix/l1-pipeline-findings`): an email that names
+no reference no longer gets "Item not found" as its item block; a rate is not offered for the opposite
+direction; automatic replies are kept out of the pipeline by their headers (`Auto-Submitted:
+auto-replied` and the legacy vacation headers - not `auto-generated`, which helpdesk tools also put on
+mail written by a person; whether Exchange out-of-office notes carry a safe mark is to be checked on a
+real sample). The set was then run again.
+
+| | qwen2.5:7b + llama3.1:8b | Claude Haiku 5.5 |
+|---|---|---|
+| Scenarios with every field right | 17 → 20 of 26 | 24 → 26 of 26 |
+| Drafts passing their checklist | 4 → 7 of 23 | 12 → 12 of 23 |
+| Must items met | 20 → 24 of 42 | 31 → 31 of 42 |
+| Must-not items violated | 6 → 3 of 28 | 2 → 2 of 28 |
+| Drafts that say "not found" although the email named no reference | 6 → 0 | 6 → 0 |
+
+The out-of-office email is now IRRELEVANT in every run, and the Felixstowe → Rotterdam booking is no
+longer offered the import rate. Sonnet 5.5 was not run again.
+
+One thing the re-run caught. The first wording of the "no reference" note only removed "Item not
+found". llama3.1, left without that excuse, invented a price and a booking reference: must-not
+violations went from 6 to 10. The note now also says to use only the facts given and to say the team
+will confirm anything else; with that wording they are at 3. A stronger model did not need the extra
+sentence (Haiku was at 2 with the first wording already) - the weaker the model, the more of the
+guard rail has to be in the prompt. The local column above is the final wording, the Haiku column the
+first one.
+
+## Newer local models
+
+Qwen3.5 9B and Gemma 4 12B, on Ollama 0.40.15 in a separate container (the project's Ollama 0.3.14 was
+not touched), measured on the fixed pipeline. Both models think by default.
+
+| | qwen2.5 + llama3.1 (today) | qwen3.5 + gemma4 drafts | qwen3.5 for both, thinking off | Haiku 5.5 |
+|---|---|---|---|---|
+| Scenarios with every field right | 20 of 26 | 13 of 26 | 13 of 26 | 26 of 26 |
+| Type | 24 / 26 | 24 / 26 | 24 / 26 | 26 / 26 |
+| Urgency | 22 / 23 | 14 / 23 | 14 / 23 | 23 / 23 |
+| Tone | 19 / 23 | 19 / 23 | 18 / 23 | 23 / 23 |
+| Drafts passing their checklist | 7 of 23 | 8 of 23 | 7 of 23 | 12 of 23 |
+| Must-not items violated | 3 / 28 | 1 / 28 | 2 / 28 | 2 / 28 |
+| Median seconds per ticket | 138 | 236 | 8 | 22 |
+
+- **No better where it matters.** Drafts are level with today's models (7–8 of 23 against 7), far
+  from Haiku's 12. Classification is worse: with thinking off Qwen3.5 calls nine ordinary emails
+  HIGH or LOW urgency, which would escalate them wrongly.
+- **Thinking is the catch.** With thinking on, Qwen3.5 needs about 20 s for a one-line label - against
+  the pipeline's 30 s classification timeout - so it has to be off for the short calls, and the
+  pipeline has no setting for that today. With thinking on for drafts as well, 20 of 23 drafts came
+  back empty: the model spent its whole 4096-token window thinking and the pipeline fell back to the
+  static reply. That run is not in the table.
+- **Speed.** One model for both roles with thinking off is very fast (8 s per ticket, no model
+  swapping). Two thinking models on a 16 GB card are slower than today's pair.
+
+So an upgrade of the local models is not worth doing for quality: on this set it buys speed at best,
+and costs urgency accuracy. The quality step is the cloud model.

@@ -52,11 +52,16 @@ public class AiDraftingService {
      * @return generated or fallback draft
      */
     public String generateDraft(ReplyDraftRequest request) {
-        String itemContext = buildItemContext(request.item());
+        // "Item not found" is true only after a failed lookup. An email that named no reference (a quote
+        // request, a general question) gets a note saying so, or the model apologises for a missing
+        // container nobody asked about.
+        boolean lookupSkipped = request.lookupSkipped();
+        String itemContext = lookupSkipped ? DraftPrompts.NO_REFERENCE_NOTE : buildItemContext(request.item());
         String template = settingsService.getString(
                 SettingsService.KEY_DRAFTING_PROMPT, DraftPrompts.DEFAULT_DRAFTING_PROMPT);
         String prompt = DraftPrompts.reply(template, request, itemContext);
-        return draftClient.generate(prompt, DraftFallbacks.forItem(request.item()));
+        return draftClient.generate(prompt,
+                lookupSkipped ? DraftFallbacks.NO_REFERENCE : DraftFallbacks.forItem(request.item()));
     }
 
     /**

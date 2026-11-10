@@ -178,7 +178,7 @@
     {
       "key": "felixstowe-hard-out-of-office",
       "expect": { "status": "IRRELEVANT", "type": null },
-      "note": "An auto-reply that mentions shipping. Nothing in the code detects auto-replies today, so a draft here, or an auto-send, would start a mail loop."
+      "note": "An auto-reply that mentions shipping, sent with Auto-Submitted: auto-replied. Ingestion keeps it as IRRELEVANT by that header (AutoReplyDetector) - before the fix every model drafted an answer, which with auto-send on is a mail loop."
     },
     {
       "key": "midlands-hard-angry-low",

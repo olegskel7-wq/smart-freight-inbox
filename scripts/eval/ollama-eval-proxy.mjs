@@ -35,6 +35,11 @@ const { values: opt } = parseArgs({
     // Real Ollama: pass-through target, and the endpoint for non-Claude models unless --model-url is set.
     "ollama-url": { type: "string", default: "http://localhost:11434" },
     "model-url": { type: "string" },
+    // Ollama models that think (Qwen 3.5, Gemma 4) do so by default: about 20 s for a one-line label on
+    // a 16 GB GPU, against the pipeline's 30 s classification timeout. "false" turns thinking off for
+    // that role; unset leaves the model's default. Ignored for Claude (see ROLES below).
+    "short-think": { type: "string" },
+    "draft-think": { type: "string" },
     log: { type: "string" },
   },
 });
@@ -49,8 +54,8 @@ const anthropic = isClaude(opt["short-model"]) || isClaude(opt["draft-model"]) ?
 // Thinking is always on for the current Claude models; effort is the cost/latency dial. A label or an
 // identifier needs little of it, a customer-facing reply a bit more. max_tokens includes thinking.
 const ROLES = {
-  short: { model: opt["short-model"], effort: "low", maxTokens: 2048 },
-  draft: { model: opt["draft-model"], effort: "medium", maxTokens: 4096 },
+  short: { model: opt["short-model"], effort: "low", maxTokens: 2048, think: opt["short-think"] },
+  draft: { model: opt["draft-model"], effort: "medium", maxTokens: 4096, think: opt["draft-think"] },
 };
 
 fs.mkdirSync(path.dirname(path.resolve(opt.log)), { recursive: true });
@@ -78,7 +83,7 @@ async function generateWithOllama(role, prompt) {
   const res = await fetch(new URL("/api/generate", opt["model-url"] || opt["ollama-url"]), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ model: role.model, prompt, stream: false }),
+    body: JSON.stringify({ model: role.model, prompt, stream: false, ...(role.think ? { think: role.think === "true" } : {}) }),
   });
   if (!res.ok) throw new Error(`Ollama answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = await res.json();

@@ -211,4 +211,60 @@ class RateSheetServiceTest {
 
         assertThat(context).contains("valid until 31 Dec 2026");
     }
+
+    // ---------- buildRateContext: direction ----------
+
+    @Test
+    void buildRateContext_oppositeDirection_isNotQuoted() {
+        when(repository.findAllValidOn(any(LocalDate.class))).thenReturn(List.of(
+                rate("Hapag-Lloyd", "Rotterdam", "Felixstowe", "850.00", "8", null)));
+
+        // Names both places, but the other way round: the import rate must not price an export.
+        String context = service.buildRateContext("Please book 1 x 20GP Felixstowe to Rotterdam on the 12 October sailing.");
+
+        assertThat(context).isEmpty();
+    }
+
+    @Test
+    void buildRateContext_bothDirectionsOnFile_onlyTheAskedOneIsQuoted() {
+        when(repository.findAllValidOn(any(LocalDate.class))).thenReturn(List.of(
+                rate("Hapag-Lloyd", "Rotterdam", "Felixstowe", "850.00", "0", null),
+                rate("Maersk", "Felixstowe", "Rotterdam", "950.00", "0", null)));
+
+        String context = service.buildRateContext("Quote please: Felixstowe to Rotterdam");
+
+        assertThat(context).contains("950.00 GBP").doesNotContain("850.00");
+    }
+
+    @Test
+    void buildRateContext_fromDestination_isNotQuoted() {
+        when(repository.findAllValidOn(any(LocalDate.class))).thenReturn(List.of(
+                rate("Maersk", "Shanghai", "Felixstowe", "2400.00", "0", null)));
+
+        String context = service.buildRateContext("We need a box moved from Felixstowe, final stop Shanghai.");
+
+        assertThat(context).isEmpty();
+    }
+
+    @Test
+    void buildRateContext_destinationFirstButRightDirection_isQuoted() {
+        when(repository.findAllValidOn(any(LocalDate.class))).thenReturn(List.of(
+                rate("Maersk", "Shanghai", "Felixstowe", "2400.00", "0", null)));
+
+        // Word order alone says nothing: "to Felixstowe from Shanghai" is still Shanghai -> Felixstowe.
+        String context = service.buildRateContext("Import to Felixstowe from Shanghai, 2 x 40HC - price?");
+
+        assertThat(context).contains("2400.00 GBP");
+    }
+
+    @Test
+    void buildRateContext_noDirectionWords_keepsTheMatch() {
+        when(repository.findAllValidOn(any(LocalDate.class))).thenReturn(List.of(
+                rate("Ferrymasters", "Birmingham", "Hamburg", "1680.00", "0", null)));
+
+        // No "to"/"from" to go by (here: German) - a missing price is the cheaper mistake to risk.
+        String context = service.buildRateContext("Komplettladung von Birmingham nach Hamburg, bitte Angebot.");
+
+        assertThat(context).contains("1680.00 GBP");
+    }
 }

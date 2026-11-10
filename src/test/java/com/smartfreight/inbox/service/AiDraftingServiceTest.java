@@ -123,7 +123,7 @@ class AiDraftingServiceTest {
     void generateDraft_containerNotFound_fallbackMentionsNotFound() {
         stubOllamaError();
 
-        String result = service.generateDraft(ReplyDraftRequest.of("Where is my container?", null));
+        String result = service.generateDraft(new ReplyDraftRequest("Where is my container?", null, "", "", "", "MSCU0000000"));
 
         assertNotNull(result);
         assertFalse(result.isBlank(), "Fallback draft must not be empty");

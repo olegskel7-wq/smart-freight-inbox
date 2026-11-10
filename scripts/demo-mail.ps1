@@ -160,7 +160,9 @@ $scenarios = @(
        From = 'Lucy Hart <lucy.hart@coldchain-foods.example.com>'
        Subject = 'Temperature alarm on reefer SZLU9012345'
        Body = "Good afternoon,`r`n`r`nThe terminal app shows a temperature alarm on our reefer SZLU9012345 (frozen fish, set to -18C) at Felixstowe. Could you kindly ask the terminal to check the unit and the plug-in within the next two hours?`r`n`r`nThank you so much for your help,`r`nLucy Hart`r`nColdchain Foods" }
+    # A real out-of-office reply carries this header (RFC 3834); ingestion goes by it, not by the subject.
     @{ Set = 'hard'; Tenant = 'felixstowe'; Name = 'hard-out-of-office'; Type = 'IRRELEVANT (auto-reply)'
+       Headers = @{ 'Auto-Submitted' = 'auto-replied' }
        From = 'James Whitaker <james.whitaker@northgate-imports.example.com>'
        Subject = 'Automatic reply: Quote request: 3 x 40HC Ningbo to Felixstowe'
        Body = "Thank you for your email. I am out of the office until 17 November with limited access to email.`r`n`r`nFor urgent shipping matters please contact our logistics desk on logistics@northgate-imports.example.com.`r`n`r`nJames Whitaker" }
@@ -280,6 +282,7 @@ try {
             $domain = ($msg.From.Address -split '@')[1]
             $tag = if ($RunId) { "$RunId-$($s.Tenant)-$($s.Name)-" } else { '' }
             $msg.Headers.Add('Message-ID', "<demo-$tag$([guid]::NewGuid().ToString('N'))@$domain>")
+            if ($s.Headers) { foreach ($h in $s.Headers.GetEnumerator()) { $msg.Headers.Add($h.Key, $h.Value) } }
             if ($s.Attachment) {
                 # MailMessage.Dispose() disposes its attachments and their streams too.
                 $stream = New-Object System.IO.MemoryStream(, (New-DemoPdf $s.Attachment.Lines))
