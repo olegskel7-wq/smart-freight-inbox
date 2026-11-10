@@ -42,7 +42,9 @@ import java.io.IOException;
  *    locally (PDFBox/POI — CPU-bound, no network, so it stays on this thread).
  * 4. Duplicate check by Message-ID — IMAP may deliver the same message twice.
  * 5. A ticket is persisted with status RECEIVED, and a "ticket.created" event is written
- *    to the transactional outbox IN THE SAME transaction.
+ *    to the transactional outbox IN THE SAME transaction. An automatic reply (out-of-office,
+ *    vacation responder — {@link AutoReplyDetector}) is persisted as IRRELEVANT instead and
+ *    stops here: no event, no draft.
  * 6. OutboxRelay publishes the event to RabbitMQ; TicketEventConsumer classifies the email
  *    (Qwen) and runs the AI pipeline. A broker or Ollama outage therefore never blocks
  *    ingestion — events wait in the outbox, tickets wait in RECEIVED
@@ -73,6 +75,7 @@ public class EmailIngestionService {
     private final SlaService slaService;
     private final WebhookEventPublisher webhookEventPublisher;
     private final Counter receivedCounter;
+    private final Counter autoReplyCounter;
 
     public EmailIngestionService(EmailTicketRepository emailTicketRepository,
                                  TicketEventPublisher ticketEventPublisher,
@@ -89,6 +92,9 @@ public class EmailIngestionService {
         this.webhookEventPublisher = webhookEventPublisher;
         this.receivedCounter = Counter.builder("smartfreight_emails_received_total")
                 .description("Total emails received and successfully ingested as tickets")
+                .register(meterRegistry);
+        this.autoReplyCounter = Counter.builder("smartfreight_auto_replies_ignored_total")
+                .description("Automatic replies (out-of-office, vacation, delivery reports) kept as IRRELEVANT at ingestion")
                 .register(meterRegistry);
     }
 
@@ -160,6 +166,8 @@ public class EmailIngestionService {
                 return;
             }
 
+            boolean autoReply = AutoReplyDetector.isAutoReply(mimeMessage);
+
             EmailTicket ticket = EmailTicket.builder()
                     .messageId(messageId)
                     .subject(mimeMessage.getSubject())
@@ -169,13 +177,15 @@ public class EmailIngestionService {
                     .mailboxId(mailboxId)
                     // RECEIVED = persisted but not yet classified; the consumer decides
                     // IRRELEVANT vs pipeline. NEW is reserved for the retry re-entry path.
-                    .status(TicketStatus.RECEIVED)
+                    // An automatic reply is decided here: IRRELEVANT at once, kept for audit.
+                    .status(autoReply ? TicketStatus.IRRELEVANT : TicketStatus.RECEIVED)
                     .build();
 
             // Provisional SLA deadline with the GENERAL window — the type is not
             // known yet (no LLM here) and the customer's clock starts now, not at
             // classification. The consumer refines it to the per-type window in step 0.
-            if (slaService.isEnabled()) {
+            // Nobody is waiting on an answer to an automatic reply, so it gets no deadline.
+            if (!autoReply && slaService.isEnabled()) {
                 ticket.setSlaDeadlineAt(slaService.deadlineFor(null, ticket.getCreatedAt()));
             }
 
@@ -183,6 +193,12 @@ public class EmailIngestionService {
                 EmailTicket saved = emailTicketRepository.save(ticket);
                 receivedCounter.increment();
                 MDC.put("ticketId", String.valueOf(saved.getId()));
+                if (autoReply) {
+                    // No pipeline event and no webhook: there is nothing to classify, draft or announce.
+                    autoReplyCounter.increment();
+                    log.info("Automatic reply kept as IRRELEVANT, no draft: ticket ID={}", saved.getId());
+                    return;
+                }
                 log.info("Email ingested: ticket ID={}", saved.getId());
 
                 // Same transaction as the ticket insert: either both become durable or neither.

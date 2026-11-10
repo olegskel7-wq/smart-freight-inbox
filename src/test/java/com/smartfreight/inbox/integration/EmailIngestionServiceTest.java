@@ -336,4 +336,55 @@ class EmailIngestionServiceTest {
         assertThat(captor.getValue().getStatus()).isEqualTo(TicketStatus.RECEIVED);
         verify(ticketEventPublisher).publishTicketCreated(7L, 1L);
     }
+
+    @Test
+    void processIncomingEmail_automaticReply_keptAsIrrelevantWithoutPipelineEvent() throws Exception {
+        MimeMessage email = buildSimpleEmail(
+                "<ooo-001@example.com>",
+                "james@northgate-imports.example.com",
+                "Automatic reply: Quote request: 3 x 40HC Ningbo to Felixstowe",
+                "I am out of the office until 17 November. For urgent shipping matters contact our logistics desk.");
+        email.setHeader("Auto-Submitted", "auto-replied");
+
+        when(emailTicketRepository.findByMessageId("<ooo-001@example.com>"))
+                .thenReturn(Optional.empty());
+        EmailTicket savedTicket = EmailTicket.builder().id(8L).tenantId(1L)
+                .messageId("<ooo-001@example.com>").build();
+        when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
+
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
+
+        // Kept for audit, but nothing downstream: no classification, no draft, no SLA clock, no webhook.
+        ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
+        verify(emailTicketRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TicketStatus.IRRELEVANT);
+        assertThat(captor.getValue().getSlaDeadlineAt()).isNull();
+        verify(ticketEventPublisher, never()).publishTicketCreated(any(), any());
+        verify(webhookEventPublisher, never()).publish(any(), any(), any());
+        verify(slaService, never()).isEnabled();
+    }
+
+    @Test
+    void processIncomingEmail_machineWrittenEnquiry_isStillProcessed() throws Exception {
+        // "auto-generated" without a reply header is a customer's system sending a booking request.
+        MimeMessage email = buildSimpleEmail(
+                "<erp-001@example.com>",
+                "bookings@customer-erp.example.com",
+                "Booking request 4471",
+                "Please book 1 x 20GP Felixstowe to Rotterdam.");
+        email.setHeader("Auto-Submitted", "auto-generated");
+
+        when(emailTicketRepository.findByMessageId("<erp-001@example.com>"))
+                .thenReturn(Optional.empty());
+        EmailTicket savedTicket = EmailTicket.builder().id(9L).tenantId(1L)
+                .messageId("<erp-001@example.com>").build();
+        when(emailTicketRepository.save(any(EmailTicket.class))).thenReturn(savedTicket);
+
+        emailIngestionService.processIncomingEmail(email, MAILBOX_ID);
+
+        ArgumentCaptor<EmailTicket> captor = ArgumentCaptor.forClass(EmailTicket.class);
+        verify(emailTicketRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(TicketStatus.RECEIVED);
+        verify(ticketEventPublisher).publishTicketCreated(9L, 1L);
+    }
 }
