@@ -1,6 +1,6 @@
 {
   "about": "Golden set expected outcomes (ROADMAP L0). One entry per demo-mail.ps1 scenario, keyed tenant-name like the golden-snapshot.ps1 rows. 'expect' holds the snapshot fields a correct pipeline must produce: a value, or an array of acceptable values where the email is genuinely ambiguous; null and empty string both mean 'empty'; a field that is absent is not scored. urgency is written as LOW/NORMAL/HIGH (the snapshot's ordinal is mapped). 'draft' is the checklist for the reply text (must / must_not), judged by a human or an LLM judge in L1 - the snapshot holds no draft text. Facts behind the checklists come from the dev seeds: port-service tracking (V2/V3 sea, V7 road), carrier_rate and tenant_document (V31). Sell price = rate x (1 + margin%). Urgency and sentiment follow the classifier prompt (EmailClassificationService.typedRoutingPrompt): HIGH = time-critical, deadline, demurrage, stuck or held shipment, urgent/asap; NEGATIVE = angry, frustrated, complaining, threatening to leave.",
-  "version": 1,
+  "version": 2,
   "updated": "2026-11-10",
   "scenarios": [
     {
@@ -25,7 +25,7 @@
       "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "NORMAL", "angry": false, "identifier": "MSCU1234567" },
       "draft": {
         "must": ["MSCU1234567 is in transit on the vessel MSC Francesca, heading for Felixstowe"],
-        "must_not": ["a specific ETA date - tracking holds no ETA date"]
+        "must_not": ["state or imply a future arrival date - the only ETA on file (28 April 2026) is already in the past; saying that it has passed is fine"]
       }
     },
     {
@@ -67,7 +67,7 @@
       "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "HIGH", "angry": true, "identifier": "EVRU3219876", "assigned": true },
       "draft": {
         "must": ["an apology", "EVRU3219876 is in transit on the Ever Gentle to Felixstowe", "a manager will call today"],
-        "must_not": ["a firm ETA date - tracking holds none", "compensation or a discount"]
+        "must_not": ["state or imply a future arrival date - the only ETA on file (3 May 2026) is already in the past; saying that it has passed is fine", "compensation or a discount"]
       },
       "note": "Escalated (HIGH and angry), so tenant 1 auto-assigns it to the escalation operator."
     },
@@ -106,7 +106,7 @@
       "expect": { "status": "DRAFT_READY", "type": "STATUS_UPDATE", "urgency": "NORMAL", "angry": false, "identifier": "MID-2026-0481" },
       "draft": {
         "must": ["MID-2026-0481 is in transit on the M20 toward Dover, heading for Rotterdam"],
-        "must_not": ["a specific arrival time - tracking holds none"]
+        "must_not": ["state or imply a future arrival time - the only ETA on file (2 May 2026) is already in the past; saying that it has passed is fine"]
       }
     },
     {

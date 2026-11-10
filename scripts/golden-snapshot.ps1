@@ -22,6 +22,8 @@
     cases from demo-mail.ps1. Score checks ONE snapshot against the hand-written expected outcomes in
     scripts/golden-expected.json (ROADMAP L0) and prints per-field accuracy plus every miss - the
     yardstick for comparing models or prompts, where Compare only says "something changed".
+    Capture also writes <label>.drafts.json (email + draft text per scenario) for the draft judge,
+    scripts/eval/judge-drafts.mjs, which scores each draft against its must / must-not checklist.
 
     Script execution is disabled by default on Windows - run it as:
       powershell -ExecutionPolicy Bypass -File scripts\golden-snapshot.ps1 [args]
@@ -67,10 +69,15 @@ function Invoke-Sql([string]$sql) {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     Push-Location $repo
+    # PowerShell 5.1 decodes native output with the console code page: without this, non-ASCII
+    # draft text (a pound sign, an umlaut) comes back mangled.
+    $prevEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     try {
         $out = $sql | docker compose exec -T postgres psql -U postgres -d smartfreight -AtXq -v ON_ERROR_STOP=1 -f - 2>$null
         if ($LASTEXITCODE -ne 0) { throw "psql failed with exit code $LASTEXITCODE" }
     } finally {
+        [Console]::OutputEncoding = $prevEncoding
         Pop-Location
         $ErrorActionPreference = $prev
     }
@@ -105,6 +112,23 @@ SELECT coalesce(json_agg(t ORDER BY t.key), '[]') FROM (
     return $rows
 }
 
+# The reply drafts of a run, for the draft judge (scripts/eval/judge-drafts.mjs). Kept out of the
+# snapshot on purpose: draft text differs on every run, and -Compare must stay a clean diff.
+function Save-Drafts([string]$runId, [string]$path) {
+    $sql = @"
+SELECT coalesce(json_agg(t ORDER BY t.key), '[]') FROM (
+  SELECT substring(e.message_id FROM '^<demo-$runId-(.+)-[0-9a-f]{32}@') AS key,
+         e.status, e.sender_email AS sender, e.subject, left(e.body, 4000) AS body,
+         left(coalesce(e.attachment_text, ''), 2000) AS attachment,
+         coalesce(e.draft_reply, '') AS draft,
+         round(extract(epoch FROM (e.updated_at - e.created_at))) AS seconds
+    FROM email_ticket e
+   WHERE e.message_id LIKE '<demo-$runId-%'
+) t;
+"@
+    (Invoke-Sql $sql) | Out-File -FilePath $path -Encoding utf8
+}
+
 if ($PSCmdlet.ParameterSetName -eq 'Capture') {
     $runId = 'g' + (Get-Date -Format 'yyyyMMddHHmmss')
     if (-not $Label) { $Label = $runId }
@@ -126,10 +150,13 @@ SELECT count(*) || ' ' || count(*) FILTER (WHERE status IN ('RECEIVED','NEW','PR
     # Auto-send leaves DRAFT_READY only after the pipeline TX commits - give it a moment.
     Start-Sleep -Seconds 15
     $rows = Save-Snapshot $runId $path
+    $draftsPath = [System.IO.Path]::ChangeExtension($path, '.drafts.json')
+    Save-Drafts $runId $draftsPath
     if ($total -lt $expected -or $pending -gt 0) {
         Write-Warning "Timed out: $total of $expected ticket(s) ingested, $pending still in the pipeline - snapshot is partial."
     }
     Write-Host "`nSaved $($rows.Count) ticket(s) of run $runId to $path"
+    Write-Host "Drafts for the judge: $draftsPath"
     $rows | Format-Table key, status, type, urgency, angry, identifier, audit -AutoSize
     return
 }

@@ -1,0 +1,9 @@
+{
+  "name": "smartfreight-llm-eval",
+  "private": true,
+  "description": "LLM evaluation tooling (ROADMAP L1): an Ollama-compatible proxy that lets the live pipeline run on other models, and a draft judge. Dev only - never part of the deployed stack.",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0"
+  }
+}
