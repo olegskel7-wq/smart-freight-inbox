@@ -109,8 +109,9 @@ One thing the re-run caught. The first wording of the "no reference" note only r
 found". llama3.1, left without that excuse, invented a price and a booking reference: must-not
 violations went from 6 to 10. The note now also says to use only the facts given and to say the team
 will confirm anything else; with that wording they are at 3. A stronger model did not need the extra
-sentence (Haiku stayed at 2 either way) - the weaker the model, the more of the guard rail has to be
-in the prompt.
+sentence (Haiku was at 2 with the first wording already) - the weaker the model, the more of the
+guard rail has to be in the prompt. The local column above is the final wording, the Haiku column the
+first one.
 
 ## Newer local models
 
