@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Settings } from '../types.ts'
 import SettingsPage from './SettingsPage.tsx'
+import { json } from '../test/fetchStub.ts'
 
 // Smoke tests that pin what the settings page loads, renders and sends today — the safety net for
 // splitting it into section components (docs/refactoring.md, Stage 1.3). fetch is stubbed, so the
@@ -47,9 +48,6 @@ type Call = { method: string; url: string; auth: string | null; body: unknown }
 
 let calls: Call[]
 let respond: (method: string, url: string) => Response
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 beforeEach(() => {
   oidc.auth = SIGNED_IN
