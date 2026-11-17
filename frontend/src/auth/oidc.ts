@@ -4,11 +4,18 @@ import type { AuthProviderProps } from 'react-oidc-context'
 // Keycloak OIDC settings for the SPA. Authorization-code + PKCE against the
 // `smartfreight-spa` public client; the resulting access token carries tenant_id + roles for
 // the /api resource server. Keycloak is fronted by nginx on the SAME TLS origin as the SPA, so
-// the authority is https://localhost/realms/smartfreight — same scheme/host as the page, no
-// mixed-content block, one cert to trust, no `127.0.0.1 keycloak` hosts entry. The backend pins
-// the matching issuer (token `iss` is this URL). Override with VITE_KEYCLOAK_AUTHORITY if needed.
+// the authority is this page's own origin + /realms/smartfreight — no mixed-content block, one cert
+// to trust, and (Gate C3) nothing host-specific baked into the bundle: the same build serves
+// https://localhost and the real domain, whose name lives only in PUBLIC_HOST on the server. The
+// backend pins the matching issuer (token `iss` is this URL). Exception: the Vite dev server
+// (npm run dev, http://localhost:5173) proxies only /api and /ws, so it talks to the local stack's
+// Keycloak. VITE_KEYCLOAK_AUTHORITY overrides both.
+export function authorityFor(origin: string, viteDevServer: boolean): string {
+  return viteDevServer ? 'https://localhost/realms/smartfreight' : `${origin}/realms/smartfreight`
+}
+
 const authority =
-  import.meta.env.VITE_KEYCLOAK_AUTHORITY ?? 'https://localhost/realms/smartfreight'
+  import.meta.env.VITE_KEYCLOAK_AUTHORITY ?? authorityFor(window.location.origin, import.meta.env.DEV)
 const clientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? 'smartfreight-spa'
 
 export const oidcConfig: AuthProviderProps = {

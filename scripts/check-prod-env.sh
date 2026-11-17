@@ -15,9 +15,13 @@
 #
 # NOTE: POSTGRES_PASSWORD / RABBITMQ_PASSWORD / KEYCLOAK_DB_PASSWORD / GRAFANA_PASSWORD only take
 # effect on a FRESH volume (the images apply them at first init). Set them before the first `up`, or
-# rotate inside the running service. KEYCLOAK_ADMIN_CLIENT_SECRET must also match the
-# smartfreight-admin client in Keycloak — the realm import still hardcodes it (rotate in the admin
-# console; Gate C3).
+# rotate inside the running service. Same for KEYCLOAK_ADMIN_CLIENT_SECRET and
+# KEYCLOAK_SEED_OPERATOR_PASSWORD on the Keycloak side: the realm import reads them only when it
+# creates the realm (empty keycloak-db); afterwards rotate in Keycloak too (docs/ops/secrets.md).
+#
+# Gate C3/C4: also refuses a missing or non-public PUBLIC_HOST (Keycloak hostname, token issuer,
+# nginx server_name, Let's Encrypt name — docs/ops/tls-domain.md), a Let's Encrypt setup that cannot
+# issue (no ACME_EMAIL, `tls` profile off, http not on port 80, staging) and Keycloak in dev mode.
 
 ENV_FILE="${1:-.env}"
 [ -f "$ENV_FILE" ] || { echo "check-prod-env: $ENV_FILE not found" >&2; exit 1; }
@@ -113,6 +117,48 @@ passphrase="$(secret_of BACKUP_ENCRYPTION_PASSPHRASE)"
 for name in TELEGRAM_BOT_TOKEN HEALTHCHECKS_PING_URL; do
     [ -z "$(secret_of "$name")" ] && problem "$name is empty (alerts would reach nobody — docs/ops/alerting.md)"
 done
+
+# The seed SUPER_ADMIN password goes through the realm's password policy at import — a value that
+# fails it aborts the import and Keycloak never comes up. Keep in sync with keycloak/realm-smartfreight.json.
+seed="$(secret_of KEYCLOAK_SEED_OPERATOR_PASSWORD)"
+if [ -n "$seed" ]; then
+    case "$seed" in *[A-Z]*) ;; *) problem "KEYCLOAK_SEED_OPERATOR_PASSWORD needs an upper-case letter (realm password policy)" ;; esac
+    case "$seed" in *[a-z]*) ;; *) problem "KEYCLOAK_SEED_OPERATOR_PASSWORD needs a lower-case letter (realm password policy)" ;; esac
+    case "$seed" in *[0-9]*) ;; *) problem "KEYCLOAK_SEED_OPERATOR_PASSWORD needs a digit (realm password policy)" ;; esac
+fi
+
+# Gate C3: one public name for everything (Keycloak hostname → token issuer, nginx server_name, the
+# SPA client's redirect URIs, the Let's Encrypt certificate). Not localhost, not an IP, not a
+# reserved/example name — the backend's DevCredentialsGuard also treats a non-local issuer as public.
+host="$(value_of PUBLIC_HOST)"
+case "$host" in
+    '') problem "PUBLIC_HOST is not set in $ENV_FILE (the server's domain, e.g. app.example.co.uk — docs/ops/tls-domain.md)" ;;
+    localhost|*.localhost|*.local|*.test|*.example|*.invalid|example.*|*.example.com|*.example.co.uk)
+        problem "PUBLIC_HOST=$host is not a public domain" ;;
+    *[!a-z0-9.-]*) problem "PUBLIC_HOST=$host must be a bare lower-case host name (no scheme, port, path or capitals)" ;;
+    *.*) case "$host" in *[!0-9.]*) ;; *) problem "PUBLIC_HOST=$host is an IP address — Let's Encrypt and the issuer need a domain" ;; esac ;;
+    *) problem "PUBLIC_HOST=$host has no dot — not a public domain" ;;
+esac
+# Keycloak must run in production mode (Gate C3) — guards against a hand-edit back to start-dev.
+grep -qE '^[[:space:]]*command:.*"start-dev"' "$REPO_ROOT/docker-compose.yml" \
+    && problem "docker-compose.yml runs Keycloak with start-dev (dev mode) — use start"
+# These used to override the issuer/hostname separately; compose no longer reads them, and a stale
+# value here would only mislead whoever reads the .env.
+for name in KEYCLOAK_FRONTEND_URL KEYCLOAK_ISSUER_URI KEYCLOAK_JWKS_URI; do
+    grep -qE "$(assignment_re "$name")" "$ENV_FILE" && problem "$name is set in $ENV_FILE but no longer used — PUBLIC_HOST drives it (delete the line)"
+done
+
+# Gate C4: Let's Encrypt (certbot service, profile tls) must be able to issue and renew.
+case "$(value_of ACME_EMAIL)" in
+    *@*.*) ;;
+    *) problem "ACME_EMAIL is not set to an e-mail address in $ENV_FILE (Let's Encrypt account / expiry warnings)" ;;
+esac
+case ",$(value_of COMPOSE_PROFILES)," in
+    *,tls,*) ;;
+    *) problem "COMPOSE_PROFILES does not contain tls (no certbot → nginx stays on the self-signed certificate)" ;;
+esac
+[ "$(value_of NGINX_HTTP_PORT)" = "80" ] || problem "NGINX_HTTP_PORT must be 80 in $ENV_FILE (Let's Encrypt's http-01 check only connects to port 80)"
+[ -n "$(value_of ACME_STAGING)" ] && problem "ACME_STAGING is set (staging certificates are not trusted by browsers)"
 
 # Dev-only switches that must be off on a server.
 [ -n "$(value_of USE_SYSTEM_CA_CERTS)" ] && problem "USE_SYSTEM_CA_CERTS is set (dev-only Norton CA trust)"

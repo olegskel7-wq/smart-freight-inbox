@@ -1,6 +1,6 @@
 import type { User } from 'oidc-client-ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { oidcConfig, returnPathOf, signinState } from './oidc.ts'
+import { authorityFor, oidcConfig, returnPathOf, signinState } from './oidc.ts'
 
 // Sign-in brings the operator back to the page they were on: the path is sent through the OIDC state
 // and restored after the code exchange — only ever as a path on this origin, so a crafted state can't
@@ -75,5 +75,20 @@ describe('onSigninCallback', () => {
     void callback(state)
 
     expect(window.location.href).toBe(`${window.location.origin}/tickets`)
+  })
+})
+
+// Gate C3: the bundle carries no host name — the same build serves https://localhost and the real
+// domain, because Keycloak sits behind nginx on the page's own origin.
+describe('authorityFor', () => {
+  it('is the page origin behind nginx, whatever the host', () => {
+    expect(authorityFor('https://app.example.co.uk', false)).toBe(
+      'https://app.example.co.uk/realms/smartfreight',
+    )
+    expect(authorityFor('https://localhost', false)).toBe('https://localhost/realms/smartfreight')
+  })
+
+  it('is the local stack from the Vite dev server, which proxies only /api and /ws', () => {
+    expect(authorityFor('http://localhost:5173', true)).toBe('https://localhost/realms/smartfreight')
   })
 })
