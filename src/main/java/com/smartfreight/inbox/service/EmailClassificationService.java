@@ -26,12 +26,11 @@ import java.util.Map;
  *   RFQ / STATUS_UPDATE / BOOKING_CONFIRM / INVOICE_QUERY / DOCUMENT_REQUEST / GENERAL
  *                                    - relevant, with the type persisted on the ticket
  *
- * The typed prompt is gated by the {@code feature.ticket-type} flag (plan-gating seam,
- * same convention as attachment parsing / rate sheets). With the flag off the classifier
- * falls back to the older binary RELEVANT/IRRELEVANT prompt and assigns no type.
+ * (The pre-1.4 binary RELEVANT/IRRELEVANT mode and its {@code feature.ticket-type} flag were removed
+ * on 17 Nov 2026 — no tenant used it. Tickets classified back then keep a null type.)
  *
  * Fail-open principle: if Ollama is unavailable or answers something unexpected, the
- * email is treated as RELEVANT (type GENERAL when typed) so that no real customer
+ * email is treated as RELEVANT (type GENERAL) so that no real customer
  * request is lost due to an AI outage.
  *
  * Execution context: called from TicketClassificationStep inside
@@ -42,13 +41,9 @@ public class EmailClassificationService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailClassificationService.class);
 
-    /** Feature flag gating the typed prompt; off = binary RELEVANT/IRRELEVANT classification. */
-    public static final String FEATURE_KEY = "feature.ticket-type";
-
     /**
      * Feature flag gating the smart-routing extension (urgency + sentiment in the same call).
-     * Default ON. It only adds signals on top of the typed verdict — when {@link #FEATURE_KEY} is off
-     * (binary mode) there is no type to ride along, so urgency/sentiment are not requested either.
+     * Default ON. It only adds signals on top of the typed verdict.
      */
     public static final String FEATURE_SMART_ROUTING = "feature.smart-routing";
 
@@ -70,14 +65,14 @@ public class EmailClassificationService {
      * Outcome of one classification call.
      *
      * @param relevant          whether the email is a freight inquiry (false = park as IRRELEVANT)
-     * @param type              business type; null when irrelevant or when {@code feature.ticket-type} is off
+     * @param type              business type; null when irrelevant
      * @param urgency           how time-critical the email is; NORMAL when smart routing is off
      * @param sentimentNegative whether the customer's tone reads negative; false when off
      */
     public record ClassificationResult(boolean relevant, TicketType type,
                                        Urgency urgency, boolean sentimentNegative) {
 
-        /** Relevance + type with no routing signals (NORMAL/calm) — retry path, binary mode, fail-open. */
+        /** Relevance + type with no routing signals (NORMAL/calm) — retry path, fail-open. */
         public ClassificationResult(boolean relevant, TicketType type) {
             this(relevant, type, Urgency.NORMAL, false);
         }
@@ -141,14 +136,12 @@ public class EmailClassificationService {
             return ClassificationResult.IRRELEVANT;
         }
 
-        boolean typed = settingsService.isFeatureEnabled(FEATURE_KEY, true);
-        // Smart routing rides on the typed verdict — no type, nothing to route.
-        boolean smartRouting = typed && settingsService.isFeatureEnabled(FEATURE_SMART_ROUTING, true);
+        boolean smartRouting = settingsService.isFeatureEnabled(FEATURE_SMART_ROUTING, true);
 
         String truncatedBody = body.substring(0, Math.min(body.length(), MAX_CLASSIFICATION_BODY_CHARS));
         String safeSubject = subject != null ? subject : "";
 
-        String instruction = typed ? (smartRouting ? typedRoutingPrompt() : typedPrompt()) : binaryPrompt();
+        String instruction = smartRouting ? typedRoutingPrompt() : typedPrompt();
         String prompt = instruction
                 + "\n\nSubject: " + safeSubject + "\n"
                 + "Email:\n" + truncatedBody;
@@ -175,69 +168,50 @@ public class EmailClassificationService {
 
             if (response == null) {
                 log.warn("Ollama returned null for classification - treating as relevant (fail-open)");
-                return record(failOpen(typed));
+                return record(failOpen());
             }
             answer = String.valueOf(response.getOrDefault("response", "")).trim().toUpperCase(Locale.ROOT);
         } catch (CallNotPermittedException e) {
             // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
             // ticket as RETRY_LATER — a real classification verdict will be made
-            // on retry (see TicketClassificationStep#needsClassification: unclassified typed tickets re-enter step 0).
+            // on retry (see TicketClassificationStep#needsClassification: unclassified tickets re-enter step 0).
             log.warn("Ollama circuit breaker is open — classification call not attempted");
             throw e;
         } catch (Exception e) {
             log.warn("Classification call failed: {} - treating as relevant (fail-open)", e.getMessage());
-            return record(failOpen(typed));
+            return record(failOpen());
         }
 
         log.debug("Classification response: '{}'", answer);
-        return record(parseAnswer(answer, typed, smartRouting));
+        return record(parseAnswer(answer, smartRouting));
     }
 
-    /**
-     * Whether typed classification is active. In typed mode a persisted
-     * {@code ticketType} is the durable marker that classification produced a verdict —
-     * the pipeline uses this to re-run step 0 for tickets that were parked by an open
-     * circuit breaker before classification could happen. Binary mode
-     * persists nothing, so there the retry path keeps its historical skip.
-     */
-    public boolean isTypedMode() {
-        return settingsService.isFeatureEnabled(FEATURE_KEY, true);
-    }
-
-    /** Backwards-compatible parse with no smart-routing signals (relevance + type only). */
-    static ClassificationResult parseAnswer(String answer, boolean typed) {
-        return parseAnswer(answer, typed, false);
+    /** Parse with no smart-routing signals (relevance + type only). */
+    static ClassificationResult parseAnswer(String answer) {
+        return parseAnswer(answer, false);
     }
 
     /**
      * Maps the model's answer to a result.
      *
-     * In smart-routing mode (typed + {@code feature.smart-routing}) the model replies
+     * In smart-routing mode ({@code feature.smart-routing}) the model replies
      * {@code TYPE|URGENCY|SENTIMENT} (e.g. {@code RFQ|HIGH|NEGATIVE}); the answer is split on '|' and
      * each field parsed independently and leniently. Otherwise only the first field (the type / RELEVANT
      * / IRRELEVANT word) matters and the routing fields stay at their fail-open defaults (NORMAL/calm).
      *
      * IRRELEVANT is checked first (it contains "RELEVANT" as a substring) and short-circuits — spam
-     * carries no urgency/sentiment. In typed mode the type field is matched against the {@link TicketType}
-     * names; a bare RELEVANT or anything unrecognised falls back to GENERAL (fail-open). In binary mode
-     * the binary contract holds: relevant with no type.
+     * carries no urgency/sentiment. The type field is matched against the {@link TicketType} names; a bare
+     * RELEVANT or anything unrecognised falls back to GENERAL (fail-open).
      *
      * Package-private for unit testing.
      */
-    static ClassificationResult parseAnswer(String answer, boolean typed, boolean smartRouting) {
+    static ClassificationResult parseAnswer(String answer, boolean smartRouting) {
         String[] fields = answer.split("\\|");   // split always yields length >= 1
         String typeField = fields[0].trim();
 
         if (typeField.startsWith("IRRELEVANT")) {
             return ClassificationResult.IRRELEVANT;
         }
-        if (!typed) {
-            if (!typeField.startsWith("RELEVANT")) {
-                logUnexpected(answer, "relevant");
-            }
-            return new ClassificationResult(true, null);
-        }
-
         TicketType type = firstStartingWith(typeField, TicketType.values(), null);
         if (type == null) {
             if (!typeField.startsWith("RELEVANT")) {
@@ -273,8 +247,8 @@ public class EmailClassificationService {
         log.debug("Unexpected classification answer: '{}'", answer);
     }
 
-    private static ClassificationResult failOpen(boolean typed) {
-        return new ClassificationResult(true, typed ? TicketType.GENERAL : null);
+    private static ClassificationResult failOpen() {
+        return new ClassificationResult(true, TicketType.GENERAL);
     }
 
     /** Updates metrics and logs the outcome; returns the result unchanged. */
@@ -340,10 +314,4 @@ public class EmailClassificationService {
     }
 
     /** Binary prompt, used when feature.ticket-type is off. */
-    private static String binaryPrompt() {
-        return "You are a logistics email classifier.\n"
-                + "Decide if this email is a freight or shipping inquiry "
-                + "(container status, location, ETA, delivery, customs, tracking, shipment update, etc.).\n"
-                + "Reply with exactly one word: RELEVANT or IRRELEVANT.";
-    }
 }
