@@ -91,12 +91,12 @@ Branch coverage of the classes the plan touches (clean run):
   native binding. `node.version` is now v22.14.0. The Dockerfile's `node:20` resolves to 20.20 and
   builds fine; moving it to `node:22` is optional.
 - `npm audit --omit=dev`: 2 findings in `react-router` (1 high), present before this work.
-- About 20 `toUpperCase()` / `toLowerCase()` calls take no `Locale`, several of them before an
-  enum `valueOf(...)`. Under a Turkish default locale (`i` → `İ`) those parses fail. Not reachable in
-  the en_US container; a separate small fix (`Locale.ROOT`) after the classes involved are refactored.
-- `smartfreight_ollama_request_seconds{operation="drafting"}` carries a hard-coded `model="llama3.1:8b"`
-  tag whatever `ollama.drafting-model` is set to (now in `OllamaDraftClient`; pinned by
-  `AiDraftingPromptCharacterizationTest`). Tag from the configured model in a separate small fix.
+- ✅ About 20 `toUpperCase()` / `toLowerCase()` calls took no `Locale`, several of them before an enum
+  `valueOf(...)`; under a Turkish default locale (`i` → `İ`) those parses failed. All take `Locale.ROOT` since
+  `fix/locale-and-metric-tag` (17 Nov 2026); `AutoSendServiceTest` parses the allowlist under tr-TR.
+- ✅ `smartfreight_ollama_request_seconds` carried a hard-coded `model` tag — `llama3.1:8b` for drafting, and
+  `qwen2.5:7b` for extraction too — whatever `ollama.*-model` was set to. Both tag the configured model since
+  `fix/locale-and-metric-tag`. The defaults are the old values, so a standard setup sees no change.
 - ✅ `SLA_EXEMPT_STATUSES` omitted `AUTO_SENT` and auto-send does not clear `sla_deadline_at`, so a ticket answered
   in time was flagged breached once its deadline passed, and the analytics SLA count (no status filter) included
   it. Fixed in `fix/sla-auto-sent`: `AUTO_SENT` is exempt, and a ticket flagged while it waited and only then
@@ -104,9 +104,10 @@ Branch coverage of the classes the plan touches (clean run):
   late ticket looks the same), it takes the first `AUTO_SEND` audit row against `sla_deadline_at`. The dev DB held
   one wrong row (ticket 102, demo tenant, sent 18 s after receipt, deadline 4 h), cleared by hand under that check; no
   production data exists yet.
-- `existsInboundReplyFrom` is a plain substring match: a quote to `an@acme.test` counts `jan@acme.test` as
-  the reply and drops the follow-up (it fails toward not nudging); `_` and `%` in an address act as wildcards.
-  Pinned as a known limitation by `TicketBulkUpdateQueriesIntegrationTest`.
+- ✅ `existsInboundReplyFrom` was a plain substring match: a quote to `an@acme.test` counted `jan@acme.test` as
+  the reply and dropped the follow-up; `_` and `%` in an address acted as wildcards. The quote → booking KPI
+  (`QuoteFollowUpRepository.quoteConversionSince`) matched the same way. Since `fix/exact-sender-match` both need
+  the raw sender to equal the address or end with `<address>` (case-insensitive); the integration tests pin both.
 - `@EnableScheduling` has no off switch, so the real schedulers run inside the shared Spring test context.
   `WebhookTenantIsolationTest` and `TicketBulkUpdateQueriesIntegrationTest` date their rows ahead to stay out of
   reach. If another test has to do this, or a scheduler causes a flake, make scheduling switchable for all tests.
@@ -114,8 +115,8 @@ Branch coverage of the classes the plan touches (clean run):
   `confidence < NaN` is never true, so every allowlisted ticket was emailed unreviewed. `POST /api/settings/autosend`
   accepted it from a direct API call (the page's number field cannot send it). Fixed in `fix/autosend-threshold-validation`:
   `AutoSendService.parseThreshold` is the one parser for the save (400) and the read (default), and a `null` type is dropped
-  instead of a 500. Still open: a missing prompt answers 500 after the other prompt was stored (separate transactions; the
-  SPA always sends both).
+  instead of a 500. ✅ A missing prompt answered 500 after the other prompt was stored; since
+  `fix/settings-bad-request` a body without both templates is refused with 400 before anything is written.
 - ✅ CI was red from 3 Nov because the runner moved to Ubuntu 26.04 with Docker 29, not because of this work: the
   previously green `68e369a` failed the same way when re-run. Testcontainers 1.21.3 asked for an API version
   Docker 29 refuses, so every container test failed with "Could not find a valid Docker environment". Local runs
@@ -142,14 +143,16 @@ Branch coverage of the classes the plan touches (clean run):
   One Spring context across the whole run. 984 tests, 89.5 % / 77.4 %.
 - `jwt()` still skips the decoder and the chain's wiring of the role converter, see above. The JWKS URI keeps its default,
   so a future shared-context test with a real bearer token would depend on the dev stack being up.
-- The Javadoc of `AdminController` says `/api/admin/**` is gated with ROLE_OPERATOR, and that of `UserApiController` says
-  `/api/users/**` falls under `authenticated()`. Both are ADMIN in `SecurityConfig` and the tests above. Comment-only fix,
-  left out of this test branch.
-- A settings body without a primitive field (`enabled` on `/autosend`) answers 500, not 400: `GlobalExceptionHandler`
-  has no case for unreadable JSON, so it lands in the catch-all. The SPA always sends the field.
-- A ticket whose deadline passes and which is sent before the next `SlaBreachScheduler` tick is never flagged, for
-  both `CLOSED` and now `AUTO_SENT` (after a restart the first tick is 60 s away). Setting the flag at the two send
-  sites when the deadline has passed would close it.
+- ✅ The Javadoc of `AdminController` and `UserApiController` said OPERATOR / `authenticated()`; it says ADMIN since
+  `refactor/small-tails`, as `SecurityConfig` and the role-rule tests do.
+- ✅ A body `GlobalExceptionHandler` could not read (malformed JSON, a missing primitive such as `enabled` on
+  `/autosend`) and a path or query value of the wrong type answered 500 through the catch-all. Both answer 400 since
+  `fix/settings-bad-request`; the message is generic (the parser's text names internal classes), a mistyped parameter
+  is named.
+- ✅ A ticket whose deadline passed and which was sent, auto-sent or closed before the next `SlaBreachScheduler` tick
+  was never flagged. Since `fix/sla-flag-at-send` `SlaService.markBreachedIfOverdue` applies the scheduler's rule
+  (`deadline < now`) at all four sites that stop the clock (operator send, close from the draft, `/close`,
+  auto-send) and counts it on the same meter. A failed send leaves the ticket open, so the sweep still flags it.
 
 ## Plan
 
@@ -317,6 +320,16 @@ Branch coverage of the classes the plan touches (clean run):
    889 tests green, 89 % / 77 %. Live on the rebuilt image: all 8 sampled endpoints answer 401 without a token, the page
    loads, a save and a mailbox toggle answer 200. Golden set identical to `after-2.3` across 18 scenarios (it exercises
    the pipeline, not this API). An OPERATOR token getting 403 here is now tested, see `SettingsAdminRuleTest` above.
+
+**Small tails (17 Nov 2026)** — branch `refactor/small-tails`, no behaviour change:
+`KEY_ESCALATION_ASSIGNEE` (was `TicketProcessingService.SETTING_ESCALATION_ASSIGNEE`) lives in
+`EmailClassificationService` next to `FEATURE_SMART_ROUTING`, so the classification step no longer reaches back into its
+orchestrator; one `components/PageAlert` + `Msg` replaces eight inline page alerts; `test/fetchStub.ts` (`json`, `held`,
+`stubFetch` with a per-test record shape, so no assertion changed) replaces three copies of the fetch stub. Left as is on
+purpose: `SettingsCard` stays in `pages/settings/` (only the settings page uses it); the `failure` route helper stays in
+each test (different status and error per file). Backend 1002 tests on main before the fixes; frontend 181.
+⚠️ Counting tests: `target/surefire-reports` in the main checkout held four stale report files from 26 Oct (classes of
+`feature/m365-oauth2`, 36 tests) and inflated the sum to 1038; count after a clean `target` or in a fresh worktree.
 
 **Stage 3 — only on a separate decision**
 1. Remove the binary (pre-1.4) classifier mode — a behaviour change; first confirm no tenant has
