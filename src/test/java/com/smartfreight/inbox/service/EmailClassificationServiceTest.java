@@ -169,4 +169,80 @@ class EmailClassificationServiceTest {
         verifyNoInteractions(webClient);
         verify(ollamaClients, never()).recordUsage(any(), any(), any());
     }
+
+    // ---- classify: the Ollama call -----------------------------------------------------
+
+    /** The classifier over a stubbed Ollama, with feature.smart-routing on or off. */
+    private static EmailClassificationService classifier(OllamaStub ollama, boolean smartRouting) {
+        SettingsService settings = mock(SettingsService.class);
+        when(settings.isFeatureEnabled(anyString(), anyBoolean())).thenReturn(smartRouting);
+        return new EmailClassificationService(ollama.provider, settings, new SimpleMeterRegistry(), "qwen-test");
+    }
+
+    @Test
+    void classify_smartRouting_asksForTypeUrgencyAndSentiment_andParsesTheAnswer() {
+        OllamaStub ollama = new OllamaStub();
+        ollama.answers(java.util.Map.of("response", " rfq|high|negative ", "done", true));
+
+        ClassificationResult result = classifier(ollama, true).classify("Quote please", "Price for 1x40HC to Rotterdam?");
+
+        assertThat(result.type()).isEqualTo(TicketType.RFQ);
+        assertThat(result.urgency()).isEqualTo(Urgency.HIGH);
+        assertThat(result.sentimentNegative()).isTrue();
+        assertThat(ollama.sentPath()).isEqualTo("/api/generate");
+        java.util.Map<?, ?> body = ollama.sentBody();
+        assertThat(body.get("model")).isEqualTo("qwen-test");
+        assertThat(body.get("stream")).isEqualTo(false);
+        assertThat(body).hasSize(3);
+        String prompt = (String) body.get("prompt");
+        assertThat(prompt).contains("URGENCY").endsWith("Subject: Quote please\nEmail:\nPrice for 1x40HC to Rotterdam?");
+        verify(ollama.provider).recordUsage(org.mockito.ArgumentMatchers.eq("classification"),
+                org.mockito.ArgumentMatchers.eq("qwen-test"), any());
+    }
+
+    @Test
+    void classify_smartRoutingOff_asksForTheTypeOnly() {
+        OllamaStub ollama = new OllamaStub();
+        ollama.answers(java.util.Map.of("response", "STATUS_UPDATE|HIGH|NEGATIVE", "done", true));
+
+        ClassificationResult result = classifier(ollama, false).classify(null, "Where is MSCU1234567?");
+
+        assertThat(result.type()).isEqualTo(TicketType.STATUS_UPDATE);
+        assertThat(result.urgency()).isEqualTo(Urgency.NORMAL);
+        assertThat(result.sentimentNegative()).isFalse();
+        assertThat((String) ollama.sentBody().get("prompt")).doesNotContain("URGENCY").contains("Subject: \n");
+    }
+
+    @Test
+    void classify_emptyOllamaBody_failsOpenToGeneral_andIsMetered() {
+        OllamaStub ollama = new OllamaStub();
+        ollama.answers(null);
+
+        ClassificationResult result = classifier(ollama, true).classify("s", "Hello");
+
+        assertThat(result.relevant()).isTrue();
+        assertThat(result.type()).isEqualTo(TicketType.GENERAL);
+        verify(ollama.provider).recordUsage("classification", "qwen-test", null);
+    }
+
+    @Test
+    void classify_failedCall_failsOpenToGeneral_andIsNotMetered() {
+        OllamaStub ollama = new OllamaStub();
+        ollama.fails(new RuntimeException("Connection refused"));
+
+        ClassificationResult result = classifier(ollama, true).classify("s", "Hello");
+
+        assertThat(result.relevant()).isTrue();
+        assertThat(result.type()).isEqualTo(TicketType.GENERAL);
+        verify(ollama.provider, never()).recordUsage(any(), any(), any());
+    }
+
+    @Test
+    void classify_blankBody_isIrrelevantWithoutACall() {
+        OllamaStub ollama = new OllamaStub();
+
+        assertThat(classifier(ollama, true).classify("s", " ").relevant()).isFalse();
+
+        verifyNoInteractions(ollama.webClient);
+    }
 }

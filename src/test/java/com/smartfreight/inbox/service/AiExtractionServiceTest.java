@@ -225,4 +225,37 @@ class AiExtractionServiceTest {
 
         assertEquals("MSCU1234567", result);
     }
+
+    // ---- the Ollama call, over a stubbed endpoint ------------------------------------------
+
+    /** The service over a stubbed Ollama; the stored prompt resolves to the code default. */
+    private AiExtractionService extractor(OllamaStub ollama) {
+        return new AiExtractionService(ollama.provider, settingsService, new SimpleMeterRegistry(), "qwen-test");
+    }
+
+    @Test
+    void extract_sendsTheEmailToTheExtractionModel() {
+        OllamaStub ollama = new OllamaStub();
+        ollama.answers(Map.of("response", "MSCU1234567", "done", true));
+
+        assertEquals("MSCU1234567", extractor(ollama).extractIdentifier("Where is MSCU1234567?"));
+
+        assertEquals("/api/generate", ollama.sentPath());
+        Map<?, ?> body = ollama.sentBody();
+        assertEquals("qwen-test", body.get("model"));
+        assertEquals(false, body.get("stream"));
+        assertEquals(3, body.size());
+        org.assertj.core.api.Assertions.assertThat((String) body.get("prompt")).endsWith("Where is MSCU1234567?");
+        verify(ollama.provider).recordUsage(eq("extraction"), eq("qwen-test"), any());
+    }
+
+    @Test
+    void extract_emptyOllamaBody_fallsBackToTheRegex_andIsMetered() {
+        OllamaStub ollama = new OllamaStub();
+        ollama.answers(null);
+
+        assertEquals("MSCU1234567", extractor(ollama).extractIdentifier("Container MSCU1234567 please"));
+
+        verify(ollama.provider).recordUsage("extraction", "qwen-test", null);
+    }
 }
