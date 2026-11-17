@@ -42,6 +42,39 @@ public class MailboxSettingsController {
     /** Request body for {@code POST /api/settings/mailboxes/{id}/toggle}. */
     public record ToggleRequest(boolean enabled) {}
 
+    /** V38: a Microsoft 365 mailbox — no host/port/password, a directory connected via consent. */
+    public record Ms365MailboxRequest(String directoryId, String username, boolean sendReplies, String fromAddress) {}
+
+    @PostMapping("/ms365")
+    public SettingsResponse addMs365Mailbox(@RequestBody Ms365MailboxRequest request) {
+        try {
+            mailboxService.createMs365(request.directoryId(), request.username(), request.sendReplies(),
+                    request.fromAddress());
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This mailbox is already configured.");
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return snapshotAssembler.snapshot();
+    }
+
+    @PutMapping("/{id}/ms365")
+    public SettingsResponse updateMs365Mailbox(@PathVariable Long id, @RequestBody Ms365MailboxRequest request) {
+        try {
+            mailboxService.updateMs365(id, request.directoryId(), request.username(), request.sendReplies(),
+                    request.fromAddress());
+        } catch (MailboxManagementService.MailboxNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (MailboxManagementService.MailboxInUseException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Another mailbox with this address is already configured.");
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return snapshotAssembler.snapshot();
+    }
+
     /** POST /api/settings/mailboxes — adds a mailbox for the current tenant. */
     @PostMapping
     public SettingsResponse addMailbox(@RequestBody MailboxRequest request) {

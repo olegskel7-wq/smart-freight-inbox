@@ -81,6 +81,11 @@ public class Ms365ConsentService {
         this.web = WebClient.builder().baseUrl(props.authorityUrl()).build();
     }
 
+    /** Whether the platform's Entra app is configured (MS365_CLIENT_ID + secret). */
+    public boolean isConfigured() {
+        return props.isConfigured();
+    }
+
     /** The current tenant's connected directories, oldest first. */
     public List<TenantMs365Directory> directories() {
         return directories.findAllByOrderByIdAsc();

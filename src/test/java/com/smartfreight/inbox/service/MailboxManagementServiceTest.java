@@ -1,9 +1,12 @@
 package com.smartfreight.inbox.service;
 
+import com.smartfreight.inbox.entity.MailboxAuthType;
 import com.smartfreight.inbox.entity.TenantMailbox;
+import com.smartfreight.inbox.entity.TenantMs365Directory;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.repository.ShipmentWatchRepository;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
+import com.smartfreight.inbox.repository.TenantMs365DirectoryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -29,6 +32,7 @@ class MailboxManagementServiceTest {
     private EmailTicketRepository tickets;
     private ShipmentWatchRepository watches;
     private SecretCipher cipher;
+    private TenantMs365DirectoryRepository directories;
     private MailboxManagementService service;
 
     @BeforeEach
@@ -37,7 +41,8 @@ class MailboxManagementServiceTest {
         cipher = mock(SecretCipher.class);
         tickets = mock(EmailTicketRepository.class);
         watches = mock(ShipmentWatchRepository.class);
-        service = new MailboxManagementService(mailboxes, tickets, watches, cipher);
+        directories = mock(TenantMs365DirectoryRepository.class);
+        service = new MailboxManagementService(mailboxes, tickets, watches, cipher, directories);
     }
 
     @Test
@@ -319,5 +324,76 @@ class MailboxManagementServiceTest {
                 "smtp.gmail.com", 70000, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("SMTP port");
+    }
+
+    // --- V38: Microsoft 365 mailboxes ------------------------------------------------------------
+
+    private static final String DIR = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+    private TenantMailbox savedMailbox() {
+        ArgumentCaptor<TenantMailbox> saved = ArgumentCaptor.forClass(TenantMailbox.class);
+        verify(mailboxes).saveAndFlush(saved.capture());
+        return saved.getValue();
+    }
+
+    @Test
+    void createMs365_underAConnectedDirectory_usesExchangeOnline_andStoresNoPassword() {
+        when(directories.findByDirectoryId(DIR)).thenReturn(Optional.of(new TenantMs365Directory()));
+
+        service.createMs365(DIR.toUpperCase(), " ops@contoso.co.uk ", true, null);
+
+        TenantMailbox m = savedMailbox();
+        assertThat(m.getAuthType()).isEqualTo(MailboxAuthType.MS365_OAUTH);
+        assertThat(m.getMsDirectoryId()).isEqualTo(DIR);
+        assertThat(m.getPasswordEnc()).isNull();
+        assertThat(m.getHost()).isEqualTo("outlook.office365.com");
+        assertThat(m.getSmtpHost()).isEqualTo("smtp.office365.com");
+        assertThat(m.getUsername()).isEqualTo("ops@contoso.co.uk");
+        assertThat(m.isEnabled()).isTrue();
+        verify(cipher, never()).encrypt(anyString());
+    }
+
+    @Test
+    void createMs365_directoryNotConnectedByThisTenant_isRefused() {
+        // Another tenant's (or a typed-in) directory: the tenant-scoped lookup finds nothing.
+        when(directories.findByDirectoryId(DIR)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.createMs365(DIR, "ops@b.co.uk", true, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Connect");
+        verify(mailboxes, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createMs365_inboundOnly_hasNoSmtp() {
+        when(directories.findByDirectoryId(DIR)).thenReturn(Optional.of(new TenantMs365Directory()));
+
+        service.createMs365(DIR, "ops@contoso.co.uk", false, "ignored@contoso.co.uk");
+
+        TenantMailbox m = savedMailbox();
+        assertThat(m.getSmtpHost()).isNull();
+        assertThat(m.getFromAddress()).isNull();
+    }
+
+    @Test
+    void passwordUpdate_ofAnMs365Mailbox_isRefused() {
+        TenantMailbox m = new TenantMailbox();
+        m.setAuthType(MailboxAuthType.MS365_OAUTH);
+        when(mailboxes.findById(9L)).thenReturn(Optional.of(m));
+
+        assertThatThrownBy(() -> service.update(9L, "evil.example", 993, "x@y", "pw", null, null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Microsoft 365");
+    }
+
+    @Test
+    void updateMs365_renamingAMailboxThatReceivedMail_isRefused() {
+        TenantMailbox m = new TenantMailbox();
+        m.setAuthType(MailboxAuthType.MS365_OAUTH);
+        m.setUsername("ops@contoso.co.uk");
+        when(mailboxes.findById(9L)).thenReturn(Optional.of(m));
+        when(directories.findByDirectoryId(DIR)).thenReturn(Optional.of(new TenantMs365Directory()));
+        when(tickets.existsByMailboxId(9L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.updateMs365(9L, DIR, "other@contoso.co.uk", true, null))
+                .isInstanceOf(MailboxManagementService.MailboxInUseException.class);
     }
 }

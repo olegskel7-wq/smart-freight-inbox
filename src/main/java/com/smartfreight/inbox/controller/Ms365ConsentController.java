@@ -46,10 +46,14 @@ public class Ms365ConsentController {
         }
     }
 
-    /** The tenant's connected Microsoft directories — what an M365 mailbox can be added under. */
-    @GetMapping("/api/settings/ms365/directories")
-    public List<DirectoryDto> directories() {
-        return consent.directories().stream().map(DirectoryDto::of).toList();
+    /** Whether this server can do Microsoft 365 at all, and the directories an M365 mailbox can use. */
+    public record Ms365StatusDto(boolean configured, List<DirectoryDto> directories) {
+    }
+
+    @GetMapping("/api/settings/ms365")
+    public Ms365StatusDto status() {
+        return new Ms365StatusDto(consent.isConfigured(),
+                consent.directories().stream().map(DirectoryDto::of).toList());
     }
 
     /** A link to send to the customer's Microsoft 365 administrator (valid 24 h, single use). */

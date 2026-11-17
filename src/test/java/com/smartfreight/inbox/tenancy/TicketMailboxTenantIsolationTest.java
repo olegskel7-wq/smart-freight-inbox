@@ -79,7 +79,8 @@ class TicketMailboxTenantIsolationTest {
     void setUp() {
         provider = new MailSenderProvider(mailboxes, new MailboxCredentials(cipher, mock(Ms365TokenProvider.class)), new MailTlsPolicy(new DemoMailProperties()),
                 platformSender, "platform@smartfreight.com");
-        mailboxService = new MailboxManagementService(mailboxes, tickets, watches, cipher);
+        mailboxService = new MailboxManagementService(mailboxes, tickets, watches, cipher,
+                mock(com.smartfreight.inbox.repository.TenantMs365DirectoryRepository.class));
         tenantA = TenantContext.callAsSystem(
                 () -> tenants.save(Tenant.builder().name("mbx-a-" + UUID.randomUUID()).build()).getId());
         tenantB = TenantContext.callAsSystem(
