@@ -9,7 +9,7 @@ How SmartFreight does it: **app-only (client credentials) + XOAUTH2 over the exi
 pipeline**. One multi-tenant app registration belongs to us. Each customer's admin consents to it
 in their own directory and grants its service principal access to exactly one mailbox. No customer
 password is ever stored. The mailbox row keeps only the customer's directory id
-(`tenant_mailbox.ms_directory_id`). Our app's client id and secret live in `.env`.
+(`tenant_mailbox.ms_directory_id`). Our app's client id lives in `.env`, its secret in `SECRETS_DIR/MS365_CLIENT_SECRET`.
 
 Three parts:
 
@@ -70,11 +70,17 @@ and sending yourself an email.
    **Value** column immediately. It is shown once. Do not copy the *Secret ID*.
    Put a calendar reminder 2 weeks before expiry: an expired secret stops **every** M365 mailbox,
    and you would only find out when the `MailboxDown` alert fires.
-5. Write them into `.env` yourself. Never paste them in chat or commit them:
+5. Store them yourself. Never paste them in chat or commit them. The client id is not secret and goes
+   into `.env`; the secret is a file in `SECRETS_DIR` (Gate C5, [`secrets.md`](secrets.md)), like every other secret:
 
    ```
+   # .env
    MS365_CLIENT_ID=<Application (client) ID>
-   MS365_CLIENT_SECRET=<secret Value>
+   ```
+   ```bash
+   # Git Bash on Windows: /c/Users/<you>/.smartfreight/secrets ; server: /etc/smartfreight/secrets
+   printf '%s' '<secret Value>' > "$SECRETS_DIR/MS365_CLIENT_SECRET"
+   docker compose up -d backend
    ```
 
    Keep a copy of the secret in your password manager, next to `MAILBOX_ENCRYPTION_KEY`.
