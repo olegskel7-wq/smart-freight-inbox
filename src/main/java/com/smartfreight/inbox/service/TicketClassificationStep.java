@@ -99,7 +99,7 @@ class TicketClassificationStep {
      *
      * Routing is deliberately deterministic, not LLM-chosen: the classifier only flags HIGH urgency /
      * negative tone (it does not know the tenant's operators), and a tenant opts in by setting
-     * {@link TicketProcessingService#SETTING_ESCALATION_ASSIGNEE} on {@code /settings}. We only ever
+     * {@link EmailClassificationService#KEY_ESCALATION_ASSIGNEE} on {@code /settings}. We only ever
      * claim an UNassigned ticket, so a manual assignment is never overwritten. With no assignee
      * configured the ticket simply stays unclaimed — escalation still tightened the SLA and floats it
      * to the top. Mutating {@code assigneeUserId} fires the existing {@code @PostUpdate} live event for free.
@@ -108,7 +108,7 @@ class TicketClassificationStep {
         if (!classification.isEscalated() || ticket.getAssigneeUserId() != null) {
             return;
         }
-        String target = settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, "").trim();
+        String target = settingsService.getString(EmailClassificationService.KEY_ESCALATION_ASSIGNEE, "").trim();
         if (target.isEmpty()) {
             return;
         }

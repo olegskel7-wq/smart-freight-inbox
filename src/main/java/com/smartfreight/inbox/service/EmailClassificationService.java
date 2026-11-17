@@ -51,6 +51,14 @@ public class EmailClassificationService {
      */
     public static final String FEATURE_SMART_ROUTING = "feature.smart-routing";
 
+    /**
+     * Per-tenant setting: the Keycloak user UUID that escalated (HIGH urgency / negative
+     * sentiment) tickets are auto-assigned to. Blank/unset → no auto-assign (escalation still tightens
+     * the SLA + floats the ticket to the top of the queue). Resolved via the standard
+     * {@code tenant_setting → app_setting → default} chain.
+     */
+    public static final String KEY_ESCALATION_ASSIGNEE = "routing.escalation-assignee";
+
     /** Maximum email body length sent to the classifier — shorter than for extraction since one-word answer is faster. */
     private static final int MAX_CLASSIFICATION_BODY_CHARS = 1000;
 

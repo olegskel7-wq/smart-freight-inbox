@@ -8,7 +8,6 @@ import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
 import com.smartfreight.inbox.service.SettingsService;
-import com.smartfreight.inbox.service.TicketProcessingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -288,7 +287,7 @@ class SettingsApiControllerCharacterizationTest extends SettingsApiMockMvcSuppor
                 .andExpect(jsonPath("$.mailboxes").isArray());
 
         verify(settingsService).setString(EmailClassificationService.FEATURE_SMART_ROUTING, "false");
-        verify(settingsService).setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, "");
+        verify(settingsService).setString(EmailClassificationService.KEY_ESCALATION_ASSIGNEE, "");
     }
 
     // ---------------------------------------------------------------------------- ollama

@@ -20,21 +20,17 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /users} page. It mirrors
- * {@link UserManagementController} (the Thymeleaf operator-management UI) but speaks DTOs over
- * {@code /api/users} and is secured by the stateless resource-server chain (bearer JWT). The two
- * controllers run side by side during the migration; this one collapses to the only one when
- * Thymeleaf is removed.
+ * JSON API backing the React {@code /users} page: DTOs over {@code /api/users}, secured by the
+ * stateless resource-server chain (bearer JWT).
  *
  * <p>Operators are Keycloak realm users; {@link UserManagementService} scopes every
- * call to the caller's tenant and owns the validation (password length, duplicate email, self-delete
- * guard) — a rejected value surfaces here as {@link IllegalArgumentException} → {@code 400} with the
- * message, exactly the text the Thymeleaf page showed as a flash error. Every mutation returns the
- * refreshed operator list so the SPA re-renders without a second round trip.
+ * call to the caller's tenant and owns the validation (password policy, duplicate email, self-delete
+ * and self-role-change guards) — a rejected value surfaces here as {@link IllegalArgumentException} →
+ * {@code 400} with the message. Every mutation returns the refreshed operator list so the SPA
+ * re-renders without a second round trip.
  *
- * <p>No {@code SecurityConfig} change: {@code /api/users/**} falls under the @Order(1) chain's
- * {@code anyRequest().authenticated()} — {@code /users} was never SUPER_ADMIN-gated (only
- * {@code /admin/tenants/**} is), and the service's per-tenant scoping is the real boundary.
+ * <p>{@code SecurityConfig} gates {@code /api/users/**} with ROLE_ADMIN (an OPERATOR gets 403; pinned
+ * by {@code UsersAdminRuleTest}); the service's per-tenant scoping keeps an ADMIN inside their own tenant.
  */
 @RestController
 @RequestMapping("/api/users")
