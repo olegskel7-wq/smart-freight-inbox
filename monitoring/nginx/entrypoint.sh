@@ -22,20 +22,21 @@ LE_DIR="/etc/letsencrypt/live/${PUBLIC_HOST}"
 TLS_DIR=/etc/nginx/tls
 
 # --- 1. config ---------------------------------------------------------------------------------
-# Only ${PUBLIC_HOST} is substituted: nginx variables ($host, $remote_addr, …) must survive.
-envsubst '${PUBLIC_HOST}' < /etc/nginx/smartfreight/nginx.conf.template > /etc/nginx/conf.d/default.conf
-
+# Locally the real server blocks are the default ones (any name or a bare IP reaches the app). On a
+# real host a catch-all is: any other name (or none — an IP literal sends no SNI) gets its TLS
+# handshake refused / its plain-http connection closed; Let's Encrypt's http-01 request carries
+# PUBLIC_HOST, so it still reaches the real server block.
 case "$PUBLIC_HOST" in
-    localhost|127.0.0.1) rm -f /etc/nginx/conf.d/unknown-host.conf ;;
+    localhost|127.0.0.1) DEFAULT_SERVER=default_server ;;
     *)
-        # Any other name (or none — an IP literal sends no SNI): TLS handshake refused, plain http
-        # connection closed without a response. Let's Encrypt's http-01 request carries PUBLIC_HOST,
-        # so it reaches the real server block.
+        DEFAULT_SERVER=
         cat > /etc/nginx/conf.d/unknown-host.conf <<'EOF'
 server {
     listen 443 ssl default_server;
     server_name _;
     ssl_reject_handshake on;
+    # Right SNI but another Host header lands here after the handshake: answer nothing.
+    return 444;
 }
 server {
     listen 80 default_server;
@@ -43,12 +44,19 @@ server {
     return 444;
 }
 EOF
-        # The catch-all is the default now; the real server blocks answer only their own name.
-        sed -i 's/ default_server;/;/' /etc/nginx/conf.d/default.conf
         ;;
 esac
+export PUBLIC_HOST DEFAULT_SERVER
+# Only these two are substituted: nginx variables ($host, $remote_addr, …) must survive.
+envsubst '${PUBLIC_HOST} ${DEFAULT_SERVER}' < /etc/nginx/smartfreight/nginx.conf.template > /etc/nginx/conf.d/default.conf
 
 # --- 2. certificate ----------------------------------------------------------------------------
+# A pair generated here carries a marker with its host name; when PUBLIC_HOST changes it is replaced
+# (a mkcert pair has no marker and is never touched).
+MARKER="${LOCAL_DIR}/.self-signed-for"
+if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" != "$PUBLIC_HOST" ]; then
+    rm -f "${LOCAL_DIR}/server.crt" "${LOCAL_DIR}/server.key" "$MARKER"
+fi
 if [ ! -f "${LOCAL_DIR}/server.crt" ] || [ ! -f "${LOCAL_DIR}/server.key" ]; then
     echo "[nginx-init] Generating a self-signed certificate for ${PUBLIC_HOST} in ${LOCAL_DIR}"
     mkdir -p "${LOCAL_DIR}"
@@ -56,6 +64,7 @@ if [ ! -f "${LOCAL_DIR}/server.crt" ] || [ ! -f "${LOCAL_DIR}/server.key" ]; the
     openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
         -keyout "${LOCAL_DIR}/server.key" -out "${LOCAL_DIR}/server.crt" \
         -subj "/O=SmartFreight/CN=${PUBLIC_HOST}" -addext "subjectAltName=DNS:${PUBLIC_HOST}" 2>/dev/null
+    printf '%s' "$PUBLIC_HOST" > "$MARKER"
 fi
 
 # Prints which certificate is active ("letsencrypt" / "local") after pointing the symlinks at it.

@@ -670,7 +670,6 @@ volumes:
   offsite_drill:
   grafana_data:
   port_db_data:
-  nginx_certs:
   # Gate C4: Let's Encrypt account + certificates (certbot writes, nginx reads) and the http-01
   # challenge files. Losing letsencrypt is harmless — certbot re-issues on its next start.
   letsencrypt:

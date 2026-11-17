@@ -13,15 +13,15 @@ WEBROOT=/var/www/acme
 # Stop promptly on `docker compose stop` (sleep runs in the background, `wait` is interruptible).
 trap 'exit 0' TERM INT
 
+# Not set up to issue: stay up doing nothing (an exit would loop under restart: unless-stopped).
+idle() { echo "[certbot] $1 Idling." >&2; while :; do sleep 86400 & wait $!; done; }
+
 case "$PUBLIC_HOST" in
-    localhost|127.0.0.1|*.local|*.localhost|*.test|*.example|example.*|*.example.com)
-        echo "[certbot] PUBLIC_HOST=$PUBLIC_HOST is not a public name — Let's Encrypt cannot issue for it. Idling." >&2
-        while :; do sleep 86400 & wait $!; done ;;
+    # Same reserved names check-prod-env.sh refuses (keep the two lists in sync).
+    localhost|*.localhost|*.local|*.test|*.example|*.invalid|example.*|*.example.com|*.example.co.uk|*[!a-z0-9.-]*)
+        idle "PUBLIC_HOST=$PUBLIC_HOST is not a public name — Let's Encrypt cannot issue for it." ;;
 esac
-if [ -z "${ACME_EMAIL:-}" ]; then
-    echo "[certbot] ACME_EMAIL is not set (expiry warnings and account recovery go there). Idling." >&2
-    while :; do sleep 86400 & wait $!; done
-fi
+[ -n "${ACME_EMAIL:-}" ] || idle "ACME_EMAIL is not set (the Let's Encrypt account and its recovery need it)."
 
 staging=""
 [ -n "${ACME_STAGING:-}" ] && staging="--staging" && echo "[certbot] ACME_STAGING set — Let's Encrypt STAGING (untrusted test certificate)"
