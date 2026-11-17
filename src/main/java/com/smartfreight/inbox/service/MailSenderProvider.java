@@ -46,7 +46,7 @@ public class MailSenderProvider {
     private static final Logger log = LoggerFactory.getLogger(MailSenderProvider.class);
 
     private final TenantMailboxRepository mailboxes;
-    private final SecretCipher secretCipher;
+    private final MailboxCredentials credentials;
     private final MailTlsPolicy mailTlsPolicy;
     private final JavaMailSender platformSender;
     private final String platformFrom;
@@ -59,12 +59,12 @@ public class MailSenderProvider {
     private final Map<Long, CachedSender> senders = new ConcurrentHashMap<>();
 
     public MailSenderProvider(TenantMailboxRepository mailboxes,
-                              SecretCipher secretCipher,
+                              MailboxCredentials credentials,
                               MailTlsPolicy mailTlsPolicy,
                               JavaMailSender platformSender,
                               @Value("${smtp.username}") String platformFrom) {
         this.mailboxes = mailboxes;
-        this.secretCipher = secretCipher;
+        this.credentials = credentials;
         this.mailTlsPolicy = mailTlsPolicy;
         this.platformSender = platformSender;
         this.platformFrom = platformFrom;
@@ -76,14 +76,14 @@ public class MailSenderProvider {
      * @param mailboxId the mailbox the ticket arrived on; null → the tenant's default sender
      */
     public ResolvedSender resolve(Long mailboxId) {
-        if (secretCipher.isConfigured()) {
-            Optional<TenantMailbox> mailbox = Optional.ofNullable(mailboxId)
-                    .flatMap(mailboxes::findByIdAndEnabledTrueAndSmtpHostIsNotNull)
-                    .or(mailboxes::findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc);
-            if (mailbox.isPresent()) {
-                TenantMailbox m = mailbox.get();
-                return new ResolvedSender(senderFor(m), m.effectiveFromAddress());
-            }
+        Optional<TenantMailbox> mailbox = Optional.ofNullable(mailboxId)
+                .flatMap(mailboxes::findByIdAndEnabledTrueAndSmtpHostIsNotNull)
+                .or(mailboxes::findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc)
+                // No encryption key / no Entra app for this mailbox's sign-in → the platform account.
+                .filter(credentials::canSignIn);
+        if (mailbox.isPresent()) {
+            TenantMailbox m = mailbox.get();
+            return new ResolvedSender(senderFor(m), m.effectiveFromAddress());
         }
         return new ResolvedSender(platformSender, platformFrom);
     }
@@ -106,13 +106,17 @@ public class MailSenderProvider {
     }
 
     private JavaMailSender buildSender(TenantMailbox m) {
-        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        JavaMailSenderImpl sender = MailboxCredentials.isOAuth(m) ? new TokenMailSender(credentials, m)
+                : new JavaMailSenderImpl();
         sender.setHost(m.getSmtpHost());
         sender.setPort(m.getSmtpPort() != null ? m.getSmtpPort() : 587);
         sender.setUsername(m.getUsername());
-        sender.setPassword(secretCipher.decrypt(m.getPasswordEnc()));
+        if (!MailboxCredentials.isOAuth(m)) {
+            sender.setPassword(credentials.secret(m));
+        }
 
         mailTlsPolicy.applySmtp(sender.getJavaMailProperties(), sender.getHost(), sender.getPort());
+        credentials.applySmtp(sender.getJavaMailProperties(), m);
 
         log.info("Built per-tenant SMTP sender for {}:{} (user {})",
                 m.getSmtpHost(), sender.getPort(), m.getUsername());
@@ -122,6 +126,27 @@ public class MailSenderProvider {
     private static String fingerprint(TenantMailbox m) {
         return m.getTenantId() + "|" + m.getSmtpHost() + "|" + m.getSmtpPort()
                 + "|" + m.getUsername() + "|" + MailboxCredentials.fingerprint(m);
+    }
+
+    /**
+     * V38: a Microsoft 365 mailbox's sender. It is cached for as long as the mailbox config is
+     * unchanged, but its token lives an hour — so the "password" is fetched at every send:
+     * {@link JavaMailSenderImpl} reads {@link #getPassword()} each time it connects the transport,
+     * and {@link MailboxCredentials} answers from its token cache, renewing near expiry.
+     */
+    static final class TokenMailSender extends JavaMailSenderImpl {
+        private final MailboxCredentials credentials;
+        private final TenantMailbox mailbox;
+
+        TokenMailSender(MailboxCredentials credentials, TenantMailbox mailbox) {
+            this.credentials = credentials;
+            this.mailbox = mailbox;
+        }
+
+        @Override
+        public String getPassword() {
+            return credentials.secret(mailbox);
+        }
     }
 
     /** A built sender and the config fingerprint it was built from. */
