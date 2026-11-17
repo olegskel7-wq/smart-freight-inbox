@@ -23,7 +23,8 @@ the services already read files, so a Vault agent can later render the same file
 | `REDIS_PASSWORD` | redis, backend | |
 | `KEYCLOAK_ADMIN_PASSWORD` | keycloak (bootstrap admin), `erase-tenant.sh` | bootstrap only — first start of keycloak-db |
 | `KEYCLOAK_DB_PASSWORD` | keycloak, keycloak-db, keycloak-backup | applied at first volume init only |
-| `KEYCLOAK_ADMIN_CLIENT_SECRET` | backend | must match the `smartfreight-admin` client (realm import hardcodes the dev value — Gate C3) |
+| `KEYCLOAK_ADMIN_CLIENT_SECRET` | backend, keycloak (realm import) | the `smartfreight-admin` client's secret — the realm import takes it from this file when it creates the realm (Gate C3); an existing realm keeps its value: rotate it in Keycloak too |
+| `KEYCLOAK_SEED_OPERATOR_PASSWORD` | keycloak (realm import) | password of the seeded SUPER_ADMIN `operator@smartfreight.com` — read only when the realm is created (empty keycloak-db); must pass the realm password policy (≥10, upper, lower, digit). Dev value `Operator1Pass` |
 | `GRAFANA_PASSWORD` | grafana | applied when `grafana_data` is first created |
 | `PORT_DB_PASSWORD` | port-db, port-service | applied at first volume init only |
 | `PORT_SERVICE_API_KEY` | backend, port-service | |
@@ -48,7 +49,7 @@ sudo mkdir -p /etc/smartfreight/secrets
 sudo chown -R "$USER" /etc/smartfreight && chmod 700 /etc/smartfreight/secrets   # migrate writes its .env backup into /etc/smartfreight
 cd /etc/smartfreight/secrets
 for n in POSTGRES_PASSWORD DB_APP_PASSWORD RABBITMQ_PASSWORD REDIS_PASSWORD KEYCLOAK_ADMIN_PASSWORD \
-         KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET GRAFANA_PASSWORD PORT_DB_PASSWORD PORT_SERVICE_API_KEY; do
+         KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET KEYCLOAK_SEED_OPERATOR_PASSWORD GRAFANA_PASSWORD \n         PORT_DB_PASSWORD PORT_SERVICE_API_KEY; do
   openssl rand -base64 24 | tr -d '\n' > "$n"
 done
 openssl rand -base64 32 | tr -d '\n' > MAILBOX_ENCRYPTION_KEY
@@ -73,8 +74,11 @@ sh scripts/check-prod-env.sh .env
 Generate everything **before the first `docker compose up`**: the database, RabbitMQ and Grafana images
 apply their passwords only when their volume is created. Copy `MAILBOX_ENCRYPTION_KEY` and
 `BACKUP_ENCRYPTION_PASSPHRASE` into the password manager (+ an offline copy) — without them restored
-backups are unusable (`backup-restore.md`). `KEYCLOAK_ADMIN_CLIENT_SECRET`: set the same value on the
-`smartfreight-admin` client in the Keycloak admin console (Clients → Credentials).
+backups are unusable (`backup-restore.md`). `KEYCLOAK_ADMIN_CLIENT_SECRET` and
+`KEYCLOAK_SEED_OPERATOR_PASSWORD` reach Keycloak through the realm import on its first start (Gate C3) —
+nothing to set by hand on a fresh server. On an existing realm they are NOT re-applied: change the
+client secret in Keycloak (Clients → smartfreight-admin → Credentials, or `kcadm.sh`) and the file
+together. Copy the seed password into the password manager — it is the first SUPER_ADMIN login.
 
 The deploy (`.github/workflows/deploy.yml`) never writes secrets — none pass through GitHub — it only
 runs `check-prod-env.sh`, which refuses: a missing/in-repo/group-readable `SECRETS_DIR` (or one

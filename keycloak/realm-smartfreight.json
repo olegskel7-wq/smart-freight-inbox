@@ -2,7 +2,7 @@
   "realm": "smartfreight",
   "enabled": true,
   "displayName": "SmartFreight",
-  "sslRequired": "none",
+  "sslRequired": "external",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
@@ -38,7 +38,7 @@
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
-      "secret": "smartfreight-admin-secret",
+      "secret": "${SF_ADMIN_CLIENT_SECRET:smartfreight-admin-secret}",
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true
@@ -56,16 +56,16 @@
       "redirectUris": [
         "http://localhost:5173/*",
         "http://localhost:8080/*",
-        "https://localhost/*"
+        "https://${SF_PUBLIC_HOST:localhost}/*"
       ],
       "webOrigins": [
         "http://localhost:5173",
         "http://localhost:8080",
-        "https://localhost"
+        "https://${SF_PUBLIC_HOST:localhost}"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:8080/*##https://localhost/*"
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:8080/*##https://${SF_PUBLIC_HOST:localhost}/*"
       },
       "protocolMappers": [
         {
@@ -136,7 +136,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "Operator1Pass",
+          "value": "${SF_SEED_OPERATOR_PASSWORD:Operator1Pass}",
           "temporary": false
         }
       ],
