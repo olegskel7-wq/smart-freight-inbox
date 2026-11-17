@@ -355,16 +355,23 @@ class TicketBulkUpdateQueriesIntegrationTest {
         assertThat(replyExists(tenantA, "jane.doe@customer.test", AN_HOUR_AGO)).isTrue();
     }
 
-    /**
-     * Records a known limitation, not a wish (docs/refactoring.md, "Found while writing the safety net"):
-     * the match is a plain substring, so a different customer whose address ends the same way counts as
-     * the reply and the follow-up is dropped. It fails toward not nudging.
-     */
+    /** A different customer whose address ends the same way is not the reply (it was, as a substring). */
     @Test
-    void existsInboundReplyFrom_alsoMatchesALongerAddressEndingTheSameWay() {
+    void existsInboundReplyFrom_doesNotMatchALongerAddressEndingTheSameWay() {
         ticket(tenantA, t -> t.senderEmail("jan@customer.test"));
+        ticket(tenantA, t -> t.senderEmail("Jan <jan@customer.test>"));
+        ticket(tenantA, t -> t.senderEmail("an@customer.test.evil"));
 
-        assertThat(replyExists(tenantA, "an@customer.test", AN_HOUR_AGO)).isTrue();
+        assertThat(replyExists(tenantA, "an@customer.test", AN_HOUR_AGO)).isFalse();
+    }
+
+    /** LIKE wildcards in an address are plain characters. */
+    @Test
+    void existsInboundReplyFrom_treatsUnderscoreAndPercentLiterally() {
+        ticket(tenantA, t -> t.senderEmail("axb@customer.test"));
+
+        assertThat(replyExists(tenantA, "a_b@customer.test", AN_HOUR_AGO)).isFalse();
+        assertThat(replyExists(tenantA, "%@customer.test", AN_HOUR_AGO)).isFalse();
     }
 
     @Test
