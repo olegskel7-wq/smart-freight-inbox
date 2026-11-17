@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.Tenant;
+import com.smartfreight.inbox.service.LlmProviderSettings;
 import com.smartfreight.inbox.service.OperatorName;
 import com.smartfreight.inbox.service.TenantManagementService;
 import com.smartfreight.inbox.service.TenantManagementService.TenantSummary;
@@ -42,6 +43,7 @@ class TenantAdminApiControllerTest {
     private static final OperatorName DANA = new OperatorName("Dana", "Price");
 
     @Mock private TenantManagementService tenantManagementService;
+    @Mock private LlmProviderSettings llmProviders;
 
     private MockMvc mockMvc;
 
@@ -54,9 +56,11 @@ class TenantAdminApiControllerTest {
                 .build();
         when(tenantManagementService.overview())
                 .thenReturn(List.of(new TenantSummary(tenant, 3L)));
+        when(llmProviders.providerOf(1L)).thenReturn("local");
+        when(tenantManagementService.exists(1L)).thenReturn(true);
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new TenantAdminApiController(tenantManagementService))
+                .standaloneSetup(new TenantAdminApiController(tenantManagementService, llmProviders))
                 .build();
     }
 
@@ -67,7 +71,8 @@ class TenantAdminApiControllerTest {
                 .andExpect(jsonPath("$[0].id").value(1))
                 .andExpect(jsonPath("$[0].name").value("Default"))
                 .andExpect(jsonPath("$[0].userCount").value(3))
-                .andExpect(jsonPath("$[0].createdAt").exists());
+                .andExpect(jsonPath("$[0].createdAt").exists())
+                .andExpect(jsonPath("$[0].llmProvider").value("local"));
     }
 
     @Test
@@ -120,5 +125,48 @@ class TenantAdminApiControllerTest {
                         .content("{\"name\":\"Acme Ltd\",\"adminEmail\":\"ops@acme.co.uk\","
                                 + "\"adminFirstName\":\"Dana\",\"adminLastName\":\"Price\",\"adminPassword\":\"short\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    // ---- LLM provider switch (SUPER_ADMIN) ------------------------------------------------
+
+    private org.springframework.test.web.servlet.ResultActions switchTo(long id, String body) throws Exception {
+        return mockMvc.perform(post("/api/admin/tenants/" + id + "/llm-provider")
+                .contentType("application/json").content(body));
+    }
+
+    @Test
+    void llmProvider_switchesTheTenant_andAnswersWithTheList() throws Exception {
+        when(llmProviders.providerOf(1L)).thenReturn("cloud");
+
+        switchTo(1, "{\"provider\":\"cloud\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].llmProvider").value("cloud"));
+
+        verify(llmProviders).setProvider(1L, "cloud");
+    }
+
+    @Test
+    void llmProvider_unknownTenant_is404_andNothingIsWritten() throws Exception {
+        switchTo(99, "{\"provider\":\"cloud\"}").andExpect(status().isNotFound());
+
+        verify(llmProviders, never()).setProvider(any(), any());
+    }
+
+    @Test
+    void llmProvider_unknownProvider_is400() throws Exception {
+        doThrow(new IllegalArgumentException("LLM provider must be 'local' or 'cloud'."))
+                .when(llmProviders).setProvider(1L, "gpt");
+
+        switchTo(1, "{\"provider\":\"gpt\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(status().reason("LLM provider must be 'local' or 'cloud'."));
+    }
+
+    @Test
+    void llmProvider_cloudWithoutAKey_is409() throws Exception {
+        doThrow(new IllegalStateException("The cloud LLM is not configured: put ANTHROPIC_API_KEY in SECRETS_DIR first."))
+                .when(llmProviders).setProvider(1L, "cloud");
+
+        switchTo(1, "{\"provider\":\"cloud\"}").andExpect(status().isConflict());
     }
 }

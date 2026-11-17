@@ -94,6 +94,8 @@ services:
       - MAILBOX_ENCRYPTION_KEY
       - IMAP_PASSWORD
       - SMTP_PASSWORD
+      # Optional: the cloud LLM key (L2b). Empty = no tenant can be switched to llm.provider=cloud.
+      - ANTHROPIC_API_KEY
     depends_on:
       postgres:
         condition: service_healthy
@@ -617,6 +619,8 @@ networks:
 # host). The default ./secrets.dev holds only the public dev values. File name = secret name; a
 # service mounts only the ones it lists, under /run/secrets/<name or target>.
 secrets:
+  ANTHROPIC_API_KEY:
+    file: ${SECRETS_DIR:-./secrets.dev}/ANTHROPIC_API_KEY
   POSTGRES_PASSWORD:
     file: ${SECRETS_DIR:-./secrets.dev}/POSTGRES_PASSWORD
   DB_APP_PASSWORD:

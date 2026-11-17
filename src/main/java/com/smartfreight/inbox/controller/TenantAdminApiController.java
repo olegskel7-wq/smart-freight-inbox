@@ -2,12 +2,14 @@ package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.controller.dto.TenantSummaryDto;
 import com.smartfreight.inbox.entity.Tenant;
+import com.smartfreight.inbox.service.LlmProviderSettings;
 import com.smartfreight.inbox.service.OperatorName;
 import com.smartfreight.inbox.service.TenantManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,9 +43,12 @@ public class TenantAdminApiController {
     private static final Logger log = LoggerFactory.getLogger(TenantAdminApiController.class);
 
     private final TenantManagementService tenantManagementService;
+    private final LlmProviderSettings llmProviders;
 
-    public TenantAdminApiController(TenantManagementService tenantManagementService) {
+    public TenantAdminApiController(TenantManagementService tenantManagementService,
+                                    LlmProviderSettings llmProviders) {
         this.tenantManagementService = tenantManagementService;
+        this.llmProviders = llmProviders;
     }
 
     /** New-tenant payload: organisation name plus the first user's (the tenant admin's) login and name. */
@@ -72,8 +77,35 @@ public class TenantAdminApiController {
         return snapshot();
     }
 
+    /** Body of {@code POST /api/admin/tenants/{id}/llm-provider}: {@code local} or {@code cloud}. */
+    public record LlmProviderRequest(String provider) {}
+
+    /**
+     * POST /api/admin/tenants/{id}/llm-provider — switches which LLM the tenant runs on. {@code cloud}
+     * sends that tenant's mail to the Anthropic API, so it is the platform operator's call (after the
+     * DPA names Anthropic as a subprocessor). 404 for an unknown tenant, 400 for an unknown provider,
+     * 409 when switching to cloud without an API key. Returns the refreshed list.
+     */
+    @PostMapping("/{id}/llm-provider")
+    public List<TenantSummaryDto> setLlmProvider(@PathVariable Long id, @RequestBody LlmProviderRequest request) {
+        if (!tenantManagementService.exists(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found: " + id);
+        }
+        try {
+            llmProviders.setProvider(id, request.provider());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        }
+        log.info("Tenant {} LLM provider set to {}", id, llmProviders.providerOf(id));
+        return snapshot();
+    }
+
     /** Snapshots the platform tenant overview into DTOs (the entity never crosses the wire). */
     private List<TenantSummaryDto> snapshot() {
-        return tenantManagementService.overview().stream().map(TenantSummaryDto::from).toList();
+        return tenantManagementService.overview().stream()
+                .map(s -> TenantSummaryDto.from(s, llmProviders.providerOf(s.tenant().getId())))
+                .toList();
     }
 }

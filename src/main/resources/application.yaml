@@ -144,6 +144,22 @@ ollama:
   # Phase 3.1: local embedding model for the AI feedback loop (RAG over operator corrections).
   embedding-model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
 
+# Cloud LLM for tenants with llm.provider=cloud (ROADMAP LLM strategy L2b; switched per tenant by the
+# SUPER_ADMIN on /tenants — every tenant stays on local Ollama until then). Needs ANTHROPIC_API_KEY in
+# SECRETS_DIR. Defaults = the configuration measured in L1. Embeddings stay on local Ollama for everyone.
+llm:
+  cloud:
+    short-model: ${LLM_CLOUD_SHORT_MODEL:claude-haiku-5-5}
+    draft-model: ${LLM_CLOUD_DRAFT_MODEL:claude-haiku-5-5}
+    # USD per million tokens (Anthropic list prices, Nov 2026) — feeds smartfreight_llm_cost_usd_total.
+    prices:
+      "[claude-haiku-5-5]":
+        input: 0.10
+        output: 0.50
+      "[claude-sonnet-5-5]":
+        input: 2.00
+        output: 10.00
+
 # Async AI pipeline (Phase 1.3)
 ai-pipeline:
   # Concurrent RabbitMQ consumers = max AI pipelines in flight.

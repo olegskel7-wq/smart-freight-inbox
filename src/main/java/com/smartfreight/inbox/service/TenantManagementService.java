@@ -49,6 +49,10 @@ public class TenantManagementService {
     public record TenantSummary(Tenant tenant, long userCount) {
     }
 
+    public boolean exists(Long tenantId) {
+        return tenantRepository.existsById(tenantId);
+    }
+
     /** All tenants with their Keycloak operator counts, oldest first (Default tenant on top). */
     public List<TenantSummary> overview() {
         return tenantRepository.findAll().stream()
