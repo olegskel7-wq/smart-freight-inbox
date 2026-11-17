@@ -146,6 +146,11 @@ public class MailboxHealthMonitor {
             login(mailbox);
             return null;
         } catch (Exception e) {
+            if (e instanceof jakarta.mail.AuthenticationFailedException) {
+                // A rejected Microsoft 365 token (consent revoked, then re-granted) must not be served
+                // from the cache for the rest of its hour — the next connect asks Entra again.
+                credentials.forget(mailbox);
+            }
             String reason = EmailAddressUtils.maskAddresses(String.valueOf(e.getMessage()));
             return reason.length() > MAX_ERROR_CHARS ? reason.substring(0, MAX_ERROR_CHARS) + "…" : reason;
         }

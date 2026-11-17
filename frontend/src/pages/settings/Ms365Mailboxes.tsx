@@ -129,9 +129,8 @@ export function Ms365Panel({ status, reload, save }: {
         <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => void createLink()}>
           Connect Microsoft 365 organisation
         </button>
-        {status.directories.length > 0 && (
-          <button type="button" className="btn btn-link btn-sm" onClick={reload}>Refresh</button>
-        )}
+        {/* After the customer approved, the organisation appears on a reload of this list. */}
+        <button type="button" className="btn btn-link btn-sm" onClick={reload}>Refresh</button>
       </div>
       {linkError && <div className="alert alert-danger small py-1">{linkError}</div>}
       {link && (

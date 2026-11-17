@@ -29,7 +29,7 @@ CONFIRM_NAME="${3:-}"
 # the script refuses to run if the schema has one it does not know (a new feature = update this list).
 TABLES=(webhook_delivery webhook_subscription ticket_audit_log training_example quote_follow_up
         shipment_watch outbox_event knowledge_doc email_ticket tenant_document carrier_rate
-        tenant_setting tenant_mailbox)
+        tenant_setting tenant_mailbox tenant_ms365_directory)
 
 sql() { docker compose exec -T postgres psql -U postgres -d smartfreight -v ON_ERROR_STOP=1 -tAq -c "$1" 2>/dev/null; }
 

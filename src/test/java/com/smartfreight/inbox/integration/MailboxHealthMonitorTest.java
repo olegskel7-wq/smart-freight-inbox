@@ -119,4 +119,14 @@ class MailboxHealthMonitorTest {
 
         assertThat(monitor.health(5L)).isEmpty();
     }
+
+    @Test
+    void refusedLogin_dropsTheCachedToken() {
+        failing.add(5L);
+        when(mailboxes.findByEnabledTrue()).thenReturn(List.of(mailbox(5L, 1L)));
+
+        monitor.probeAll();
+
+        verify(credentials).forget(org.mockito.ArgumentMatchers.argThat(m -> m.getId() == 5L));
+    }
 }

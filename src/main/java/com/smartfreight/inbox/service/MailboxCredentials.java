@@ -46,6 +46,13 @@ public class MailboxCredentials {
                 : secretCipher.decrypt(mailbox.getPasswordEnc());
     }
 
+    /** After the server refused a login: drop a cached Microsoft 365 token so the next connect gets a new one. */
+    public void forget(TenantMailbox mailbox) {
+        if (isOAuth(mailbox)) {
+            tokenProvider.evict(mailbox.getMsDirectoryId());
+        }
+    }
+
     /** XOAUTH2 for an {@code imaps} store when the mailbox signs in with OAuth; no-op otherwise. */
     public void applyImaps(Properties props, TenantMailbox mailbox) {
         if (isOAuth(mailbox)) {
