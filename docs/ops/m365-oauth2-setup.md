@@ -56,7 +56,9 @@ and sending yourself an email.
    - Name: `SmartFreight Mail Connector`
    - Supported account types: **Accounts in any organizational directory (Multitenant)**. Customers
      consent to this app from their own directories.
-   - Redirect URI: leave empty for now. Customer onboarding adds one later for the admin-consent link.
+   - Redirect URI: platform **Web**, `https://<PUBLIC_HOST>/ms365/consent/callback` (the server's
+     domain, `docs/ops/tls-domain.md`). Add `https://localhost/ms365/consent/callback` as well for the
+     local stack (Authentication → Add URI). Microsoft returns the consent flow there.
 2. On the app's *Overview*, note the **Application (client) ID** and the **Directory (tenant) ID**.
 3. *API permissions → Add a permission → APIs my organization uses* → search
    **Office 365 Exchange Online** → **Application permissions** → tick
@@ -66,11 +68,16 @@ and sending yourself an email.
    → *Add permissions*. Then click **Grant admin consent for \<tenant\>**. Both rows must show
    a green *Granted*. The default delegated `Microsoft Graph / User.Read` can be removed; we
    don't use it.
-4. *Certificates & secrets → Client secrets → New client secret* → expiry 12 months → copy the
+4. *Token configuration → Add groups claim* → tick **Directory roles** → *ID* token → *Add*. This puts
+   the signed-in user's admin roles (`wids`) into the ID token; SmartFreight connects an organisation
+   only for an administrator (Global / Privileged Role / Cloud Application / Application Administrator)
+   and refuses everyone else. Without this step every consent ends with "Sign in with an administrator
+   account".
+5. *Certificates & secrets → Client secrets → New client secret* → expiry 12 months → copy the
    **Value** column immediately. It is shown once. Do not copy the *Secret ID*.
    Put a calendar reminder 2 weeks before expiry: an expired secret stops **every** M365 mailbox,
    and you would only find out when the `MailboxDown` alert fires.
-5. Store them yourself. Never paste them in chat or commit them. The client id is not secret and goes
+6. Store them yourself. Never paste them in chat or commit them. The client id is not secret and goes
    into `.env`; the secret is a file in `SECRETS_DIR` (Gate C5, [`secrets.md`](secrets.md)), like every other secret:
 
    ```
@@ -117,10 +124,20 @@ reaches only the mailboxes listed here.
    Permission changes can take **up to ~30 minutes** to apply. A login that fails right after these
    commands is not yet a reason to debug.
 
-3. What SmartFreight needs to connect the mailbox (entered on `/settings` once the UI supports it):
-   - Sign-in: **Microsoft 365 (OAuth2)**
-   - Directory: the customer's **Directory (tenant) ID**, or the `<name>.onmicrosoft.com` domain
-   - IMAP `outlook.office365.com:993`, SMTP `smtp.office365.com:587`, username = the mailbox address
+3. Connect it in SmartFreight (`/settings` → *Mailboxes* → *Microsoft 365 / Outlook*), as the tenant's
+   ADMIN:
+   1. **Connect Microsoft 365 organisation** → a link appears (valid 24 h, single use). Send it to the
+      customer's Microsoft 365 administrator (for the test tenant: open it yourself).
+   2. The administrator signs in with Microsoft and approves *SmartFreight Mail Connector*. They end on a
+      SmartFreight page "Microsoft 365 is connected".
+   3. Back on `/settings` (Refresh): the organisation is listed. **Add Microsoft 365 mailbox** → pick the
+      organisation, type the mailbox address, keep *Send replies from this mailbox* on.
+
+   The organisation id is never typed in: SmartFreight takes it from the ID token Microsoft returns for
+   the signed-in administrator, and one Microsoft organisation can belong to only one SmartFreight
+   tenant. That is what stops one SmartFreight customer from pointing a mailbox at another customer's
+   organisation (our app is the same for both). IMAP `outlook.office365.com:993` and SMTP
+   `smtp.office365.com:587` are filled in by the server.
 
 ---
 
@@ -129,7 +146,10 @@ reaches only the mailboxes listed here.
 | Symptom | Cause → fix |
 |---|---|
 | `AADSTS7000215: Invalid client secret` | The *Secret ID* was copied instead of the *Value*, or the secret expired → create a new secret. |
-| `AADSTS700016: Application … was not found in the directory` | Wrong directory id, or the customer never consented → admin consent in that directory. |
+| `AADSTS700016: Application … was not found in the directory` | The customer never consented → run the consent link again. |
+| "Sign in with an administrator account" after consent | The person is not an admin, or step 2.4 (groups claim *Directory roles*) is missing on the app. |
+| "already connected to another SmartFreight account" | That Microsoft organisation is bound to another tenant. Remove the binding there (support, psql) first. |
+| `AADSTS50011: The redirect URI … does not match` | Register exactly `https://<PUBLIC_HOST>/ms365/consent/callback` (step 2.1); `MS365_CONSENT_REDIRECT_URI` follows `PUBLIC_HOST`. |
 | `AADSTS7000229` / missing service principal | Consent not granted in that directory → *Grant admin consent*. |
 | IMAP `AUTHENTICATE failed` | `New-ServicePrincipal` / `Add-MailboxPermission` missing, wrong Object ID (the app registration's instead of the Enterprise app's), or not propagated yet (wait 30 min). |
 | SMTP `535 5.7.139 … SmtpClientAuthentication is disabled` | `Set-CASMailbox … -SmtpClientAuthenticationDisabled $false` for this mailbox. |
