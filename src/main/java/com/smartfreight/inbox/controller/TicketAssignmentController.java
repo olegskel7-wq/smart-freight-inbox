@@ -2,8 +2,7 @@ package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.controller.dto.TicketDetailDto;
 import com.smartfreight.inbox.entity.EmailTicket;
-import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.service.TicketAuditService;
+import com.smartfreight.inbox.service.TicketWorkflowService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -15,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
 import java.util.Collection;
 
 /**
@@ -26,15 +24,11 @@ import java.util.Collection;
 @RequestMapping("/api/tickets")
 public class TicketAssignmentController {
 
-    private final EmailTicketRepository emailTicketRepository;
-    private final TicketAuditService auditService;
+    private final TicketWorkflowService workflow;
     private final TicketDetailAssembler details;
 
-    public TicketAssignmentController(EmailTicketRepository emailTicketRepository,
-                                      TicketAuditService auditService,
-                                      TicketDetailAssembler details) {
-        this.emailTicketRepository = emailTicketRepository;
-        this.auditService = auditService;
+    public TicketAssignmentController(TicketWorkflowService workflow, TicketDetailAssembler details) {
+        this.workflow = workflow;
         this.details = details;
     }
 
@@ -63,10 +57,7 @@ public class TicketAssignmentController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Only an admin can assign tickets to other operators.");
         }
-        ticket.setAssigneeUserId(target);
-        ticket.setUpdatedAt(LocalDateTime.now());
-        emailTicketRepository.save(ticket);
-        auditService.record(id, TicketAuditService.ACTION_ASSIGN, "to=" + target);
+        workflow.assign(ticket, target);
         return details.buildDetail(ticket);
     }
 
@@ -75,10 +66,7 @@ public class TicketAssignmentController {
     @PostMapping("/{id}/unassign")
     public TicketDetailDto unassign(@PathVariable Long id) {
         EmailTicket ticket = details.requireTicket(id);
-        ticket.setAssigneeUserId(null);
-        ticket.setUpdatedAt(LocalDateTime.now());
-        emailTicketRepository.save(ticket);
-        auditService.record(id, TicketAuditService.ACTION_UNASSIGN, null);
+        workflow.unassign(ticket);
         return details.buildDetail(ticket);
     }
 

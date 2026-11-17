@@ -1,10 +1,9 @@
 package com.smartfreight.inbox.controller;
 
-import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.messaging.DlqAdminService;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
-import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
+import com.smartfreight.inbox.service.TicketQueryService;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,16 +31,16 @@ public class AdminController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminController.class);
 
-    private final EmailTicketRepository emailTicketRepository;
+    private final TicketQueryService ticketQueries;
     private final TicketProcessingService ticketProcessingService;
     private final TicketEventPublisher ticketEventPublisher;
     private final DlqAdminService dlqAdminService;
 
-    public AdminController(EmailTicketRepository emailTicketRepository,
+    public AdminController(TicketQueryService ticketQueries,
                            TicketProcessingService ticketProcessingService,
                            TicketEventPublisher ticketEventPublisher,
                            DlqAdminService dlqAdminService) {
-        this.emailTicketRepository = emailTicketRepository;
+        this.ticketQueries = ticketQueries;
         this.ticketProcessingService = ticketProcessingService;
         this.ticketEventPublisher = ticketEventPublisher;
         this.dlqAdminService = dlqAdminService;
@@ -73,10 +72,8 @@ public class AdminController {
     public ResponseEntity<String> reprocessAll() {
         int reset = ticketProcessingService.prepareForRetry();
 
-        // RECEIVED included as a manual unstick path: its consumer re-runs classification,
-        // so re-enqueueing a ticket whose original event is still in flight stays idempotent.
-        List<Long> ids = emailTicketRepository.findIdsByStatusIn(
-                List.of(TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.RETRY_LATER));
+        // RECEIVED, NEW, RETRY_LATER — see TicketQueryService.reprocessableTicketIds.
+        List<Long> ids = ticketQueries.reprocessableTicketIds();
 
         if (ids.isEmpty()) {
             return ResponseEntity.ok("No tickets to reprocess (reset " + reset + " from FAILED).");

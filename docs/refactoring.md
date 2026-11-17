@@ -321,6 +321,23 @@ Branch coverage of the classes the plan touches (clean run):
    loads, a save and a mailbox toggle answer 200. Golden set identical to `after-2.3` across 18 scenarios (it exercises
    the pipeline, not this API). An OPERATOR token getting 403 here is now tested, see `SettingsAdminRuleTest` above.
 
+6. ✅ Controllers no longer use repositories (branch `refactor/ticket-service`, 17 Nov 2026). New services in `service`:
+   `TicketQueryService` (find, the queue list with its view / status / assignee filters, the summary counts, the ids a
+   reprocess re-enqueues), `TicketWorkflowService` (close, delete, assign, unassign), `TicketReplyService` (draft
+   save / close / send with rate limit, SMTP, SLA flag, audit, quote follow-up, captured correction and webhooks; attach
+   document — outcomes as enums the controller maps to 200 / 429 / 502 / 404) and `TrainingExampleService` (list,
+   delete); `DocumentService` and `RateSheetService` gained list / find / idempotent delete. Controllers keep HTTP:
+   parameter sanitising, the JWT (current user, admin check, signature name), status codes, DTOs. Paths, bodies, status
+   codes, messages and `@Transactional` (still on the endpoints; the command methods of the services carry
+   their own, which joins the endpoint's — safe for a caller without one) are unchanged. `AdminController` still publishes the retry events itself — services may not depend
+   on `messaging`. `ArchitectureTest.controllersDoNotUseRepositories` has no exceptions left. Test bodies untouched:
+   the `setUp`s build the real services over the same repository mocks; the document and rate tests keep `store` /
+   `importCsv` mocked and delegate the new read / delete methods to a real service over the repository mock, so the
+   existing `existsById` / `deleteById` checks still pin the real logic. Log lines of the moved code now log under
+   the service classes. Found there (behaviour change, not fixed here): deleting a rate (`DELETE /api/rates/{id}` or
+   clear-all) does not evict `RateSheetCache`, so drafts may quote a deleted rate until the 10-minute TTL — only the CSV
+   import evicts.
+
 **Small tails (17 Nov 2026)** — branch `refactor/small-tails`, no behaviour change:
 `KEY_ESCALATION_ASSIGNEE` (was `TicketProcessingService.SETTING_ESCALATION_ASSIGNEE`) lives in
 `EmailClassificationService` next to `FEATURE_SMART_ROUTING`, so the classification step no longer reaches back into its

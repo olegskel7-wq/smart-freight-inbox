@@ -4,9 +4,9 @@ import com.smartfreight.inbox.controller.dto.TicketDetailDto;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.TenantDocument;
 import com.smartfreight.inbox.entity.enums.TicketType;
-import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.repository.TenantDocumentRepository;
+import com.smartfreight.inbox.service.DocumentService;
 import com.smartfreight.inbox.service.KeycloakAdminService;
+import com.smartfreight.inbox.service.TicketQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -26,20 +26,20 @@ class TicketDetailAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(TicketDetailAssembler.class);
 
-    private final EmailTicketRepository emailTicketRepository;
-    private final TenantDocumentRepository documentRepository;
+    private final TicketQueryService ticketQueries;
+    private final DocumentService documentService;
     private final KeycloakAdminService keycloakAdminService;
 
-    TicketDetailAssembler(EmailTicketRepository emailTicketRepository,
-                          TenantDocumentRepository documentRepository,
+    TicketDetailAssembler(TicketQueryService ticketQueries,
+                          DocumentService documentService,
                           KeycloakAdminService keycloakAdminService) {
-        this.emailTicketRepository = emailTicketRepository;
-        this.documentRepository = documentRepository;
+        this.ticketQueries = ticketQueries;
+        this.documentService = documentService;
         this.keycloakAdminService = keycloakAdminService;
     }
 
     EmailTicket requireTicket(Long id) {
-        return emailTicketRepository.findById(id)
+        return ticketQueries.find(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found: " + id));
     }
 
@@ -47,10 +47,10 @@ class TicketDetailAssembler {
     TicketDetailDto buildDetail(EmailTicket ticket) {
         TenantDocument attached = ticket.getAttachedDocumentId() == null
                 ? null
-                : documentRepository.findById(ticket.getAttachedDocumentId()).orElse(null);
+                : documentService.find(ticket.getAttachedDocumentId()).orElse(null);
         List<TenantDocument> available = (ticket.getTicketType() == TicketType.DOCUMENT_REQUEST
                 && ticket.getExtractedIdentifier() != null)
-                ? documentRepository.findByIdentifierOrderByUploadedAtDesc(ticket.getExtractedIdentifier())
+                ? documentService.forIdentifier(ticket.getExtractedIdentifier())
                 : List.of();
         String uid = ticket.getAssigneeUserId();
         String assigneeEmail = uid == null ? null : assigneeEmails(List.of(ticket), ticket.getTenantId()).get(uid);

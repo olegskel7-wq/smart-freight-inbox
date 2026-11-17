@@ -5,13 +5,10 @@ import com.smartfreight.inbox.controller.dto.TicketDetailDto;
 import com.smartfreight.inbox.controller.dto.TicketStatsDto;
 import com.smartfreight.inbox.controller.dto.TicketSummaryDto;
 import com.smartfreight.inbox.entity.EmailTicket;
-import com.smartfreight.inbox.entity.enums.TicketStatus;
-import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.service.SlaService;
-import com.smartfreight.inbox.service.TicketAuditService;
+import com.smartfreight.inbox.service.TicketQueryService;
+import com.smartfreight.inbox.service.TicketQueryService.TicketCounts;
+import com.smartfreight.inbox.service.TicketWorkflowService;
 import com.smartfreight.inbox.tenancy.TenantClaims;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -29,10 +26,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.EnumSet;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -45,8 +38,6 @@ import java.util.Set;
 @RestController
 @RequestMapping("/api/tickets")
 public class TicketApiController {
-
-    private static final Logger log = LoggerFactory.getLogger(TicketApiController.class);
 
     /** Columns the list may sort by — anything else would fail as a PropertyReferenceException. */
     private static final Set<String> SORTABLE_COLUMNS = Set.of(
@@ -67,24 +58,16 @@ public class TicketApiController {
             Sort.Order.desc("sentimentNegative"),
             Sort.Order.desc("urgency"));
 
-    /** Actionable backlog for the summary strip — every status outside the terminal three. */
-    private static final Set<TicketStatus> OPEN_STATUSES = EnumSet.of(
-            TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.PROCESSING,
-            TicketStatus.DRAFT_READY, TicketStatus.RETRY_LATER, TicketStatus.FAILED);
-
-    private final EmailTicketRepository emailTicketRepository;
-    private final TicketAuditService auditService;
+    private final TicketQueryService ticketQueries;
+    private final TicketWorkflowService workflow;
     private final TicketDetailAssembler details;
-    private final SlaService slaService;
 
-    public TicketApiController(EmailTicketRepository emailTicketRepository,
-                               TicketAuditService auditService,
-                               TicketDetailAssembler details,
-                               SlaService slaService) {
-        this.emailTicketRepository = emailTicketRepository;
-        this.auditService = auditService;
+    public TicketApiController(TicketQueryService ticketQueries,
+                               TicketWorkflowService workflow,
+                               TicketDetailAssembler details) {
+        this.ticketQueries = ticketQueries;
+        this.workflow = workflow;
         this.details = details;
-        this.slaService = slaService;
     }
 
     /**
@@ -117,13 +100,9 @@ public class TicketApiController {
             sortSpec = ESCALATION_SORT.and(sortSpec);
         }
         Pageable pageable = PageRequest.of(safePage, safeSize, sortSpec);
-        // A summary-chip drill-down: each `view` reuses the exact set the chip counted,
-        // so the count and the list it links to can never diverge. It takes precedence over the
-        // status/assignee filters (sort still applies via the pageable).
-        Page<EmailTicket> ticketPage = resolveView(view, pageable);
-        if (ticketPage == null) {
-            ticketPage = filteredPage(status, assignee, jwt, pageable);
-        }
+        // A summary-chip `view` takes precedence over the status/assignee filters (see the service).
+        String me = jwt == null ? null : jwt.getSubject();
+        Page<EmailTicket> ticketPage = ticketQueries.list(view, status, assignee, me, pageable);
 
         Map<String, String> emails = details.assigneeEmails(ticketPage.getContent(), TenantClaims.fromJwt(jwt));
         return PageDto.of(ticketPage, t -> TicketSummaryDto.from(t,
@@ -137,12 +116,9 @@ public class TicketApiController {
      */
     @GetMapping("/summary")
     public TicketStatsDto summary() {
-        return new TicketStatsDto(
-                emailTicketRepository.countByStatusIn(OPEN_STATUSES),
-                emailTicketRepository.countByStatus(TicketStatus.DRAFT_READY),
-                emailTicketRepository.countByStatusInAndSlaBreachedTrue(OPEN_STATUSES),
-                emailTicketRepository.countByStatusAndUpdatedAtGreaterThanEqual(
-                        TicketStatus.AUTO_SENT, LocalDate.now().atStartOfDay()));
+        TicketCounts counts = ticketQueries.counts();
+        return new TicketStatsDto(counts.open(), counts.awaitingReview(), counts.slaBreached(),
+                counts.autoSentToday());
     }
 
     /** GET /api/tickets/{id} — full ticket detail (404 if missing). */
@@ -156,13 +132,7 @@ public class TicketApiController {
     @PostMapping("/{id}/close")
     public TicketDetailDto close(@PathVariable Long id) {
         EmailTicket ticket = details.requireTicket(id);
-        if (ticket.getStatus() != TicketStatus.AUTO_SENT) {
-            slaService.markBreachedIfOverdue(ticket, LocalDateTime.now());
-            ticket.setStatus(TicketStatus.CLOSED);
-            ticket.setUpdatedAt(LocalDateTime.now());
-            emailTicketRepository.save(ticket);
-            auditService.record(id, TicketAuditService.ACTION_CLOSE, null);
-        }
+        workflow.close(ticket);
         return details.buildDetail(ticket);
     }
 
@@ -171,61 +141,8 @@ public class TicketApiController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         EmailTicket ticket = details.requireTicket(id);
-        if (ticket.getStatus() == TicketStatus.PROCESSING) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();
-        }
-        emailTicketRepository.delete(ticket);
-        auditService.record(id, TicketAuditService.ACTION_DELETE, null);
-        log.info("Ticket {} soft-deleted (API)", id);
-        return ResponseEntity.noContent().build();
-    }
-
-    // ---- helpers ----
-
-    /** The status/assignee-filtered page: {@code mine}, {@code unassigned} or everything. */
-    private Page<EmailTicket> filteredPage(String status, String assignee, Jwt jwt, Pageable pageable) {
-        TicketStatus statusFilter = parseStatusOrNull(status);
-        String mode = assignee == null ? "all" : assignee.trim().toLowerCase(Locale.ROOT);
-        if ("mine".equals(mode)) {
-            String me = jwt == null ? null : jwt.getSubject();
-            return (me == null)
-                    ? Page.empty(pageable)
-                    : emailTicketRepository.findByAssignee(me, statusFilter, pageable);
-        } else if ("unassigned".equals(mode)) {
-            return emailTicketRepository.findUnassigned(statusFilter, pageable);
-        } else if (statusFilter != null) {
-            return emailTicketRepository.findByStatus(statusFilter, pageable);
-        }
-        return emailTicketRepository.findAll(pageable);
-    }
-
-    /**
-     * Resolves a summary-chip drill-down to a page, or null when no recognised view is
-     * requested (the caller then falls back to the normal status/assignee filtering). Each case
-     * reuses the same definition as its counterpart count in {@link #summary()}.
-     */
-    private Page<EmailTicket> resolveView(String view, Pageable pageable) {
-        if (view == null || view.isBlank()) {
-            return null;
-        }
-        return switch (view.trim().toLowerCase(Locale.ROOT)) {
-            case "open" -> emailTicketRepository.findByStatusIn(OPEN_STATUSES, pageable);
-            case "awaiting" -> emailTicketRepository.findByStatus(TicketStatus.DRAFT_READY, pageable);
-            case "breached" -> emailTicketRepository.findByStatusInAndSlaBreachedTrue(OPEN_STATUSES, pageable);
-            case "autosent_today" -> emailTicketRepository.findByStatusAndUpdatedAtGreaterThanEqual(
-                    TicketStatus.AUTO_SENT, LocalDate.now().atStartOfDay(), pageable);
-            default -> null;
-        };
-    }
-
-    private TicketStatus parseStatusOrNull(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return TicketStatus.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+        return workflow.delete(ticket)
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.status(HttpStatus.CONFLICT).build();
     }
 }

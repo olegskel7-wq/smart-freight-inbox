@@ -67,6 +67,26 @@ public class RateSheetService {
         this.settingsService = settingsService;
     }
 
+    /** The current tenant's rates in a stable carrier / origin / destination order. */
+    public List<CarrierRate> listSorted() {
+        return repository.findAllByOrderByCarrierAscOriginAscDestinationAsc();
+    }
+
+    /**
+     * Deletes one rate if the current tenant has it. Idempotent: an unknown or cross-tenant id
+     * (invisible under RLS) is a no-op instead of the error a bare {@code deleteById} raises.
+     */
+    public void deleteIfPresent(Long id) {
+        if (repository.existsById(id)) {
+            repository.deleteById(id);
+        }
+    }
+
+    /** Clears the current tenant's whole rate sheet. */
+    public void deleteAll() {
+        repository.deleteAll();
+    }
+
     /** Outcome of one CSV import: row counts plus per-row errors for the UI. */
     public record ImportResult(int inserted, int updated, List<String> errors) {
         public int total() {
