@@ -21,7 +21,10 @@ class TenantsSuperAdminRuleTest extends ApiRoleRuleSupport {
     static Stream<Route> routes() {
         return Stream.of(
                 tenants(HttpMethod.GET, "", KEYCLOAK_DOWN),
-                tenants(HttpMethod.POST, "{}", 400));
+                tenants(HttpMethod.POST, "{}", 400),
+                // An unknown tenant is refused before the provider is written.
+                new Route(HttpMethod.POST, "/api/admin/tenants/999999/llm-provider", "{\"provider\":\"cloud\"}", 404,
+                        TenantAdminApiController.class));
     }
 
     private static Route tenants(HttpMethod method, String body, int allowedStatus) {

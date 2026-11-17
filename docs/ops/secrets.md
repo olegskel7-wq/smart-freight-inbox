@@ -31,6 +31,7 @@ the services already read files, so a Vault agent can later render the same file
 | `IMAP_PASSWORD`, `SMTP_PASSWORD` | backend (platform mail account) | may be empty files; SMTP no longer falls back to IMAP — same account ⇒ same value in both |
 | `TELEGRAM_BOT_TOKEN`, `HEALTHCHECKS_PING_URL` | alertmanager | Gate B4 |
 | `BACKUP_ENCRYPTION_PASSPHRASE`, `OFFSITE_S3_ACCESS_KEY_ID`, `OFFSITE_S3_SECRET_ACCESS_KEY`, `BACKUP_HEALTHCHECKS_PING_URL` | backup-offsite | Gate B1 — keep the passphrase outside the server |
+| `ANTHROPIC_API_KEY` | backend | optional (L2b cloud LLM): empty file = every tenant on local Ollama and the SUPER_ADMIN cannot switch one to `cloud`. Also read by `scripts/eval/` |
 
 How each service reads them: Spring (backend, port-service) — `spring.config.import:
 optional:configtree:/run/secrets/` turns each file into a property of the same name; postgres images
@@ -58,6 +59,7 @@ printf '%s' '<s3 key id>'            > OFFSITE_S3_ACCESS_KEY_ID    # docs/ops/ba
 printf '%s' '<s3 secret>'            > OFFSITE_S3_SECRET_ACCESS_KEY
 printf '%s' '<backup ping url>'      > BACKUP_HEALTHCHECKS_PING_URL
 : > IMAP_PASSWORD; : > SMTP_PASSWORD     # or the platform account's password — in BOTH files (no fallback)
+: > ANTHROPIC_API_KEY                    # or the Anthropic API key, only once a tenant may use the cloud LLM
 chmod 644 ./*
 ```
 

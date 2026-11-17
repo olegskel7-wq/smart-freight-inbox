@@ -1,5 +1,8 @@
 package com.smartfreight.inbox.config;
 
+import com.anthropic.errors.BadRequestException;
+import com.anthropic.errors.NotFoundException;
+import com.anthropic.errors.UnprocessableEntityException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -44,6 +47,8 @@ public class ResilienceConfig {
 
     public static final String OLLAMA_BREAKER = "ollama";
     public static final String PORT_SERVICE_BREAKER = "portService";
+    /** The cloud LLM (Anthropic API) — one platform-wide endpoint, so one breaker for every cloud tenant. */
+    public static final String ANTHROPIC_BREAKER = "anthropic";
 
     /** Sliding window: failure rate is evaluated over the last N calls. */
     private static final int SLIDING_WINDOW_SIZE = 10;
@@ -95,9 +100,18 @@ public class ResilienceConfig {
                         && wcre.getStatusCode().is4xxClientError())
                 .build();
 
+        CircuitBreakerConfig anthropicConfig = CircuitBreakerConfig.from(ollamaConfig)
+                // A request the API rejects as malformed says nothing about the API being down; an
+                // outage, a timeout, rate limiting (429) and 5xx do.
+                .ignoreException(t -> t instanceof BadRequestException
+                        || t instanceof NotFoundException
+                        || t instanceof UnprocessableEntityException)
+                .build();
+
         CircuitBreakerRegistry registry = CircuitBreakerRegistry.of(Map.of(
                 OLLAMA_BREAKER, ollamaConfig,
-                PORT_SERVICE_BREAKER, portServiceConfig));
+                PORT_SERVICE_BREAKER, portServiceConfig,
+                ANTHROPIC_BREAKER, anthropicConfig));
 
         TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(registry).bindTo(meterRegistry);
         return registry;

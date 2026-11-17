@@ -64,7 +64,7 @@ secret_of() { secret_in "$SECRETS_DIR" "$1"; }
 # Optional secrets: the platform mail account, and the backup/alert ones checked by their gates below.
 is_optional() {
     case "$1" in
-        IMAP_PASSWORD|SMTP_PASSWORD|TELEGRAM_*|HEALTHCHECKS_*|BACKUP_*|OFFSITE_*) return 0 ;;
+        IMAP_PASSWORD|SMTP_PASSWORD|TELEGRAM_*|HEALTHCHECKS_*|BACKUP_*|OFFSITE_*|ANTHROPIC_API_KEY) return 0 ;;
         *) return 1 ;;
     esac
 }

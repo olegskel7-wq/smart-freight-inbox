@@ -109,6 +109,15 @@ public class OllamaClientProvider {
         addTokens(tags.and("type", "completion"), response.get("eval_count"));
     }
 
+    /**
+     * Meters one completed call of any provider for the CURRENT tenant with its token counts — the
+     * same {@code smartfreight_llm_calls_total} / {@code _tokens_total} series as {@link #recordUsage},
+     * so a tenant's usage reads the same whichever model served it (the {@code model} tag tells them apart).
+     */
+    public void recordTokens(String operation, String model, long promptTokens, long completionTokens) {
+        recordUsage(operation, model, Map.of("prompt_eval_count", promptTokens, "eval_count", completionTokens));
+    }
+
     private void addTokens(Tags tags, Object count) {
         if (count instanceof Number n && n.longValue() > 0) {
             Counter.builder("smartfreight_llm_tokens_total")

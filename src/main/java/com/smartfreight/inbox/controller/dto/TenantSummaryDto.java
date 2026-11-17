@@ -10,12 +10,14 @@ import java.time.LocalDateTime;
  * Keycloak operator count) into the four columns the page renders, so the entity itself never crosses
  * the wire.
  */
-public record TenantSummaryDto(Long id, String name, long userCount, LocalDateTime createdAt) {
-    public static TenantSummaryDto from(TenantSummary s) {
+public record TenantSummaryDto(Long id, String name, long userCount, LocalDateTime createdAt, String llmProvider) {
+    /** @param llmProvider {@code local} or {@code cloud} — see {@code LlmProviderSettings} */
+    public static TenantSummaryDto from(TenantSummary s, String llmProvider) {
         return new TenantSummaryDto(
                 s.tenant().getId(),
                 s.tenant().getName(),
                 s.userCount(),
-                s.tenant().getCreatedAt());
+                s.tenant().getCreatedAt(),
+                llmProvider);
     }
 }

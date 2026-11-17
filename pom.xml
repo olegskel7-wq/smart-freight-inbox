@@ -165,6 +165,12 @@
 			<artifactId>resilience4j-circuitbreaker</artifactId>
 			<version>${resilience4j.version}</version>
 		</dependency>
+		<!-- Cloud LLM provider (ROADMAP LLM strategy L2b): the official Anthropic SDK behind LlmClient. -->
+		<dependency>
+			<groupId>com.anthropic</groupId>
+			<artifactId>anthropic-java</artifactId>
+			<version>3.3.0</version>
+		</dependency>
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-micrometer</artifactId>

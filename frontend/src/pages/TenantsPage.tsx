@@ -46,6 +46,21 @@ export default function TenantsPage() {
     }
   }
 
+  // Cloud sends the tenant's mail to the Anthropic API: only after its DPA names Anthropic as a subprocessor.
+  const setLlmProvider = async (t: Tenant, provider: Tenant['llmProvider']) => {
+    if (provider === t.llmProvider) return
+    if (provider === 'cloud' && !window.confirm(
+      `Switch '${t.name}' to the cloud LLM? Its emails will be processed by the Anthropic API outside the UK. ` +
+      "Do this only once the tenant's DPA names Anthropic as a subprocessor.")) return
+    setMsg(null)
+    try {
+      setTenants(await api.post<Tenant[]>(`/api/admin/tenants/${t.id}/llm-provider`, { provider }))
+      setMsg({ kind: 'success', text: `'${t.name}' now runs on the ${provider === 'cloud' ? 'cloud' : 'local'} LLM.` })
+    } catch (err) {
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Switch failed') })
+    }
+  }
+
   if (error) return <div className="alert alert-danger">{error}</div>
   if (!tenants) return <div className="text-muted">Loading…</div>
 
@@ -115,6 +130,7 @@ export default function TenantsPage() {
                   <th>Name</th>
                   <th>Users</th>
                   <th>Created</th>
+                  <th title="Local Ollama, or the cloud LLM (Anthropic API)">AI</th>
                 </tr>
               </thead>
               <tbody>
@@ -124,6 +140,14 @@ export default function TenantsPage() {
                     <td>{t.name}</td>
                     <td><span className="badge text-bg-secondary">{t.userCount}</span></td>
                     <td className="small text-nowrap text-muted">{formatDateTime(t.createdAt)}</td>
+                    <td>
+                      <select className="form-select form-select-sm" style={{ width: 'auto' }}
+                              aria-label={`AI for ${t.name}`} value={t.llmProvider}
+                              onChange={(e) => setLlmProvider(t, e.target.value as Tenant['llmProvider'])}>
+                        <option value="local">Local</option>
+                        <option value="cloud">Cloud</option>
+                      </select>
+                    </td>
                   </tr>
                 ))}
               </tbody>

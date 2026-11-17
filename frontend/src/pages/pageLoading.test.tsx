@@ -80,7 +80,7 @@ const RATES: RatesResponse = {
   featureEnabled: true,
   rates: [{ id: 1, carrier: 'Northern Haulage', origin: 'Felixstowe', destination: 'Leeds', rate: '400.00', currency: 'GBP', marginPercent: '10', sellPrice: '440.00', validUntil: null, expired: false }],
 }
-const TENANTS: Tenant[] = [{ id: 1, name: 'Felixstowe Freight Ltd', userCount: 2, createdAt: AT }]
+const TENANTS: Tenant[] = [{ id: 1, name: 'Felixstowe Freight Ltd', userCount: 2, createdAt: AT, llmProvider: 'local' }]
 const EXAMPLE = { id: 1, ticketType: 'RFQ', aiDraftPreview: 'AI draft', operatorFinalPreview: 'Final reply', createdAt: AT }
 const TRAINING: TrainingExamplesResponse = {
   featureEnabled: true,
