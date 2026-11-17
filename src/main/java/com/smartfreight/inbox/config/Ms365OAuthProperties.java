@@ -14,13 +14,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param clientSecret its client secret (Entra → Certificates &amp; secrets)
  * @param authorityUrl identity platform base URL, no tenant path ({@code https://login.microsoftonline.com})
  * @param scope        resource scope for IMAP/SMTP ({@code https://outlook.office365.com/.default})
+ * @param consentRedirectUri where Microsoft returns the consent flow ({@code https://<PUBLIC_HOST>/ms365/consent/callback});
+ *                     must be registered on the app (Authentication → Web redirect URIs)
  */
 @ConfigurationProperties(prefix = "ms365.oauth")
 public record Ms365OAuthProperties(
         String clientId,
         String clientSecret,
         String authorityUrl,
-        String scope) {
+        String scope,
+        String consentRedirectUri) {
 
     /** Whether the app credentials are present — without them no M365 mailbox can sign in. */
     public boolean isConfigured() {

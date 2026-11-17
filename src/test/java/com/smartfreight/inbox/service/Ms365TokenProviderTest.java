@@ -45,7 +45,7 @@ class Ms365TokenProviderTest {
     private Ms365OAuthProperties props(String clientId, String clientSecret) {
         String baseUrl = server.url("/").toString().replaceAll("/$", "");
         return new Ms365OAuthProperties(clientId, clientSecret, baseUrl,
-                "https://outlook.office365.com/.default");
+                "https://outlook.office365.com/.default", "https://localhost/ms365/consent/callback");
     }
 
     private void enqueueToken(String token, long expiresIn) {

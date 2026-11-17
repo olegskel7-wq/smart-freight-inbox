@@ -227,6 +227,9 @@ ms365:
     client-secret: ${MS365_CLIENT_SECRET:}
     authority-url: ${MS365_AUTHORITY_URL:https://login.microsoftonline.com}
     scope: https://outlook.office365.com/.default
+    # The consent flow's return address (Ms365ConsentController) — public origin, so it follows
+    # PUBLIC_HOST (docker-compose.yml). Register exactly this URI on the Entra app.
+    consent-redirect-uri: ${MS365_CONSENT_REDIRECT_URI:https://localhost/ms365/consent/callback}
 
 # Demo mail harness (Phase 4.8 S2): demo tenants read GreenMail, reply into Mailpit.
 # How to run it (compose or IDE): see the header of scripts/demo-mail.ps1.
