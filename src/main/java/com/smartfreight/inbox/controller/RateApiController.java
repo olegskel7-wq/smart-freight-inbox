@@ -3,7 +3,6 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.controller.dto.RateDto;
 import com.smartfreight.inbox.controller.dto.RateUploadResponse;
 import com.smartfreight.inbox.controller.dto.RatesResponse;
-import com.smartfreight.inbox.repository.CarrierRateRepository;
 import com.smartfreight.inbox.service.RateSheetService;
 import com.smartfreight.inbox.service.SettingsService;
 import org.springframework.http.HttpStatus;
@@ -35,14 +34,11 @@ import java.util.List;
 public class RateApiController {
 
     private final RateSheetService rateSheetService;
-    private final CarrierRateRepository carrierRateRepository;
     private final SettingsService settingsService;
 
     public RateApiController(RateSheetService rateSheetService,
-                            CarrierRateRepository carrierRateRepository,
                             SettingsService settingsService) {
         this.rateSheetService = rateSheetService;
-        this.carrierRateRepository = carrierRateRepository;
         this.settingsService = settingsService;
     }
 
@@ -81,23 +77,21 @@ public class RateApiController {
      */
     @DeleteMapping("/{id}")
     public RatesResponse delete(@PathVariable Long id) {
-        if (carrierRateRepository.existsById(id)) {
-            carrierRateRepository.deleteById(id);
-        }
+        rateSheetService.deleteIfPresent(id);
         return buildResponse();
     }
 
     /** DELETE /api/rates — clears the whole rate sheet for the current tenant. */
     @DeleteMapping
     public RatesResponse clearAll() {
-        carrierRateRepository.deleteAll();
+        rateSheetService.deleteAll();
         return buildResponse();
     }
 
     /** Snapshots the current tenant's rates (stable carrier/origin/destination order) into the DTO. */
     private RatesResponse buildResponse() {
         LocalDate today = LocalDate.now();
-        List<RateDto> rates = carrierRateRepository.findAllByOrderByCarrierAscOriginAscDestinationAsc()
+        List<RateDto> rates = rateSheetService.listSorted()
                 .stream()
                 .map(r -> RateDto.from(r, today))
                 .toList();

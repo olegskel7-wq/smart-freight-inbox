@@ -5,6 +5,7 @@ import com.smartfreight.inbox.messaging.DlqAdminService;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
+import com.smartfreight.inbox.service.TicketQueryService;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,7 +64,8 @@ class AdminControllerTest {
     @BeforeEach
     void setUp() {
         AdminController controller = new AdminController(
-                emailTicketRepository, ticketProcessingService, ticketEventPublisher, dlqAdminService);
+                new TicketQueryService(emailTicketRepository), ticketProcessingService, ticketEventPublisher,
+                dlqAdminService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

@@ -35,21 +35,6 @@ class ArchitectureTest {
             .importPackages(ROOT);
 
     /**
-     * Classes in {@code controller} that still use a repository directly instead of a service. The
-     * four {@code Ticket*} names are the former {@code TicketApiController} split by sub-resource
-     * (same debt, spread over the classes that now hold it).
-     */
-    private static final Set<String> CONTROLLERS_USING_REPOSITORIES = Set.of(
-            "AdminController",
-            "DocumentApiController",
-            "RateApiController",
-            "TicketApiController",
-            "TicketAssignmentController",
-            "TicketDetailAssembler",
-            "TicketReplyController",
-            "TrainingExampleApiController");
-
-    /**
      * Entities without {@code @TenantId}, each on purpose: the tenant table itself, the
      * platform-wide default settings (per-tenant overrides live in {@code TenantSetting}), and
      * the outbox, which is also written from system context where Hibernate has no tenant to
@@ -100,10 +85,10 @@ class ArchitectureTest {
                 .check(CLASSES);
     }
 
+    /** Controllers reach the data through services; no exceptions left since the ticket-service step. */
     @Test
-    void onlyKnownControllersUseRepositories() {
+    void controllersDoNotUseRepositories() {
         noClasses().that().resideInAPackage(pkg("controller"))
-                .and(DescribedPredicate.not(simpleNameIn(CONTROLLERS_USING_REPOSITORIES)))
                 .should().dependOnClassesThat().resideInAPackage(pkg("repository"))
                 .check(CLASSES);
     }
