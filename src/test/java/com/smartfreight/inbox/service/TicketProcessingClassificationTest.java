@@ -186,7 +186,7 @@ class TicketProcessingClassificationTest {
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(emailClassificationService.classify(any(), any()))
                 .thenReturn(new ClassificationResult(true, TicketType.RFQ, Urgency.HIGH, true));
-        when(settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""))
+        when(settingsService.getString(EmailClassificationService.KEY_ESCALATION_ASSIGNEE, ""))
                 .thenReturn("operator-uuid-9");
         stubHappyPipeline();
 
@@ -204,7 +204,7 @@ class TicketProcessingClassificationTest {
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(emailClassificationService.classify(any(), any()))
                 .thenReturn(new ClassificationResult(true, TicketType.RFQ, Urgency.HIGH, false));
-        when(settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""))
+        when(settingsService.getString(EmailClassificationService.KEY_ESCALATION_ASSIGNEE, ""))
                 .thenReturn("");
         stubHappyPipeline();
 
@@ -228,7 +228,7 @@ class TicketProcessingClassificationTest {
 
         // A manual owner is never overwritten; the setting is not even read.
         assertThat(ticket.getAssigneeUserId()).isEqualTo("already-mine");
-        verify(settingsService, never()).getString(eq(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE), anyString());
+        verify(settingsService, never()).getString(eq(EmailClassificationService.KEY_ESCALATION_ASSIGNEE), anyString());
     }
 
     // Phase 3.9: the feedback loop and the knowledge base receive the SAME memoised embedding supplier,

@@ -54,14 +54,6 @@ public class TicketProcessingService {
     /** Maximum number of retry attempts on an optimistic lock conflict. */
     private static final int MAX_RETRY_ATTEMPTS = 3;
 
-    /**
-     * Per-tenant setting: the Keycloak user UUID that escalated (HIGH urgency / negative
-     * sentiment) tickets are auto-assigned to. Blank/unset → no auto-assign (escalation still tightens
-     * the SLA + floats the ticket to the top of the queue). Resolved via the standard
-     * {@code tenant_setting → app_setting → default} chain.
-     */
-    public static final String SETTING_ESCALATION_ASSIGNEE = "routing.escalation-assignee";
-
     private final EmailTicketRepository emailTicketRepository;
     private final TicketClassificationStep ticketClassificationStep;
     private final IdentifierLookupStep identifierLookupStep;

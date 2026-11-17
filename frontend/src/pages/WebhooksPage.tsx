@@ -14,8 +14,7 @@ import SubscriptionRow from './webhooks/SubscriptionRow.tsx'
 import WebhookForm from './webhooks/WebhookForm.tsx'
 import type { NewWebhook } from './webhooks/WebhookForm.tsx'
 import WebhooksHowToCard from './webhooks/WebhooksHowToCard.tsx'
-
-type Msg = { kind: 'success' | 'danger'; text: string } | null
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
 // Outbound webhooks: manage subscriptions (where SmartFreight POSTs signed
 // domain events), test an endpoint, and inspect the delivery log. ADMIN-only (the nav link + route are
@@ -97,12 +96,7 @@ export default function WebhooksPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       {newSecret && <SigningSecretAlert secret={newSecret} onClose={() => setNewSecret(null)} />}
 

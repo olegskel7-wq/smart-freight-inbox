@@ -4,8 +4,7 @@ import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { User } from '../types.ts'
 import { errorMessage } from '../util/errors.ts'
-
-type Msg = { kind: 'success' | 'danger'; text: string } | null
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
 // Operator management backed by Keycloak: list, add, reset
 // password, delete (the API blocks deleting your own account). Inline forms instead of modals —
@@ -86,12 +85,7 @@ export default function UsersPage() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="Operators"

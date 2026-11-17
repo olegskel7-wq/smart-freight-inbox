@@ -12,6 +12,7 @@ import SmartRoutingSection from './settings/SmartRoutingSection.tsx'
 import SmtpHowToCard from './settings/SmtpHowToCard.tsx'
 import { type SectionProps, useSettings } from './settings/useSettings.ts'
 import StatusUpdateSection from './settings/StatusUpdateSection.tsx'
+import { PageAlert } from '../components/PageAlert.tsx'
 
 // Each card saves its own section through /api/settings/*; a successful save returns the refreshed
 // snapshot, which re-seeds every card's form (useSettings). The platform SMTP block is read-only
@@ -30,12 +31,7 @@ export default function SettingsPage() {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={dismissMsg} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={dismissMsg} />
 
       <PageHeader
         title="Settings"

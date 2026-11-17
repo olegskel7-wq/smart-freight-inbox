@@ -12,7 +12,6 @@ import com.smartfreight.inbox.service.MailboxManagementService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.service.SettingsService;
-import com.smartfreight.inbox.service.TicketProcessingService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -92,7 +91,7 @@ class SettingsSnapshotAssembler {
                 settingsService.getString(QuoteFollowUpScheduler.KEY_DELAY_HOURS,
                         String.valueOf(QuoteFollowUpScheduler.DEFAULT_DELAY_HOURS)),
                 settingsService.isFeatureEnabled(EmailClassificationService.FEATURE_SMART_ROUTING, true),
-                settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""),
+                settingsService.getString(EmailClassificationService.KEY_ESCALATION_ASSIGNEE, ""),
                 mailboxes);
     }
 }

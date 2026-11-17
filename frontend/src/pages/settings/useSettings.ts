@@ -3,10 +3,9 @@ import { useApi } from '../../api/useApi.ts'
 import { usePageData } from '../../api/usePageData.ts'
 import { errorMessage } from '../../util/errors.ts'
 import type { Settings } from '../../types.ts'
+import type { Msg } from '../../components/PageAlert.tsx'
 
 export type Api = ReturnType<typeof useApi>
-
-export type Msg = { kind: 'success' | 'danger' | 'warning'; text: string } | null
 
 // The editable fields of every section. Each save returns the refreshed snapshot, which re-seeds ALL
 // of them — an unsaved edit in another card is dropped, as the server's values are the truth.

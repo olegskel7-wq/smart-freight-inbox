@@ -22,7 +22,7 @@ import java.util.List;
  * Administrative endpoints for ticket maintenance.
  *
  * <p>Under {@code /api/admin/**}, so the resource-server chain (SecurityConfig @Order(1)) gates it
- * with ROLE_OPERATOR — the same authority the old Thymeleaf chain enforced. {@code reprocess} is
+ * with ROLE_ADMIN (an OPERATOR gets 403; pinned by {@code AdminMaintenanceRuleTest}). {@code reprocess} is
  * surfaced as a button on the React {@code /tickets} page; the DLQ operations stay API-only (rare,
  * dangerous platform maintenance — a runbook/curl surface, not an everyday operator control).
  */

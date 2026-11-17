@@ -8,7 +8,6 @@ import com.smartfreight.inbox.service.AutoSendService;
 import com.smartfreight.inbox.service.EmailClassificationService;
 import com.smartfreight.inbox.service.OllamaClientProvider;
 import com.smartfreight.inbox.service.SettingsService;
-import com.smartfreight.inbox.service.TicketProcessingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -142,7 +141,7 @@ public class SettingsApiController {
         settingsService.setString(EmailClassificationService.FEATURE_SMART_ROUTING,
                 String.valueOf(request.smartRoutingEnabled()));
         String assignee = request.escalationAssignee() == null ? "" : request.escalationAssignee().trim();
-        settingsService.setString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, assignee);
+        settingsService.setString(EmailClassificationService.KEY_ESCALATION_ASSIGNEE, assignee);
         return snapshotAssembler.snapshot();
     }
 
