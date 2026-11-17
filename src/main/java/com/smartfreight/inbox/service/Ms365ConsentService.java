@@ -194,7 +194,7 @@ public class Ms365ConsentService {
                             .with("scope", "openid profile email"))
                     .retrieve()
                     .bodyToMono(TokenResponse.class)
-                    .block();
+                    .block(java.time.Duration.ofSeconds(15));
         } catch (WebClientResponseException e) {
             log.warn("Microsoft 365 consent: code redemption failed (HTTP {})", e.getStatusCode().value());
             throw new ConsentException("Microsoft refused the sign-in. Please try again.");

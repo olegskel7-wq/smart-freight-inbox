@@ -93,8 +93,10 @@ public class Ms365TokenProvider {
 
     /** Drops a directory's cached token — after the server rejected it (revoked consent, rotated secret). */
     public void evict(String directoryId) {
-        if (directoryId != null) {
-            tokens.remove(directoryId.trim().toLowerCase());
+        try {
+            tokens.remove(normalise(directoryId));
+        } catch (Ms365TokenException e) {
+            // Not a valid directory id — nothing was ever cached under it.
         }
     }
 
@@ -110,7 +112,8 @@ public class Ms365TokenProvider {
                             .with("scope", props.scope()))
                     .retrieve()
                     .bodyToMono(TokenResponse.class)
-                    .block();
+                    // A hanging Entra must not stall every connect/send for this directory behind the lock.
+                    .block(Duration.ofSeconds(15));
         } catch (WebClientResponseException e) {
             throw new Ms365TokenException("Microsoft 365 token request for directory " + directory
                     + " failed (HTTP " + e.getStatusCode().value() + "): " + entraReason(e), e);
@@ -143,7 +146,7 @@ public class Ms365TokenProvider {
     }
 
     private static String normalise(String directoryId) {
-        String d = directoryId == null ? "" : directoryId.trim().toLowerCase();
+        String d = directoryId == null ? "" : directoryId.trim().toLowerCase(java.util.Locale.ROOT);
         if (!DIRECTORY.matcher(d).matches()) {
             throw new Ms365TokenException("Invalid Microsoft 365 directory id: expected the tenant GUID "
                     + "or its domain (e.g. contoso.onmicrosoft.com)");

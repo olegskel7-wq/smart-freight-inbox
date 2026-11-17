@@ -4,7 +4,7 @@ import { formatDateTime } from '../../util/format.ts'
 import MailboxFields from './MailboxFields.tsx'
 import { EMPTY_MAILBOX, type MailboxEdit, type MailboxForms, toEdit, toRequest } from './mailboxForm.ts'
 import { Ms365Fields, Ms365Panel } from './Ms365Mailboxes.tsx'
-import { type Ms365Form, toMs365Form, useMs365 } from './ms365Form.ts'
+import { type Ms365Form, toMs365Form, toMs365Request, useMs365 } from './ms365Form.ts'
 import { SettingsCard } from './SettingsCard.tsx'
 import type { DeleteAndReload, SaveSettings } from './useSettings.ts'
 
@@ -62,10 +62,7 @@ export default function MailboxesSection({ settings, forms, save, deleteAndReloa
     if (!ms365Editing) return
     const { id, ...f } = ms365Editing
     const saved = await save(
-      (api) => api.put<Settings>(`/api/settings/mailboxes/${id}/ms365`, {
-        directoryId: f.directoryId, username: f.username, sendReplies: f.sendReplies,
-        fromAddress: f.sendReplies && f.fromAddress ? f.fromAddress : null,
-      }),
+      (api) => api.put<Settings>(`/api/settings/mailboxes/${id}/ms365`, toMs365Request(f)),
       'Mailbox updated — changes apply within ~30 seconds.',
       setMs365EditError,
     )
