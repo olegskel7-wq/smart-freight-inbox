@@ -73,18 +73,21 @@ public class RateSheetService {
     }
 
     /**
-     * Deletes one rate if the current tenant has it. Idempotent: an unknown or cross-tenant id
-     * (invisible under RLS) is a no-op instead of the error a bare {@code deleteById} raises.
+     * Deletes one rate if the current tenant has it and drops the cached rate lists, so the next
+     * draft no longer quotes it. Idempotent: an unknown or cross-tenant id (invisible under RLS) is a
+     * no-op instead of the error a bare {@code deleteById} raises.
      */
     public void deleteIfPresent(Long id) {
         if (repository.existsById(id)) {
             repository.deleteById(id);
+            rateSheetCache.evictAll();
         }
     }
 
-    /** Clears the current tenant's whole rate sheet. */
+    /** Clears the current tenant's whole rate sheet and drops the cached rate lists. */
     public void deleteAll() {
         repository.deleteAll();
+        rateSheetCache.evictAll();
     }
 
     /** Outcome of one CSV import: row counts plus per-row errors for the UI. */

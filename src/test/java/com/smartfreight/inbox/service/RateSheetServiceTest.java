@@ -267,4 +267,40 @@ class RateSheetServiceTest {
 
         assertThat(context).contains("1680.00 GBP");
     }
+    // ---------- delete (cache eviction) ----------
+
+    @Test
+    void deleteIfPresent_existingRate_deletesAndDropsTheCachedRates() {
+        RateSheetCache cache = org.mockito.Mockito.mock(RateSheetCache.class);
+        RateSheetService withCache = new RateSheetService(repository, cache, settingsService);
+        when(repository.existsById(5L)).thenReturn(true);
+
+        withCache.deleteIfPresent(5L);
+
+        verify(repository).deleteById(5L);
+        verify(cache).evictAll();
+    }
+
+    @Test
+    void deleteIfPresent_unknownRate_changesNothingAndKeepsTheCache() {
+        RateSheetCache cache = org.mockito.Mockito.mock(RateSheetCache.class);
+        RateSheetService withCache = new RateSheetService(repository, cache, settingsService);
+        when(repository.existsById(6L)).thenReturn(false);
+
+        withCache.deleteIfPresent(6L);
+
+        verify(repository, never()).deleteById(any());
+        verify(cache, never()).evictAll();
+    }
+
+    @Test
+    void deleteAll_clearsTheSheetAndDropsTheCachedRates() {
+        RateSheetCache cache = org.mockito.Mockito.mock(RateSheetCache.class);
+        RateSheetService withCache = new RateSheetService(repository, cache, settingsService);
+
+        withCache.deleteAll();
+
+        verify(repository).deleteAll();
+        verify(cache).evictAll();
+    }
 }
