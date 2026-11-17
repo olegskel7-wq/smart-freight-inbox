@@ -219,6 +219,8 @@ export interface Tenant {
   name: string
   userCount: number
   createdAt: string
+  // Which LLM the tenant runs on: local Ollama (default) or the cloud LLM (Anthropic API).
+  llmProvider: 'local' | 'cloud'
 }
 
 // Training-examples DTOs — mirror com.smartfreight.inbox.controller.dto. The text
