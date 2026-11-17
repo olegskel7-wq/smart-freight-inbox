@@ -130,7 +130,10 @@ services:
     logging: *default-logging
     # Phase 3.1: pgvector image (PG16 + the `vector` extension) for the AI feedback loop's
     # embedding similarity search. Drop-in for postgres:16 — same data, V28 enables the extension.
-    image: pgvector/pgvector:pg16
+    # Pinned by digest (Debian bookworm, glibc 2.36): the bare tag moved between Debian releases, and a
+    # different glibc changes text sort order under existing indexes (collation version mismatch,
+    # fixed 17 Nov 2026 with REINDEX + REFRESH COLLATION VERSION). Move the pin on purpose, then reindex.
+    image: pgvector/pgvector:pg16@sha256:00ba258a66dac104fd5171074a0084462a64a1369d8513f3d0a634e2f24d15bc
     environment:
       - POSTGRES_DB=smartfreight
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -312,7 +315,8 @@ services:
     logging: *default-logging
     # Dedicated Postgres for Keycloak (mirrors port-db) — keeps IdP state isolated and
     # restoreable, separate from the application DB.
-    image: postgres:16
+    # Pinned by digest (Debian trixie) for the same reason as the postgres service above.
+    image: postgres:16@sha256:2586e2a95d1c9b31cb2967feb562948f7d364854453d703039b6efa45fe48417
     environment:
       - POSTGRES_DB=keycloak
       - POSTGRES_USER=${KEYCLOAK_DB_USER:-keycloak}
@@ -394,7 +398,8 @@ services:
   port-db:
     restart: unless-stopped
     logging: *default-logging
-    image: postgres:16
+    # Pinned by digest (Debian trixie) for the same reason as the postgres service above.
+    image: postgres:16@sha256:2586e2a95d1c9b31cb2967feb562948f7d364854453d703039b6efa45fe48417
     environment:
       - POSTGRES_DB=port_system
       - POSTGRES_USER=${PORT_DB_USER:-postgres}
