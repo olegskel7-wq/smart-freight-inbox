@@ -96,6 +96,10 @@ and sending yourself an email.
 
 ## 3. Give the app access to one mailbox (Exchange Online PowerShell)
 
+**Order:** first do 3.3 steps 1–2 (connect the organisation — the administrator's consent is what
+creates the *Enterprise application* in their directory), then the PowerShell below, then 3.3 step 3
+(add the mailbox).
+
 Consent alone does **not** open any mailbox. Exchange needs its own service principal for the app,
 plus an explicit permission on each mailbox it may read. This is the least-privilege part: the app
 reaches only the mailboxes listed here.
