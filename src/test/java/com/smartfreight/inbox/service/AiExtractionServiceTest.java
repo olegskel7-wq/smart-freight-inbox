@@ -63,7 +63,7 @@ class AiExtractionServiceTest {
         circuitBreaker = CircuitBreaker.ofDefaults("ollama-test");
         lenient().when(ollamaClients.client()).thenReturn(webClient);
         lenient().when(ollamaClients.circuitBreaker()).thenReturn(circuitBreaker);
-        service = new AiExtractionService(ollamaClients, settingsService,
+        service = new AiExtractionService(new LlmClient(ollamaClients), settingsService,
                 new SimpleMeterRegistry(), "qwen2.5:7b");
     }
 
@@ -124,7 +124,7 @@ class AiExtractionServiceTest {
     @Test
     void timer_isTaggedWithTheConfiguredModel() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        service = new AiExtractionService(ollamaClients, settingsService, registry, "custom-extractor:3b");
+        service = new AiExtractionService(new LlmClient(ollamaClients), settingsService, registry, "custom-extractor:3b");
         stubOllama(Map.of("response", "MSCU1234567", "done", true));
 
         service.extractIdentifier("Please check container MSCU1234567");
@@ -230,7 +230,7 @@ class AiExtractionServiceTest {
 
     /** The service over a stubbed Ollama; the stored prompt resolves to the code default. */
     private AiExtractionService extractor(OllamaStub ollama) {
-        return new AiExtractionService(ollama.provider, settingsService, new SimpleMeterRegistry(), "qwen-test");
+        return new AiExtractionService(new LlmClient(ollama.provider), settingsService, new SimpleMeterRegistry(), "qwen-test");
     }
 
     @Test

@@ -9,11 +9,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Optional;
 
 /**
  * Incoming email relevance + type classifier.
@@ -92,17 +91,17 @@ public class EmailClassificationService {
 
     private final String model;
 
-    private final OllamaClientProvider ollamaClients;
+    private final LlmClient llmClient;
     private final SettingsService settingsService;
     private final MeterRegistry meterRegistry;
     private final Counter relevantCounter;
     private final Counter irrelevantCounter;
 
-    public EmailClassificationService(OllamaClientProvider ollamaClients,
+    public EmailClassificationService(LlmClient llmClient,
                                       SettingsService settingsService,
                                       MeterRegistry meterRegistry,
                                       @Value("${ollama.extraction-model:qwen2.5:7b}") String model) {
-        this.ollamaClients = ollamaClients;
+        this.llmClient = llmClient;
         this.settingsService = settingsService;
         this.meterRegistry = meterRegistry;
         this.model = model;
@@ -148,29 +147,12 @@ public class EmailClassificationService {
 
         String answer;
         try {
-            Map<String, Object> requestBody = Map.of(
-                    "model", model,
-                    "prompt", prompt,
-                    "stream", false
-            );
-
-            // Client + breaker resolved per call for the CURRENT tenant's endpoint.
-            WebClient ollamaWebClient = ollamaClients.client();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block(CLASSIFICATION_TIMEOUT));
-            ollamaClients.recordUsage("classification", model, response);
-
-            if (response == null) {
+            Optional<String> text = llmClient.generate("classification", model, prompt, CLASSIFICATION_TIMEOUT);
+            if (text.isEmpty()) {
                 log.warn("Ollama returned null for classification - treating as relevant (fail-open)");
                 return record(failOpen());
             }
-            answer = String.valueOf(response.getOrDefault("response", "")).trim().toUpperCase(Locale.ROOT);
+            answer = text.get().trim().toUpperCase(Locale.ROOT);
         } catch (CallNotPermittedException e) {
             // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
             // ticket as RETRY_LATER — a real classification verdict will be made

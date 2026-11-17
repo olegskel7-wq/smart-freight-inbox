@@ -8,12 +8,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -74,16 +72,16 @@ public class AiExtractionService {
     /** Extraction model name — read from application.yaml. */
     private final String extractionModel;
 
-    private final OllamaClientProvider ollamaClients;
+    private final LlmClient llmClient;
     private final SettingsService settingsService;
     private final Counter fallbackCounter;
     private final Timer ollamaTimer;
 
-    public AiExtractionService(OllamaClientProvider ollamaClients,
+    public AiExtractionService(LlmClient llmClient,
                                SettingsService settingsService,
                                MeterRegistry meterRegistry,
                                @Value("${ollama.extraction-model:qwen2.5:7b}") String extractionModel) {
-        this.ollamaClients = ollamaClients;
+        this.llmClient = llmClient;
         this.settingsService = settingsService;
         this.extractionModel = extractionModel;
         this.fallbackCounter = Counter.builder("smartfreight_extraction_fallback_total")
@@ -123,33 +121,18 @@ public class AiExtractionService {
         String prompt = template.replace("{email}", truncatedBody);
 
         try {
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", extractionModel);
-            requestBody.put("prompt", prompt);
-            requestBody.put("stream", false);
-
             log.debug("Sending extraction request to Ollama model {}", extractionModel);
 
             long start = System.nanoTime();
-            // Client + breaker resolved per call for the CURRENT tenant's endpoint.
-            WebClient ollamaWebClient = ollamaClients.client();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block(OLLAMA_TIMEOUT));
+            Optional<String> answer = llmClient.generate("extraction", extractionModel, prompt, OLLAMA_TIMEOUT);
             ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-            ollamaClients.recordUsage("extraction", extractionModel, response);
 
-            if (response == null) {
+            if (answer.isEmpty()) {
                 log.warn("Ollama returned null response during extraction");
                 return fallbackRegexExtraction(emailBody, identifierPattern);
             }
 
-            String rawResponse = String.valueOf(response.getOrDefault("response", "")).trim();
+            String rawResponse = answer.get().trim();
             log.debug("Qwen raw response: '{}'", rawResponse);
 
             if (identifierPattern.matcher(rawResponse).matches()) {

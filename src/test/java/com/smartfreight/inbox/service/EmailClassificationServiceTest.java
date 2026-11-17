@@ -161,7 +161,7 @@ class EmailClassificationServiceTest {
         when(ollamaClients.client()).thenReturn(webClient);
         when(ollamaClients.circuitBreaker()).thenReturn(breaker);
         EmailClassificationService service = new EmailClassificationService(
-                ollamaClients, settingsService, new SimpleMeterRegistry(), "qwen2.5:7b");
+                new LlmClient(ollamaClients), settingsService, new SimpleMeterRegistry(), "qwen2.5:7b");
 
         assertThatThrownBy(() -> service.classify("Container inquiry", "Where is MSCU1234567?"))
                 .isInstanceOf(CallNotPermittedException.class);
@@ -176,7 +176,7 @@ class EmailClassificationServiceTest {
     private static EmailClassificationService classifier(OllamaStub ollama, boolean smartRouting) {
         SettingsService settings = mock(SettingsService.class);
         when(settings.isFeatureEnabled(anyString(), anyBoolean())).thenReturn(smartRouting);
-        return new EmailClassificationService(ollama.provider, settings, new SimpleMeterRegistry(), "qwen-test");
+        return new EmailClassificationService(new LlmClient(ollama.provider), settings, new SimpleMeterRegistry(), "qwen-test");
     }
 
     @Test

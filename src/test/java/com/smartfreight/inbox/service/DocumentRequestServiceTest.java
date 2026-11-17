@@ -96,7 +96,7 @@ class DocumentRequestServiceTest {
     private static DocumentRequestService detector(OllamaStub ollama) {
         SettingsService settings = mock(SettingsService.class, org.mockito.Mockito.withSettings().strictness(org.mockito.quality.Strictness.LENIENT));
         when(settings.getString(anyString(), anyString())).thenAnswer(i -> i.getArgument(1));
-        return new DocumentRequestService(ollama.provider, settings, mock(TenantDocumentRepository.class), "qwen-test");
+        return new DocumentRequestService(new LlmClient(ollama.provider), settings, mock(TenantDocumentRepository.class), "qwen-test");
     }
 
     @Test

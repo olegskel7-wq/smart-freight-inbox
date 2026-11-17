@@ -4,11 +4,8 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -25,36 +22,18 @@ class InboxQueryOllamaClient {
 
     private static final Duration OLLAMA_TIMEOUT = Duration.ofSeconds(60);
 
-    private final OllamaClientProvider ollamaClients;
+    private final LlmClient llmClient;
 
-    InboxQueryOllamaClient(OllamaClientProvider ollamaClients) {
-        this.ollamaClients = ollamaClients;
+    InboxQueryOllamaClient(LlmClient llmClient) {
+        this.llmClient = llmClient;
     }
 
     /** One generate call, returning the response text. Empty when the model gives nothing usable. */
     Optional<String> generate(String model, String prompt) {
         try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("model", model);
-            body.put("prompt", prompt);
-            body.put("stream", false);
-
-            WebClient client = ollamaClients.client();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> client
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(body)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block(OLLAMA_TIMEOUT));
-            ollamaClients.recordUsage("inbox-query", model, response);
-
-            if (response == null) {
-                return Optional.empty();
-            }
-            String text = String.valueOf(response.getOrDefault("response", "")).trim();
-            return text.isEmpty() ? Optional.empty() : Optional.of(text);
+            return llmClient.generate("inbox-query", model, prompt, OLLAMA_TIMEOUT)
+                    .map(String::trim)
+                    .filter(text -> !text.isEmpty());
 
         } catch (CallNotPermittedException e) {
             log.warn("Ollama circuit breaker open — inbox query degraded to deterministic answer");

@@ -7,11 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -30,15 +28,15 @@ public class OllamaDraftClient {
     /** Draft generation model name — read from application.yaml. */
     private final String draftingModel;
 
-    private final OllamaClientProvider ollamaClients;
+    private final LlmClient llmClient;
     private final ReplySignatureService signatureService;
     private final Timer ollamaTimer;
 
-    public OllamaDraftClient(OllamaClientProvider ollamaClients,
+    public OllamaDraftClient(LlmClient llmClient,
                              ReplySignatureService signatureService,
                              MeterRegistry meterRegistry,
                              @Value("${ollama.drafting-model:llama3.1:8b}") String draftingModel) {
-        this.ollamaClients = ollamaClients;
+        this.llmClient = llmClient;
         this.signatureService = signatureService;
         this.draftingModel = draftingModel;
         this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
@@ -61,36 +59,23 @@ public class OllamaDraftClient {
      */
     public String generate(String prompt, String fallbackDraft) {
         try {
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", draftingModel);
             // Appended to every template (stored prompts included): drafts are unsigned, the real
             // signature is added at send time by ReplySignatureService.
-            requestBody.put("prompt", prompt + "\n\n" + signatureService.draftingInstruction());
-            requestBody.put("stream", false);
+            String fullPrompt = prompt + "\n\n" + signatureService.draftingInstruction();
 
             log.debug("Sending drafting request to Ollama model {}", draftingModel);
 
             long start = System.nanoTime();
-            // Client + breaker resolved per call for the CURRENT tenant's endpoint.
-            WebClient ollamaWebClient = ollamaClients.client();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block(OLLAMA_TIMEOUT));
+            Optional<String> answer = llmClient.generate("drafting", draftingModel, fullPrompt, OLLAMA_TIMEOUT);
             ollamaTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-            ollamaClients.recordUsage("drafting", draftingModel, response);
 
-            if (response == null) {
+            if (answer.isEmpty()) {
                 log.warn("Ollama returned null response during drafting");
                 return fallbackDraft;
             }
 
             // Small local models still sign off ("Best regards, [Your Name]") despite the instruction.
-            String draft = ReplySignatureService.stripSignOff(String.valueOf(response.getOrDefault("response", "")));
+            String draft = ReplySignatureService.stripSignOff(answer.get());
             if (draft.isEmpty()) {
                 log.warn("Ollama returned empty draft");
                 return fallbackDraft;
