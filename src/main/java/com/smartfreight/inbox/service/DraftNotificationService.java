@@ -96,7 +96,8 @@ public class DraftNotificationService {
             log.info("Draft notification sent to operator for ticket {}", ticket.getId());
 
         } catch (Exception e) {
-            log.warn("Failed to send draft notification for ticket {}: {}", ticket.getId(), e.getMessage());
+            log.warn("Failed to send draft notification for ticket {}: {}", ticket.getId(),
+                    EmailAddressUtils.maskAddresses(e.getMessage()));
         }
     }
 

@@ -5,6 +5,7 @@ import com.smartfreight.inbox.entity.TenantDocument;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.util.EmailAddressUtils;
 import com.smartfreight.inbox.webhook.WebhookEventPublisher;
 import com.smartfreight.inbox.webhook.WebhookEventType;
 import com.smartfreight.inbox.webhook.WebhookPayloads;
@@ -111,7 +112,9 @@ public class TicketReplyService {
                 feedbackLoopService.captureIfEdited(ticket);
                 emitReplyWebhooks(ticket);
             } catch (Exception e) {
-                log.error("Failed to send reply for ticket {} (API): {}", id, e.getMessage(), e);
+                // SMTP messages carry the recipient: mask it, and no stack trace (it repeats the message).
+                log.error("Failed to send reply for ticket {} (API): {}: {}", id, e.getClass().getSimpleName(),
+                        EmailAddressUtils.maskAddresses(e.getMessage()));
                 auditService.record(id, TicketAuditService.ACTION_SEND, "FAILED: " + e.getMessage());
                 return DraftOutcome.SEND_FAILED;
             }
