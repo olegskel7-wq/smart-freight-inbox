@@ -334,9 +334,10 @@ Branch coverage of the classes the plan touches (clean run):
    the `setUp`s build the real services over the same repository mocks; the document and rate tests keep `store` /
    `importCsv` mocked and delegate the new read / delete methods to a real service over the repository mock, so the
    existing `existsById` / `deleteById` checks still pin the real logic. Log lines of the moved code now log under
-   the service classes. Found there (behaviour change, not fixed here): deleting a rate (`DELETE /api/rates/{id}` or
-   clear-all) does not evict `RateSheetCache`, so drafts may quote a deleted rate until the 10-minute TTL — only the CSV
-   import evicts.
+   the service classes. Found there and fixed in their own branches: deleting a rate (`DELETE /api/rates/{id}` or
+   clear-all) did not evict `RateSheetCache`, so drafts could quote a deleted rate until the 10-minute TTL — both deletes
+   evict since `fix/rate-cache-evict`; the operator send-failure log printed the raw SMTP message with the recipient
+   address — masked since `fix/send-log-pii` (`TicketReplyServiceLogTest` captures the output).
 
 **Small tails (17 Nov 2026)** — branch `refactor/small-tails`, no behaviour change:
 `KEY_ESCALATION_ASSIGNEE` (was `TicketProcessingService.SETTING_ESCALATION_ASSIGNEE`) lives in
@@ -349,7 +350,10 @@ each test (different status and error per file). Backend 1002 tests on main befo
 `feature/m365-oauth2`, 36 tests) and inflated the sum to 1038; count after a clean `target` or in a fresh worktree.
 
 **Stage 3 — only on a separate decision**
-1. Remove the binary (pre-1.4) classifier mode — a behaviour change; first confirm no tenant has
-   `feature.ticket-type` off. The other `feature.*` flags are per-tenant settings, not dead code.
+1. ✅ Binary (pre-1.4) classifier mode removed (branch `remove/binary-classifier-mode`, 17 Nov 2026, Oleg's decision).
+   Checked first on the dev DB: `app_setting` `feature.ticket-type` = true, no `tenant_setting` override in any of the 3
+   tenants, no UI switch. The classifier always asks for the type; `needsClassification` re-enters step 0 for any ticket
+   without one. The V15 row stays, unread (no migration — V38 belongs to the M365 branch). The other `feature.*` flags
+   are per-tenant settings, not dead code.
 2. Package-by-feature. Decide the fate of `feature/m365-oauth2` first (it touches mailbox code and
    holds V38).
