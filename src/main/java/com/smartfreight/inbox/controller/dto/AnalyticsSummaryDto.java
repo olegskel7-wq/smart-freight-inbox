@@ -5,7 +5,7 @@ import com.smartfreight.inbox.service.AnalyticsService.AnalyticsSummary;
 import java.util.List;
 
 /**
- * Flat JSON shape of the analytics dashboard figures (Phase 3.2, React {@code /analytics}).
+ * Flat JSON shape of the analytics dashboard figures (React {@code /analytics}).
  *
  * The {@link AnalyticsSummary} record carries the numbers plus a handful of derived accessors
  * (percentages, the "—"/"&lt;1m" formatting) whose edge rules are unit-tested there. Those are

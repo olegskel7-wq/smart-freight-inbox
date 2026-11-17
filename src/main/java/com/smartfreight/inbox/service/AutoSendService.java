@@ -17,11 +17,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 /**
- * Auto-send threshold (Phase 1.6): sends the AI draft without operator review when the
+ * Auto-send threshold (docs/adr/0006-human-in-the-loop-auto-send-gate.md): sends the AI draft without operator review when the
  * pipeline's confidence in it is high enough.
  *
  * <p>Confidence is a deterministic heuristic over verifiable pipeline facts — NOT an LLM
@@ -66,8 +68,8 @@ public class AutoSendService {
     /** Comma-separated {@link TicketType} allowlist for automatic sends. */
     public static final String KEY_TYPES = "autosend.types";
 
-    static final double DEFAULT_THRESHOLD = 0.8;
-    static final String DEFAULT_TYPES = "STATUS_UPDATE";
+    public static final double DEFAULT_THRESHOLD = 0.8;
+    public static final String DEFAULT_TYPES = "STATUS_UPDATE";
 
     private static final double WEIGHT_TYPE_SPECIFIC = 0.3;
     private static final double WEIGHT_IDENTIFIER_EXTRACTED = 0.2;
@@ -81,6 +83,7 @@ public class AutoSendService {
     private final TicketAuditService auditService;
     private final QuoteFollowUpService quoteFollowUpService;
     private final WebhookEventPublisher webhookEventPublisher;
+    private final SlaService slaService;
     private final Counter autoSentCounter;
     private final Counter autoFailedCounter;
 
@@ -91,6 +94,7 @@ public class AutoSendService {
                            TicketAuditService auditService,
                            QuoteFollowUpService quoteFollowUpService,
                            WebhookEventPublisher webhookEventPublisher,
+                           SlaService slaService,
                            MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
@@ -99,6 +103,7 @@ public class AutoSendService {
         this.auditService = auditService;
         this.quoteFollowUpService = quoteFollowUpService;
         this.webhookEventPublisher = webhookEventPublisher;
+        this.slaService = slaService;
         this.autoSentCounter = Counter.builder("smartfreight_autosend_total")
                 .description("Automatic reply send results")
                 .tag("result", "sent")
@@ -116,7 +121,7 @@ public class AutoSendService {
      * @param type                classified business type (null = unclassified)
      * @param identifierExtracted whether step 1 extracted an identifier
      * @param itemFound           whether step 2 found the item in the backend
-     * @param rateMatched         whether a carrier rate matched (Phase 1.2)
+     * @param rateMatched         whether a carrier rate matched
      * @return score in [0.0, 1.0], rounded to two decimals
      */
     public double confidenceFor(TicketType type, boolean identifierExtracted,
@@ -206,16 +211,17 @@ public class AutoSendService {
             return;
         }
 
+        slaService.markBreachedIfOverdue(ticket, LocalDateTime.now());
         ticket.setStatus(TicketStatus.AUTO_SENT);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
         autoSentCounter.increment();
         auditService.record(ticketId, TicketAuditService.ACTION_AUTO_SEND,
                 "to=" + ticket.getSenderEmail() + ", confidence=" + ticket.getAiConfidence());
-        // Phase 2.5: a sent RFQ quote arms a one-shot follow-up. No-op for proactive tickets
+        // A sent RFQ quote arms a one-shot follow-up. No-op for proactive tickets
         // (status updates, quote nudges) and non-RFQ types — guarded inside the service.
         quoteFollowUpService.armFromTicket(ticket);
-        // Phase 3.5 S2: same CRM events as the operator send path — reply.sent always, plus quote.sent
+        // Same CRM events as the operator send path — reply.sent always, plus quote.sent
         // for an RFQ. In this transaction (post-pipeline-commit), so atomic with the AUTO_SENT save above.
         Map<String, Object> webhookData = WebhookPayloads.ticketData(ticket);
         webhookEventPublisher.publish(WebhookEventType.REPLY_SENT, ticket.getTenantId(), webhookData);
@@ -228,12 +234,30 @@ public class AutoSendService {
     /** Threshold from settings, defaulting and clamping malformed values to a sane [0,1]. */
     double threshold() {
         String raw = settingsService.getString(KEY_THRESHOLD, String.valueOf(DEFAULT_THRESHOLD));
-        try {
-            double parsed = Double.parseDouble(raw.trim());
-            return Math.min(1.0, Math.max(0.0, parsed));
-        } catch (NumberFormatException e) {
+        OptionalDouble parsed = parseThreshold(raw);
+        if (parsed.isEmpty()) {
             log.warn("Malformed {} value '{}' — using default {}", KEY_THRESHOLD, raw, DEFAULT_THRESHOLD);
             return DEFAULT_THRESHOLD;
+        }
+        return parsed.getAsDouble();
+    }
+
+    /**
+     * Parses a threshold, clamped to [0,1]; empty when it is missing or not a number. {@code NaN} counts as
+     * not a number even though it parses: {@code confidence < NaN} is never true, so it would open the gate
+     * in {@link #shouldAutoSend} for every ticket.
+     */
+    public static OptionalDouble parseThreshold(String raw) {
+        if (raw == null) {
+            return OptionalDouble.empty();
+        }
+        try {
+            double parsed = Double.parseDouble(raw.trim());
+            return Double.isNaN(parsed)
+                    ? OptionalDouble.empty()
+                    : OptionalDouble.of(Math.min(1.0, Math.max(0.0, parsed)));
+        } catch (NumberFormatException e) {
+            return OptionalDouble.empty();
         }
     }
 
@@ -242,7 +266,7 @@ public class AutoSendService {
         String raw = settingsService.getString(KEY_TYPES, DEFAULT_TYPES);
         EnumSet<TicketType> types = EnumSet.noneOf(TicketType.class);
         for (String name : raw.split(",")) {
-            String trimmed = name.trim().toUpperCase();
+            String trimmed = name.trim().toUpperCase(Locale.ROOT);
             if (trimmed.isEmpty()) {
                 continue;
             }

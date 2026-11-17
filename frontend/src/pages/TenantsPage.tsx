@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { Tenant } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
-type Msg = { kind: 'success' | 'danger'; text: string } | null
-
-// React port of admin-tenants.html (Phase 3.2). Platform admin (SUPER_ADMIN only — enforced by the
+// Platform admin (SUPER_ADMIN only — enforced by the
 // /api/admin/tenants/** matcher) for tenant onboarding: list every client organisation with its
 // operator count, and create a new tenant + its first operator in one call. The Bootstrap modal is
 // replaced with an always-visible "Add tenant" card. Create returns the refreshed list, which
@@ -14,42 +15,49 @@ type Msg = { kind: 'success' | 'danger'; text: string } | null
 export default function TenantsPage() {
   const api = useApi()
 
-  const [tenants, setTenants] = useState<Tenant[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
   // Add-tenant form.
   const [name, setName] = useState('')
   const [adminEmail, setAdminEmail] = useState('')
+  const [adminFirstName, setAdminFirstName] = useState('')
+  const [adminLastName, setAdminLastName] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setTenants(await api.get<Tenant[]>('/api/admin/tenants'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load tenants')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<Tenant[]>('/api/admin/tenants'), [api])
+  const { data: tenants, setData: setTenants, error } = usePageData(load, 'Failed to load tenants')
 
   const createTenant = async (e: React.FormEvent) => {
     e.preventDefault()
     setMsg(null)
     try {
-      setTenants(await api.post<Tenant[]>('/api/admin/tenants', { name, adminEmail, adminPassword }))
+      setTenants(await api.post<Tenant[]>('/api/admin/tenants', { name, adminEmail, adminFirstName, adminLastName, adminPassword }))
       setMsg({
         kind: 'success',
-        text: `Tenant '${name.trim()}' created with operator ${adminEmail.trim().toLowerCase()}.`,
+        text: `Tenant '${name.trim()}' created with admin ${adminEmail.trim().toLowerCase()}.`,
       })
       setName('')
       setAdminEmail('')
+      setAdminFirstName('')
+      setAdminLastName('')
       setAdminPassword('')
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Create failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Create failed') })
+    }
+  }
+
+  // Cloud sends the tenant's mail to the Anthropic API: only after its DPA names Anthropic as a subprocessor.
+  const setLlmProvider = async (t: Tenant, provider: Tenant['llmProvider']) => {
+    if (provider === t.llmProvider) return
+    if (provider === 'cloud' && !window.confirm(
+      `Switch '${t.name}' to the cloud LLM? Its emails will be processed by the Anthropic API outside the UK. ` +
+      "Do this only once the tenant's DPA names Anthropic as a subprocessor.")) return
+    setMsg(null)
+    try {
+      setTenants(await api.post<Tenant[]>(`/api/admin/tenants/${t.id}/llm-provider`, { provider }))
+      setMsg({ kind: 'success', text: `'${t.name}' now runs on the ${provider === 'cloud' ? 'cloud' : 'local'} LLM.` })
+    } catch (err) {
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Switch failed') })
     }
   }
 
@@ -58,12 +66,7 @@ export default function TenantsPage() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="Tenants"
@@ -75,21 +78,33 @@ export default function TenantsPage() {
         <div className="card-header fw-semibold">Add tenant</div>
         <div className="card-body">
           <form onSubmit={createTenant} className="row g-2 align-items-end">
-            <div className="col-md-4">
+            <div className="col-md-6">
               <label className="form-label small mb-1">Organisation name</label>
               <input type="text" className="form-control form-control-sm" placeholder="Acme Logistics Ltd"
                      value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
-            <div className="col-md-4">
-              <label className="form-label small mb-1">First operator email</label>
+            <div className="col-md-6">
+              <label className="form-label small mb-1">First admin email</label>
               <input type="email" className="form-control form-control-sm" placeholder="operator@acme.co.uk"
                      value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} required />
             </div>
-            <div className="col-md-2">
+            <div className="col-md-3">
+              <label className="form-label small mb-1">First name</label>
+              <input type="text" className="form-control form-control-sm" maxLength={100}
+                     value={adminFirstName} onChange={(e) => setAdminFirstName(e.target.value)} required />
+            </div>
+            <div className="col-md-3">
               <label className="form-label small mb-1">
-                Password <span className="text-muted">(min 8)</span>
+                Last name <span className="text-muted">(signs their replies)</span>
               </label>
-              <input type="password" className="form-control form-control-sm" minLength={8}
+              <input type="text" className="form-control form-control-sm" maxLength={100}
+                     value={adminLastName} onChange={(e) => setAdminLastName(e.target.value)} required />
+            </div>
+            <div className="col-md-4">
+              <label className="form-label small mb-1">
+                Password <span className="text-muted">(min 10, Aa1)</span>
+              </label>
+              <input type="password" className="form-control form-control-sm" minLength={10}
                      value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} required />
             </div>
             <div className="col-md-2">
@@ -115,6 +130,7 @@ export default function TenantsPage() {
                   <th>Name</th>
                   <th>Users</th>
                   <th>Created</th>
+                  <th title="Local Ollama, or the cloud LLM (Anthropic API)">AI</th>
                 </tr>
               </thead>
               <tbody>
@@ -124,6 +140,14 @@ export default function TenantsPage() {
                     <td>{t.name}</td>
                     <td><span className="badge text-bg-secondary">{t.userCount}</span></td>
                     <td className="small text-nowrap text-muted">{formatDateTime(t.createdAt)}</td>
+                    <td>
+                      <select className="form-select form-select-sm" style={{ width: 'auto' }}
+                              aria-label={`AI for ${t.name}`} value={t.llmProvider}
+                              onChange={(e) => setLlmProvider(t, e.target.value as Tenant['llmProvider'])}>
+                        <option value="local">Local</option>
+                        <option value="cloud">Cloud</option>
+                      </select>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -134,8 +158,8 @@ export default function TenantsPage() {
 
       <div className="card shadow-sm border-0 bg-light">
         <div className="card-body small text-muted">
-          Creating a tenant also creates its first operator account. Settings, rates and users are
-          managed from inside the tenant after that operator logs in. There is no tenant deletion by
+          Creating a tenant also creates its first admin account. Mailboxes, settings, rates and users are
+          managed from inside the tenant after that admin logs in. There is no tenant deletion by
           design — removing a tenant owns tickets, audit history and rates, which is a data-retention
           decision rather than a button.
         </div>

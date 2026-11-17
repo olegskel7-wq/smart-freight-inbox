@@ -36,14 +36,17 @@ public class EmailReplyService {
 
     private final MailSenderProvider mailSenderProvider;
     private final TenantDocumentRepository documentRepository;
+    private final ReplySignatureService signatureService;
     private final Counter replySentCounter;
     private final Counter replyFailedCounter;
 
     public EmailReplyService(MailSenderProvider mailSenderProvider,
                              TenantDocumentRepository documentRepository,
+                             ReplySignatureService signatureService,
                              MeterRegistry meterRegistry) {
         this.mailSenderProvider = mailSenderProvider;
         this.documentRepository = documentRepository;
+        this.signatureService = signatureService;
         this.replySentCounter = Counter.builder("smartfreight_replies_total")
                 .description("Operator reply send results")
                 .tag("result", "sent")
@@ -67,9 +70,22 @@ public class EmailReplyService {
      * @throws RuntimeException if SMTP sending failed
      */
     public void sendReply(EmailTicket ticket) {
+        sendReply(ticket, null);
+    }
+
+    /**
+     * Sends the draft signed by the sending operator. The signature goes into the outgoing MIME text
+     * only — {@code draft_reply} stays as the operator left it, so the AI-acceptance KPI and the
+     * feedback loop keep comparing unsigned text with the unsigned AI draft.
+     *
+     * @param ticket       ticket with message data: sender address, subject, draft
+     * @param operatorName the sending operator's display name, or null for the team signature
+     * @throws RuntimeException if SMTP sending failed
+     */
+    public void sendReply(EmailTicket ticket, String operatorName) {
         MailSenderProvider.ResolvedSender resolved = mailSenderProvider.resolve(ticket.getMailboxId());
         JavaMailSender mailSender = resolved.sender();
-        // Phase 2.7: a document-request reply may carry an attachment. Resolve it up front so the
+        // A document-request reply may carry an attachment. Resolve it up front so the
         // helper is multipart ONLY when there is a file — text-only replies keep their exact prior
         // MIME shape. The lookup is RLS-scoped (a tenant context is active at every send site).
         Optional<TenantDocument> attachment = ticket.getAttachedDocumentId() == null
@@ -86,12 +102,12 @@ public class EmailReplyService {
             }
             helper.setFrom(resolved.from());
             helper.setTo(to);
-            // Phase 2.4: a proactive status update is a fresh email, not a reply — its subject
+            // A proactive status update is a fresh email, not a reply — its subject
             // stands on its own and its synthetic Message-ID belongs to no inbound thread, so no
             // "Re:" prefix and no threading headers. Inbound replies keep both.
             String subject = ticket.getSubject() != null ? ticket.getSubject() : "";
             helper.setSubject(ticket.isProactive() ? subject : "Re: " + subject);
-            helper.setText(ticket.getDraftReply() != null ? ticket.getDraftReply() : "");
+            helper.setText(signatureService.sign(ticket.getDraftReply(), operatorName));
 
             if (attachment.isPresent()) {
                 TenantDocument doc = attachment.get();

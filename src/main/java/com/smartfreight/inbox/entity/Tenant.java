@@ -15,12 +15,12 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * One client organisation (Phase 2.2). Every tenant-owned row carries a
+ * One client organisation. Every tenant-owned row carries a
  * {@code tenant_id} FK to this table; Hibernate {@code @TenantId} and Postgres RLS
- * (V19) keep tenants from ever seeing each other's data.
+ * (V19) keep tenants from ever seeing each other's data (see docs/adr/0004-two-layer-multitenancy.md).
  *
  * <p>Tenant id 1 ("Default") is seeded by V18 and owns the single current mailbox
- * and all pre-2.2 data. Tenant administration UI arrives in S2.
+ * and all data created before multi-tenancy.
  */
 @Entity
 @Table(name = "tenant")

@@ -45,6 +45,14 @@ Llama 3.1, nomic-embed-text) inside Ollama on the same server. Prompts and outpu
 external AI provider and are not used to train any shared model; the learning from operator
 corrections stays within the client's own data.
 
+*Optional, per client, off by default:* a client may instead choose the **cloud AI** tier, where
+classification, extraction and drafting run on Anthropic's Claude models over the Anthropic API. Only
+the platform operator can switch a client to it, after that client's agreement names Anthropic as a
+sub-processor. In that tier the email text in each prompt (body, subject, parsed attachments, the
+matching rates / knowledge / past corrections) leaves our server and is processed by Anthropic outside
+the UK (no UK processing region is offered); embeddings for search stay on our server. Unless switched,
+nothing is sent.
+
 **The client's mailbox.** We read it (IMAP), mark processed messages as read, and — only if enabled —
 save AI drafts into its Drafts folder. We never delete or move the client's email.
 
@@ -55,6 +63,7 @@ save AI drafts into its Drafts folder. We never delete or move the client's emai
 | VPS hosting provider — *to be confirmed at provisioning, UK region* | runs the server | everything above, at rest on its disks |
 | Amazon Web Services (S3, London) | offsite backups | ciphertext only — not readable without our key |
 | Telegram, healthchecks.io | alerts to the processor's staff | none — client/mailbox **numbers** and alert names only |
+| Anthropic (Claude API) — **only for a client on the cloud AI tier** | AI classification, extraction, drafting | the email content in each prompt and the model's reply; processed outside the UK |
 
 Google / Microsoft provide the client's mailbox under the client's own contract with them.
 
@@ -73,6 +82,8 @@ Google / Microsoft provide the client's mailbox under the client's own contract 
 ## Open points (to settle before signing)
 
 - Hosting provider, its UK region, and whether its disks are encrypted at rest.
+- For a client choosing the cloud AI tier: Anthropic's data-processing terms and transfer mechanism
+  (UK IDTA / addendum) in the client's agreement, and Anthropic's retention of API inputs and outputs.
 - Microsoft 365 clients connect via OAuth2 (in development) instead of an app password.
 - Automatic retention (e.g. "delete tickets older than N months") is not yet available — data is kept
   for the contract term unless the client deletes it or asks us to.

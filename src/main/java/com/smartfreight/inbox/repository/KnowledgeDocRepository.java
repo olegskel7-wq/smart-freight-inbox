@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * Access to the per-tenant knowledge store (Phase 3.9).
+ * Access to the per-tenant knowledge store.
  *
  * <p>Tenant-filtered by Hibernate {@code @TenantId}; every call site (the management page, the
  * pipeline) runs inside a tenant scope, so results never leak across tenants.
@@ -46,7 +46,7 @@ public interface KnowledgeDocRepository extends JpaRepository<KnowledgeDoc, Long
 
     /**
      * The {@code limit} most semantically similar knowledge documents to the embedded enquiry,
-     * within a relevance threshold (Phase 3.9).
+     * within a relevance threshold.
      *
      * <p>Ranks by pgvector cosine distance ({@code <=>}) against the embedded incoming enquiry. Unlike
      * the feedback loop (V28), knowledge is NOT pre-filtered by ticket type — a policy or FAQ can be

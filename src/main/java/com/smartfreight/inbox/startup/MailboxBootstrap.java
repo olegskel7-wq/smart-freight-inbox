@@ -14,11 +14,10 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * One-time import of the legacy env-configured mailbox into {@code tenant_mailbox}
- * (Phase 2.2 S3).
+ * One-time import of the legacy env-configured mailbox into {@code tenant_mailbox}.
  *
- * <p>Before S3 the single IMAP inbox lived in {@code spring.mail.*} env vars and a static
- * adapter. Now ALL adapters come from {@code tenant_mailbox} rows — so an existing
+ * <p>Older deployments configured a single IMAP inbox in {@code spring.mail.*} env vars.
+ * ALL adapters come from {@code tenant_mailbox} rows — so an existing
  * deployment's env mailbox is imported as the Default tenant's first row at startup,
  * password encrypted. Idempotent: it only fires while the Default tenant has NO mailbox
  * rows, so user edits are never overwritten. (Corollary: deleting the tenant's last

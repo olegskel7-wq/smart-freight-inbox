@@ -8,6 +8,14 @@ server:
       timeout: 8h
 
 spring:
+  # Gate C5: compose mounts secrets as files under /run/secrets (docker-compose.yml `secrets:`). Each
+  # file becomes a property named after it (DB_APP_PASSWORD, MAILBOX_ENCRYPTION_KEY, ...), so the
+  # ${...} placeholders below resolve from it unchanged. Optional: tests and IntelliJ runs have no
+  # such directory and keep using env vars / the dev defaults. An env var of the same name would
+  # win over the file — compose therefore passes no secret as env.
+  config:
+    import: optional:configtree:/run/secrets/
+
   # Gate B5: per-phase budget for the graceful stop (web requests, then the 40 s listener drain).
   lifecycle:
     timeout-per-shutdown-phase: 45s
@@ -135,6 +143,22 @@ ollama:
   drafting-model: llama3.1:8b
   # Phase 3.1: local embedding model for the AI feedback loop (RAG over operator corrections).
   embedding-model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+
+# Cloud LLM for tenants with llm.provider=cloud (ROADMAP LLM strategy L2b; switched per tenant by the
+# SUPER_ADMIN on /tenants — every tenant stays on local Ollama until then). Needs ANTHROPIC_API_KEY in
+# SECRETS_DIR. Defaults = the configuration measured in L1. Embeddings stay on local Ollama for everyone.
+llm:
+  cloud:
+    short-model: ${LLM_CLOUD_SHORT_MODEL:claude-haiku-5-5}
+    draft-model: ${LLM_CLOUD_DRAFT_MODEL:claude-haiku-5-5}
+    # USD per million tokens (Anthropic list prices, Nov 2026) — feeds smartfreight_llm_cost_usd_total.
+    prices:
+      "[claude-haiku-5-5]":
+        input: 0.10
+        output: 0.50
+      "[claude-sonnet-5-5]":
+        input: 2.00
+        output: 10.00
 
 # Async AI pipeline (Phase 1.3)
 ai-pipeline:

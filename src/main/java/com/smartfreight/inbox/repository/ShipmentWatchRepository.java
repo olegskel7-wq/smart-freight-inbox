@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Access to proactive status-update subscriptions (Phase 2.4).
+ * Access to proactive status-update subscriptions.
  *
  * <p>Tenant-filtered by Hibernate {@code @TenantId} — except under the system context, where
  * the filter is off by design: {@code StatusWatchScheduler} reads EVERY tenant's active
@@ -21,6 +21,6 @@ public interface ShipmentWatchRepository extends JpaRepository<ShipmentWatch, Lo
     /** Upsert lookup within the current tenant: a customer re-asking updates their existing watch. */
     Optional<ShipmentWatch> findByIdentifierAndCustomerEmail(String identifier, String customerEmail);
 
-    /** Whether any watch (active or not) replies through this mailbox — guards renaming it (Gate B15). */
+    /** Whether any watch (active or not) replies through this mailbox — guards renaming it. */
     boolean existsByMailboxId(Long mailboxId);
 }

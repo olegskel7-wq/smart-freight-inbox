@@ -5,7 +5,7 @@ import com.smartfreight.inbox.entity.CarrierRate;
 import java.time.LocalDate;
 
 /**
- * One carrier rate row for the React {@code /rates} table (Phase 3.2). Monetary fields are sent as
+ * One carrier rate row for the React {@code /rates} table. Monetary fields are sent as
  * plain strings (from {@link java.math.BigDecimal#toPlainString()}) so the SPA renders exact prices
  * without floating-point drift, and {@code sellPrice} / {@code expired} are computed server-side —
  * the margin itself never crosses to the client, mirroring the Thymeleaf page.

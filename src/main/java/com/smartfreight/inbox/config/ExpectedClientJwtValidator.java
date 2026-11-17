@@ -6,8 +6,8 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
- * Rejects bearer tokens that were not issued to this platform's own SPA client (ROADMAP 4.7
- * pre-pentest hardening).
+ * Rejects bearer tokens that were not issued to this platform's own SPA client (hardening
+ * ahead of a penetration test).
  *
  * <p>The resource server validates a token's issuer + signature, but those alone accept ANY valid
  * token minted by the realm — including one issued to a different client in the same realm. We want

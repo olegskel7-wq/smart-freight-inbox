@@ -1,36 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { RatesResponse, RateUploadResponse } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
-type Msg = { kind: 'success' | 'danger'; text: string } | null
-
-// React port of rates.html (Phase 3.2). Carrier rate sheets: CSV upload, table, per-row + clear-all
+// Carrier rate sheets: CSV upload, table, per-row + clear-all
 // delete. The sell price and expiry are computed server-side (the margin never reaches the client).
 // Each mutation returns the refreshed snapshot, which re-renders the table. The old Thymeleaf page
 // stays live until cutover.
 export default function RatesPage() {
   const api = useApi()
 
-  const [data, setData] = useState<RatesResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
   // Skipped-row messages from the last import, shown separately so good rows still land.
   const [importErrors, setImportErrors] = useState<string[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setData(await api.get<RatesResponse>('/api/rates'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load rates')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<RatesResponse>('/api/rates'), [api])
+  const { data, setData, error } = usePageData(load, 'Failed to load rates')
 
   const upload = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,7 +42,7 @@ export default function RatesPage() {
       })
       if (fileInput.current) fileInput.current.value = ''
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Import failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Import failed') })
     }
   }
 
@@ -63,7 +52,7 @@ export default function RatesPage() {
       setData(await call())
       setMsg({ kind: 'success', text: ok })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Action failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Action failed') })
     }
   }
 
@@ -80,12 +69,7 @@ export default function RatesPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       {importErrors.length > 0 && (
         <div className="alert alert-warning alert-dismissible">

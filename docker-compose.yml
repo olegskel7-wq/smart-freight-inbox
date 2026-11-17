@@ -2,10 +2,18 @@
 # host port is bound to 127.0.0.1 — reachable from this machine (IntelliJ dev runs, an SSH tunnel
 # on a server) but never from the network. On Linux this matters doubly: Docker-published ports
 # bypass UFW, so a firewall rule alone would NOT close them. Containers talk over llm_internal.
-# Secrets: the `:-` defaults below are DEV values; scripts/check-prod-env.sh refuses them on a server.
+# Gate C5: secrets are NOT env vars. Each is a file in ${SECRETS_DIR} (outside the repo; default
+# ./secrets.dev = the public dev values, so a fresh clone runs as-is), mounted per service under
+# /run/secrets (top-level `secrets:` at the bottom) — absent from .env, `docker inspect` and this file.
+# Readers: Spring → configtree (application.yaml), postgres/grafana → *_FILE, the rest →
+# scripts/file-env.sh. scripts/check-prod-env.sh refuses dev values / an in-repo SECRETS_DIR on a
+# server. Runbook: docs/ops/secrets.md.
 # Gate B8: bounded container logs (Docker's json-file default grows forever). Logs carry ticket/tenant
 # ids by design (B3), and nginx access logs carry client IPs — personal data that must age out:
 # 5 × 20 MB per container, oldest dropped. data-flow.md states this as the log retention.
+# Gate C6: every long-running service has `restart: unless-stopped` — after a host reboot or a crash
+# the whole stack comes back, not just the backend (which would then loop against a dead Postgres).
+# Only the demo-profile mail fakes (greenmail, mailpit) are left without.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -18,56 +26,53 @@ services:
     # Gate B5: room for the graceful stop (45 s phase budget) before Docker sends SIGKILL (default 10 s).
     stop_grace_period: 60s
     build: .
+    # Gate C6: the JVM exits on OutOfMemoryError (Dockerfile) — Docker brings it straight back.
+    # A deterministic startup failure (e.g. DevCredentialsGuard refusing dev secrets on a public host)
+    # becomes a restart loop: `docker compose logs backend | grep "Refusing to start"` shows why.
+    restart: unless-stopped
+    # Gate C6: a leak or a huge attachment must not starve Postgres/Ollama/Keycloak on the same host.
+    # Heap = 65% of this (MaxRAMPercentage); ~600 MB in steady state, the rest is parsing headroom.
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartfreight
       # Phase 2.2: app pool = restricted role (RLS applies); Flyway = admin (DDL).
-      # DB_APP_PASSWORD also feeds the V19 placeholder that creates the role.
+      # DB_APP_PASSWORD (a secret, below) also feeds the V19 placeholder that creates the role.
       - SPRING_DATASOURCE_USERNAME=${DB_APP_USER:-smartfreight_app}
-      - SPRING_DATASOURCE_PASSWORD=${DB_APP_PASSWORD:-smartfreight_app}
-      - DB_APP_PASSWORD=${DB_APP_PASSWORD:-smartfreight_app}
       - DB_ADMIN_USER=${POSTGRES_USER:-postgres}
-      - DB_ADMIN_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - OLLAMA_URL=http://ollama:11434
       # Phase 3.1: local embedding model for the AI feedback loop.
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
       - PORT_SERVICE_URL=http://port-service:9000
-      - PORT_SERVICE_API_KEY=${PORT_SERVICE_API_KEY:-smartfreight-port-secret}
       - IMAP_HOST=${IMAP_HOST:-imap.example.com}
       - IMAP_USER=${IMAP_USER:-inbox@example.com}
-      - IMAP_PASSWORD=${IMAP_PASSWORD:-changeme}
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-${IMAP_USER:-inbox@example.com}}
-      - SMTP_PASSWORD=${SMTP_PASSWORD:-${IMAP_PASSWORD:-changeme}}
-      # Phase 2.2 S3: AES key for tenant_mailbox passwords (base64, 32 bytes;
-      # openssl rand -base64 32). Without it no IMAP adapters start.
-      - MAILBOX_ENCRYPTION_KEY=${MAILBOX_ENCRYPTION_KEY:-}
-      # V38: our Entra app for Microsoft 365 mailboxes (XOAUTH2). Blank = M365 sign-in off.
-      # Setup: docs/ops/m365-oauth2-setup.md
-      - MS365_CLIENT_ID=${MS365_CLIENT_ID:-}
-      - MS365_CLIENT_SECRET=${MS365_CLIENT_SECRET:-}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USER=${RABBITMQ_USER:-smartfreight}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-smartfreight}
       # Phase 2.6: Redis backs HTTP sessions, the rate-sheet cache and login throttling.
       - REDIS_HOST=redis
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-smartfreight-dev-redis}
       # Phase 2.3 / 3.2 https login: Keycloak is the sole IdP, fronted by nginx on the SAME TLS
-      # origin as the SPA (https://localhost/realms/...), so token `iss` is https://localhost —
-      # no mixed content for the browser. The backend can't reach https://localhost (that's
+      # origin as the SPA (https://$PUBLIC_HOST/realms/..., localhost locally), so token `iss` is that origin —
+      # no mixed content for the browser. The backend can't reach that public origin (locally that's
       # itself), so it does NOT discover the issuer: it validates the `iss` claim against
       # KEYCLOAK_ISSUER_URI and fetches the signing keys over the compose network via
       # KEYCLOAK_JWKS_URI (keycloak:8081). Since the 3.2 cutover there is no server-side
       # oauth2-client, so the old KEYCLOAK_CLIENT_ID/SECRET (confidential web client) are gone.
-      - KEYCLOAK_ISSUER_URI=${KEYCLOAK_ISSUER_URI:-https://localhost/realms/smartfreight}
-      - KEYCLOAK_JWKS_URI=${KEYCLOAK_JWKS_URI:-http://keycloak:8081/realms/smartfreight/protocol/openid-connect/certs}
+      # Gate C3: the issuer is built from PUBLIC_HOST — the same value Keycloak's KC_HOSTNAME is built
+      # from, so `iss` and the expected issuer cannot drift apart (no separate override on purpose).
+      # A public PUBLIC_HOST also arms DevCredentialsGuard (refuses dev secrets at startup).
+      - KEYCLOAK_ISSUER_URI=https://${PUBLIC_HOST:-localhost}/realms/smartfreight
+      - KEYCLOAK_JWKS_URI=http://keycloak:8081/realms/smartfreight/protocol/openid-connect/certs
       # Phase 2.3 S2: Admin REST client for tenant/operator provisioning (KeycloakAdminService).
       # Realm-less base URL over the compose network; its own service-account client + secret.
       - KEYCLOAK_SERVER_URL=${KEYCLOAK_SERVER_URL:-http://keycloak:8081}
       - KEYCLOAK_REALM=${KEYCLOAK_REALM:-smartfreight}
       - KEYCLOAK_ADMIN_CLIENT_ID=${KEYCLOAK_ADMIN_CLIENT_ID:-smartfreight-admin}
-      - KEYCLOAK_ADMIN_CLIENT_SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-smartfreight-admin-secret}
       # Phase 4.8 S2 demo mail harness (greenmail + mailpit below) — how to run: header of
       # scripts/demo-mail.ps1. Off (the default) REMOVES the demo mailboxes on backend start.
       - DEMO_MAIL_ENABLED=${DEMO_MAIL_ENABLED:-false}
@@ -75,8 +80,30 @@ services:
       # USE_SYSTEM_CA_CERTS=1 in .env to also trust the *.crt files in certs/extra-ca (e.g. an
       # antivirus that re-signs IMAPS/SMTP traffic) — see certs/extra-ca/README.md. Unset in prod.
       - USE_SYSTEM_CA_CERTS=${USE_SYSTEM_CA_CERTS:-}
+      # V38: our Entra app for Microsoft 365 mailboxes (XOAUTH2); its secret is the MS365_CLIENT_SECRET
+      # file below. Blank = M365 sign-in off. Setup: docs/ops/m365-oauth2-setup.md
+      - MS365_CLIENT_ID=${MS365_CLIENT_ID:-}
     volumes:
       - ./certs/extra-ca:/certificates:ro
+    # Gate C5: read by Spring's configtree import (application.yaml) — each file becomes the property
+    # of the same name, so the `${DB_APP_PASSWORD:...}`-style placeholders resolve unchanged.
+    # MAILBOX_ENCRYPTION_KEY: AES key for tenant_mailbox passwords (openssl rand -base64 32; empty →
+    # no IMAP adapters start). IMAP/SMTP_PASSWORD: the platform account (MailboxBootstrap + fallback).
+    secrets:
+      - DB_APP_PASSWORD
+      - source: POSTGRES_PASSWORD
+        target: DB_ADMIN_PASSWORD
+      - RABBITMQ_PASSWORD
+      - REDIS_PASSWORD
+      - KEYCLOAK_ADMIN_CLIENT_SECRET
+      - PORT_SERVICE_API_KEY
+      - MAILBOX_ENCRYPTION_KEY
+      - IMAP_PASSWORD
+      - SMTP_PASSWORD
+      # Optional: the cloud LLM key (L2b). Empty = no tenant can be switched to llm.provider=cloud.
+      - ANTHROPIC_API_KEY
+      # Optional: Microsoft 365 mailboxes (V38). Empty = no MS365_OAUTH mailbox can sign in.
+      - MS365_CLIENT_SECRET
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,14 +134,21 @@ services:
       - llm_internal
 
   postgres:
+    restart: unless-stopped
     logging: *default-logging
     # Phase 3.1: pgvector image (PG16 + the `vector` extension) for the AI feedback loop's
     # embedding similarity search. Drop-in for postgres:16 — same data, V28 enables the extension.
-    image: pgvector/pgvector:pg16
+    # Pinned by digest (Debian bookworm, glibc 2.36): the bare tag moved between Debian releases, and a
+    # different glibc changes text sort order under existing indexes (collation version mismatch,
+    # fixed 17 Nov 2026 with REINDEX + REFRESH COLLATION VERSION). Move the pin on purpose, then reindex.
+    image: pgvector/pgvector:pg16@sha256:00ba258a66dac104fd5171074a0084462a64a1369d8513f3d0a634e2f24d15bc
     environment:
       - POSTGRES_DB=smartfreight
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      # Applied at first volume init only — rotate inside Postgres afterwards (docs/ops/secrets.md).
+      - POSTGRES_PASSWORD_FILE=/run/secrets/POSTGRES_PASSWORD
+    secrets:
+      - POSTGRES_PASSWORD
     # Host port 5433 matches application.yaml (avoids conflict with a local PostgreSQL on 5432).
     ports:
       - "127.0.0.1:5433:5432"
@@ -129,6 +163,7 @@ services:
       - llm_internal
 
   ollama:
+    restart: unless-stopped
     logging: *default-logging
     image: ollama/ollama:0.3.14
     container_name: ollama
@@ -168,13 +203,21 @@ services:
       - llm_internal
 
   rabbitmq:
+    restart: unless-stopped
     logging: *default-logging
     # Async AI pipeline broker (Phase 1.3). The -management image ships the web UI
     # on :15672 (login = RABBITMQ_USER/RABBITMQ_PASSWORD) — queue depths, DLQ, rates.
     image: rabbitmq:3.13-management-alpine
+    # Gate C5: RABBITMQ_DEFAULT_PASS comes from the secret via file-env.sh (the image has no *_FILE).
+    # Overriding the entrypoint drops the image CMD, hence the explicit command — both copy the
+    # upstream ENTRYPOINT docker-entrypoint.sh / CMD rabbitmq-server (recheck on an image upgrade).
+    entrypoint: ["/bin/sh", "/file-env.sh", "docker-entrypoint.sh"]
+    command: ["rabbitmq-server"]
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-smartfreight}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-smartfreight}
+    secrets:
+      - source: RABBITMQ_PASSWORD
+        target: RABBITMQ_DEFAULT_PASS
     ports:
       - "127.0.0.1:5672:5672"
       - "127.0.0.1:15672:15672"
@@ -183,6 +226,7 @@ services:
       - "127.0.0.1:15692:15692"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./scripts/file-env.sh:/file-env.sh:ro
       # Declarative plugin list (adds rabbitmq_prometheus to what the -management
       # image enables) + per-queue metric granularity for Grafana panels.
       - ./monitoring/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
@@ -197,22 +241,27 @@ services:
       - llm_internal
 
   redis:
+    restart: unless-stopped
     logging: *default-logging
     # Phase 2.6: HTTP session store (sessions survive a backend restart and are shared
     # across instances), rate-sheet cache, and login rate-limit counters. AOF persistence
     # so cached/session state survives a redis restart too. Always password-protected (Gate C1;
-    # was empty) — the dev default must match the backend's, a server sets its own.
+    # was empty) — the backend reads the same REDIS_PASSWORD secret.
     image: redis:7-alpine
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-smartfreight-dev-redis}
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-smartfreight-dev-redis}"]
+    # Gate C5: password from the secret into a config file, never argv/env (monitoring/redis/entrypoint.sh).
+    entrypoint: ["/bin/sh", "/redis-entrypoint.sh"]
+    command: []
+    secrets:
+      - REDIS_PASSWORD
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+      - ./monitoring/redis/entrypoint.sh:/redis-entrypoint.sh:ro
+      - ./scripts/file-env.sh:/file-env.sh:ro
     healthcheck:
       # A bare `redis-cli ping` exits 0 even on NOAUTH, so it was green regardless — require PONG.
-      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      test: ["CMD-SHELL", ". /file-env.sh && REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -220,32 +269,58 @@ services:
       - llm_internal
 
   keycloak:
+    restart: unless-stopped
     logging: *default-logging
     # Phase 2.3 / 3.2 https login: sole identity provider (OIDC). Realm `smartfreight` is
     # imported on first start from ./keycloak. Fronted by nginx on the SAME TLS origin as the
-    # SPA: the FRONT channel is https://localhost/realms/... (KC_HOSTNAME=https://localhost +
+    # SPA: the FRONT channel is https://$PUBLIC_HOST/realms/... (KC_HOSTNAME +
     # KC_PROXY_HEADERS=xforwarded → Keycloak trusts nginx's X-Forwarded-Proto and builds https
-    # URLs, so the token `iss` is https://localhost). The BACK channel stays internal http on
+    # URLs, so the token `iss` is https://$PUBLIC_HOST). The BACK channel stays internal http on
     # keycloak:8081 (backend fetches JWKS there, KeycloakAdminService provisions there);
     # KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true lets those internal calls keep using keycloak:8081.
     # No mixed content, one cert, no `127.0.0.1 keycloak` browser hosts entry needed.
-    # start-dev is fine for the pilot; switch to `start` + a real hostname/TLS for production.
+    # Gate C3: production mode (`start`) everywhere — dev runs exactly what a server runs. The public
+    # name is PUBLIC_HOST (.env, default localhost): it sets KC_HOSTNAME here, the backend's issuer
+    # below, the SPA client's redirect URIs in the realm import and nginx's server_name/certificate.
+    # TLS ends at nginx, hence plain http inside the network (KC_HTTP_ENABLED) — Keycloak's own port
+    # 8081 is never published beyond 127.0.0.1. Health + metrics on the management port 9000
+    # (healthcheck below, Prometheus job `keycloak`); nginx proxies neither, nor /admin.
     image: quay.io/keycloak/keycloak:26.0
-    command: ["start-dev", "--import-realm", "--http-port=8081"]
+    # Gate C5: KC_BOOTSTRAP_ADMIN_PASSWORD / KC_DB_PASSWORD come from secrets via file-env.sh, which
+    # then execs the upstream ENTRYPOINT /opt/keycloak/bin/kc.sh (recheck on an image upgrade).
+    entrypoint: ["/bin/sh", "/file-env.sh", "/opt/keycloak/bin/kc.sh"]
+    command: ["start", "--import-realm", "--http-port=8081"]
+    secrets:
+      - source: KEYCLOAK_ADMIN_PASSWORD
+        target: KC_BOOTSTRAP_ADMIN_PASSWORD
+      - source: KEYCLOAK_DB_PASSWORD
+        target: KC_DB_PASSWORD
+      # Gate C3: read by the realm import's ${SF_...} placeholders — only on the FIRST start against an
+      # empty keycloak-db (an existing realm is never re-imported). The admin client's secret is the
+      # backend's KEYCLOAK_ADMIN_CLIENT_SECRET (one file, both sides); the seed SUPER_ADMIN password
+      # replaces the public dev one, so a fresh server has no known login.
+      - source: KEYCLOAK_ADMIN_CLIENT_SECRET
+        target: SF_ADMIN_CLIENT_SECRET
+      - source: KEYCLOAK_SEED_OPERATOR_PASSWORD
+        target: SF_SEED_OPERATOR_PASSWORD
     environment:
       - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN_USER:-admin}
-      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=postgres
       - KC_DB_URL=jdbc:postgresql://keycloak-db:5432/keycloak
       - KC_DB_USERNAME=${KEYCLOAK_DB_USER:-keycloak}
-      - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak}
-      - KC_HOSTNAME=${KEYCLOAK_FRONTEND_URL:-https://localhost}
+      - KC_HOSTNAME=https://${PUBLIC_HOST:-localhost}
       - KC_PROXY_HEADERS=xforwarded
       - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
       - KC_HTTP_ENABLED=true
       - KC_HEALTH_ENABLED=true
+      - KC_METRICS_ENABLED=true
+      # One node: no cluster discovery (the default `ispn` cache would look for peers).
+      - KC_CACHE=local
+      # Realm import placeholder (redirect URIs / web origins of smartfreight-spa).
+      - SF_PUBLIC_HOST=${PUBLIC_HOST:-localhost}
     volumes:
       - ./keycloak/realm-smartfreight.json:/opt/keycloak/data/import/realm-smartfreight.json:ro
+      - ./scripts/file-env.sh:/file-env.sh:ro
     ports:
       - "127.0.0.1:8081:8081"
     depends_on:
@@ -262,14 +337,18 @@ services:
       - llm_internal
 
   keycloak-db:
+    restart: unless-stopped
     logging: *default-logging
     # Dedicated Postgres for Keycloak (mirrors port-db) — keeps IdP state isolated and
     # restoreable, separate from the application DB.
-    image: postgres:16
+    # Pinned by digest (Debian trixie) for the same reason as the postgres service above.
+    image: postgres:16@sha256:2586e2a95d1c9b31cb2967feb562948f7d364854453d703039b6efa45fe48417
     environment:
       - POSTGRES_DB=keycloak
       - POSTGRES_USER=${KEYCLOAK_DB_USER:-keycloak}
-      - POSTGRES_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/KEYCLOAK_DB_PASSWORD
+    secrets:
+      - KEYCLOAK_DB_PASSWORD
     volumes:
       - keycloak_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -281,6 +360,7 @@ services:
       - llm_internal
 
   prometheus:
+    restart: unless-stopped
     logging: *default-logging
     image: prom/prometheus:v2.53.0
     # Gate B7: keep 90d (default 15d) — a 30+ day pilot must still be on the graphs at the S4
@@ -303,13 +383,17 @@ services:
     # Gate B4: delivers Prometheus alerts OUT of the box (Telegram) + a dead man's switch heartbeat.
     # Config is rendered from env by the entrypoint (secrets stay out of git); see docs/ops/alerting.md.
     image: prom/alertmanager:v0.27.0
-    entrypoint: ["/bin/sh", "/etc/alertmanager-src/entrypoint.sh"]
+    # Gate C5: the bot token and the ping URL (anyone holding it can fake "alive") are secrets;
+    # the chat id is not.
+    entrypoint: ["/bin/sh", "/file-env.sh", "/bin/sh", "/etc/alertmanager-src/entrypoint.sh"]
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
-      - HEALTHCHECKS_PING_URL=${HEALTHCHECKS_PING_URL:-}
+    secrets:
+      - TELEGRAM_BOT_TOKEN
+      - HEALTHCHECKS_PING_URL
     volumes:
       - ./monitoring/alertmanager:/etc/alertmanager-src:ro
+      - ./scripts/file-env.sh:/file-env.sh:ro
       - alertmanager_data:/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
@@ -318,10 +402,14 @@ services:
       - llm_internal
 
   grafana:
+    restart: unless-stopped
     logging: *default-logging
     image: grafana/grafana:11.1.0
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      # Applied when grafana_data is first created, like the Postgres passwords.
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/GRAFANA_PASSWORD
+    secrets:
+      - GRAFANA_PASSWORD
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -334,12 +422,16 @@ services:
       - llm_internal
 
   port-db:
+    restart: unless-stopped
     logging: *default-logging
-    image: postgres:16
+    # Pinned by digest (Debian trixie) for the same reason as the postgres service above.
+    image: postgres:16@sha256:2586e2a95d1c9b31cb2967feb562948f7d364854453d703039b6efa45fe48417
     environment:
       - POSTGRES_DB=port_system
       - POSTGRES_USER=${PORT_DB_USER:-postgres}
-      - POSTGRES_PASSWORD=${PORT_DB_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/PORT_DB_PASSWORD
+    secrets:
+      - PORT_DB_PASSWORD
     ports:
       - "127.0.0.1:5435:5432"
     volumes:
@@ -362,12 +454,14 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=smartfreight
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/POSTGRES_PASSWORD
       - SCHEDULE=@daily
       - BACKUP_KEEP_DAYS=7
       - BACKUP_KEEP_WEEKS=4
       - BACKUP_KEEP_MONTHS=6
       - HEALTHCHECK_PORT=8080
+    secrets:
+      - POSTGRES_PASSWORD
     volumes:
       - postgres_backups:/backups
     depends_on:
@@ -386,12 +480,14 @@ services:
       - POSTGRES_HOST=keycloak-db
       - POSTGRES_DB=keycloak
       - POSTGRES_USER=${KEYCLOAK_DB_USER:-keycloak}
-      - POSTGRES_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/KEYCLOAK_DB_PASSWORD
       - SCHEDULE=@daily
       - BACKUP_KEEP_DAYS=7
       - BACKUP_KEEP_WEEKS=4
       - BACKUP_KEEP_MONTHS=6
       - HEALTHCHECK_PORT=8080
+    secrets:
+      - KEYCLOAK_DB_PASSWORD
     volumes:
       - postgres_backups:/backups
     depends_on:
@@ -403,52 +499,92 @@ services:
   backup-offsite:
     logging: *default-logging
     # Gate B1: encrypted offsite copy of every dump in postgres_backups (rclone crypt → S3, UK region).
-    # Configured from env (monitoring/backup/offsite-env.sh); unset → idles with a warning.
+    # Configured from env + secrets (monitoring/backup/offsite-env.sh); unset → idles with a warning.
     image: rclone/rclone:1.68
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "/etc/offsite/offsite.sh"]
+    entrypoint: ["/bin/sh", "/file-env.sh", "/bin/sh", "/etc/offsite/offsite.sh"]
     environment:
-      - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:-}
       - OFFSITE_S3_BUCKET=${OFFSITE_S3_BUCKET:-}
       - OFFSITE_S3_PROVIDER=${OFFSITE_S3_PROVIDER:-AWS}
       - OFFSITE_S3_REGION=${OFFSITE_S3_REGION:-eu-west-2}
       - OFFSITE_S3_ENDPOINT=${OFFSITE_S3_ENDPOINT:-}
-      - OFFSITE_S3_ACCESS_KEY_ID=${OFFSITE_S3_ACCESS_KEY_ID:-}
-      - OFFSITE_S3_SECRET_ACCESS_KEY=${OFFSITE_S3_SECRET_ACCESS_KEY:-}
       # Drills only (scripts/restore-test.sh offsite): a local dir instead of a bucket.
       - OFFSITE_LOCAL_DIR=${OFFSITE_LOCAL_DIR:-}
-      - BACKUP_HEALTHCHECKS_PING_URL=${BACKUP_HEALTHCHECKS_PING_URL:-}
+    secrets:
+      - BACKUP_ENCRYPTION_PASSPHRASE
+      - OFFSITE_S3_ACCESS_KEY_ID
+      - OFFSITE_S3_SECRET_ACCESS_KEY
+      - BACKUP_HEALTHCHECKS_PING_URL
     volumes:
       - postgres_backups:/backups:ro
       - ./monitoring/backup:/etc/offsite:ro
+      - ./scripts/file-env.sh:/file-env.sh:ro
       - offsite_drill:/offsite-drill
     networks:
       - llm_internal
 
   nginx:
     logging: *default-logging
-    # HTTPS termination in front of the backend. Self-signed cert is generated on first run.
-    # For production, replace /etc/nginx/certs/server.crt and server.key with a real certificate.
+    # HTTPS termination in front of the backend and Keycloak. Gate C4: the certificate is picked at
+    # start and re-checked every 10 min (monitoring/nginx/entrypoint.sh): a Let's Encrypt one for
+    # PUBLIC_HOST once the certbot service below has issued it, else the local one in certs/
+    # (self-signed or mkcert). Server runbook: docs/ops/tls-domain.md.
     image: nginx:1.27-alpine
     restart: unless-stopped
+    environment:
+      - PUBLIC_HOST=${PUBLIC_HOST:-localhost}
     ports:
       - "443:443"
-      - "8443:8443"
+      # Plain http: ACME http-01 challenges + a redirect to https. Host port 8443 locally (no
+      # privileged port on a dev machine); NGINX_HTTP_PORT=80 on a server — Let's Encrypt only
+      # ever connects to port 80.
+      - "${NGINX_HTTP_PORT:-8443}:80"
     volumes:
-      - ./monitoring/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./monitoring/nginx/entrypoint.sh:/docker-entrypoint.d/00-generate-cert.sh:ro
-      # Dev TLS cert. If monitoring/nginx/certs/ holds a server.crt/key (e.g. an mkcert-issued,
+      # Rendered at start with PUBLIC_HOST substituted (entrypoint.sh) into conf.d/default.conf.
+      - ./monitoring/nginx/nginx.conf:/etc/nginx/smartfreight/nginx.conf.template:ro
+      # Gate C6: security headers, included by the app locations of nginx.conf.
+      - ./monitoring/nginx/security-headers.conf:/etc/nginx/snippets/security-headers.conf:ro
+      - ./monitoring/nginx/entrypoint.sh:/docker-entrypoint.d/00-smartfreight-tls.sh:ro
+      # Local TLS cert. If monitoring/nginx/certs/ holds a server.crt/key (e.g. an mkcert-issued,
       # locally-trusted pair → green padlock on https://localhost), nginx uses it; the entrypoint
       # only generates a throwaway self-signed cert when the dir is empty (fresh clone). The dir is
       # gitignored — mkcert certs are machine-specific (signed by each dev's local CA).
       - ./monitoring/nginx/certs:/etc/nginx/certs
+      # Gate C4: written by certbot, only read here (empty and unused on a dev machine).
+      - letsencrypt:/etc/letsencrypt:ro
+      - acme_webroot:/var/www/acme:ro
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - llm_internal
 
+  certbot:
+    logging: *default-logging
+    # Gate C4: Let's Encrypt certificate for PUBLIC_HOST — issued on the first start, renewed when
+    # due (checked twice a day), via the http-01 challenge that nginx serves from acme_webroot on
+    # port 80. nginx notices the new files by itself within 10 minutes. Server only: profile `tls`
+    # (COMPOSE_PROFILES=tls in the server's .env) + PUBLIC_HOST + ACME_EMAIL; docs/ops/tls-domain.md.
+    image: certbot/certbot:v3.0.1
+    restart: unless-stopped
+    profiles: ["tls"]
+    entrypoint: ["/bin/sh", "/certbot-loop.sh"]
+    environment:
+      - PUBLIC_HOST=${PUBLIC_HOST:-localhost}
+      - ACME_EMAIL=${ACME_EMAIL:-}
+      # 1 = Let's Encrypt staging (untrusted test certs, generous rate limits) for a first dry run.
+      - ACME_STAGING=${ACME_STAGING:-}
+    volumes:
+      - ./monitoring/nginx/certbot-loop.sh:/certbot-loop.sh:ro
+      - letsencrypt:/etc/letsencrypt
+      - acme_webroot:/var/www/acme
+    depends_on:
+      - nginx
+    networks:
+      - llm_internal
+
   port-service:
+    restart: unless-stopped
     logging: *default-logging
     build:
       context: ./port-service
@@ -457,9 +593,13 @@ services:
       - DB_HOST=port-db
       - DB_PORT=5432
       - DB_USER=${PORT_DB_USER:-postgres}
-      - DB_PASSWORD=${PORT_DB_PASSWORD:-postgres}
+      - SCHEDULER_ENABLED=${PORT_SCHEDULER_ENABLED:-false}
       - SCHEDULER_INTERVAL_MS=300000
-      - PORT_SERVICE_API_KEY=${PORT_SERVICE_API_KEY:-smartfreight-port-secret}
+    # Gate C5: configtree import, as in the backend.
+    secrets:
+      - source: PORT_DB_PASSWORD
+        target: DB_PASSWORD
+      - PORT_SERVICE_API_KEY
     depends_on:
       port-db:
         condition: service_healthy
@@ -484,6 +624,7 @@ services:
     # demo addresses live in ONE place (application.yaml demo.mail.inboxes) — fake data only.
     # Host ports bound to 127.0.0.1: nothing outside this machine needs the demo mail servers.
     image: greenmail/standalone:2.1.2
+    restart: unless-stopped
     profiles: ["demo"]
     # The bundled cert doesn't name `greenmail`/`localhost`, and Angus Mail 2.x verifies the
     # server hostname even with ssl.trust — so mint a throwaway self-signed cert with the right
@@ -511,6 +652,7 @@ services:
     # Phase 4.8 S2: catches every reply the demo tenants send — http://localhost:8025 is the
     # customer's view of the conversation during a demo. Accepts any SMTP credentials.
     image: axllent/mailpit:v1.21
+    restart: unless-stopped
     profiles: ["demo"]
     environment:
       - MP_SMTP_AUTH_ACCEPT_ANY=1
@@ -533,8 +675,60 @@ volumes:
   offsite_drill:
   grafana_data:
   port_db_data:
-  nginx_certs:
+  # Gate C4: Let's Encrypt account + certificates (certbot writes, nginx reads) and the http-01
+  # challenge files. Losing letsencrypt is harmless — certbot re-issues on its next start.
+  letsencrypt:
+  acme_webroot:
 
 networks:
   llm_internal:
     driver: bridge
+
+# Gate C5: one file per secret in SECRETS_DIR (set in .env; must be OUTSIDE the repo on a real
+# host). The default ./secrets.dev holds only the public dev values. File name = secret name; a
+# service mounts only the ones it lists, under /run/secrets/<name or target>.
+secrets:
+  ANTHROPIC_API_KEY:
+    file: ${SECRETS_DIR:-./secrets.dev}/ANTHROPIC_API_KEY
+  POSTGRES_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/POSTGRES_PASSWORD
+  DB_APP_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/DB_APP_PASSWORD
+  RABBITMQ_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/RABBITMQ_PASSWORD
+  REDIS_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/REDIS_PASSWORD
+  KEYCLOAK_ADMIN_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/KEYCLOAK_ADMIN_PASSWORD
+  KEYCLOAK_DB_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/KEYCLOAK_DB_PASSWORD
+  KEYCLOAK_ADMIN_CLIENT_SECRET:
+    file: ${SECRETS_DIR:-./secrets.dev}/KEYCLOAK_ADMIN_CLIENT_SECRET
+  KEYCLOAK_SEED_OPERATOR_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/KEYCLOAK_SEED_OPERATOR_PASSWORD
+  GRAFANA_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/GRAFANA_PASSWORD
+  PORT_DB_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/PORT_DB_PASSWORD
+  PORT_SERVICE_API_KEY:
+    file: ${SECRETS_DIR:-./secrets.dev}/PORT_SERVICE_API_KEY
+  MAILBOX_ENCRYPTION_KEY:
+    file: ${SECRETS_DIR:-./secrets.dev}/MAILBOX_ENCRYPTION_KEY
+  MS365_CLIENT_SECRET:
+    file: ${SECRETS_DIR:-./secrets.dev}/MS365_CLIENT_SECRET
+  IMAP_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/IMAP_PASSWORD
+  SMTP_PASSWORD:
+    file: ${SECRETS_DIR:-./secrets.dev}/SMTP_PASSWORD
+  TELEGRAM_BOT_TOKEN:
+    file: ${SECRETS_DIR:-./secrets.dev}/TELEGRAM_BOT_TOKEN
+  HEALTHCHECKS_PING_URL:
+    file: ${SECRETS_DIR:-./secrets.dev}/HEALTHCHECKS_PING_URL
+  BACKUP_ENCRYPTION_PASSPHRASE:
+    file: ${SECRETS_DIR:-./secrets.dev}/BACKUP_ENCRYPTION_PASSPHRASE
+  OFFSITE_S3_ACCESS_KEY_ID:
+    file: ${SECRETS_DIR:-./secrets.dev}/OFFSITE_S3_ACCESS_KEY_ID
+  OFFSITE_S3_SECRET_ACCESS_KEY:
+    file: ${SECRETS_DIR:-./secrets.dev}/OFFSITE_S3_SECRET_ACCESS_KEY
+  BACKUP_HEALTHCHECKS_PING_URL:
+    file: ${SECRETS_DIR:-./secrets.dev}/BACKUP_HEALTHCHECKS_PING_URL

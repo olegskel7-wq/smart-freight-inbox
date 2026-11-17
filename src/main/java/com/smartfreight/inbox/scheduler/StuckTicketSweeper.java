@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Runtime sweep for tickets stuck in RECEIVED / NEW / PROCESSING (Phase 1.3, session 2).
+ * Runtime sweep for tickets stuck in RECEIVED / NEW / PROCESSING.
  *
  * Why this exists when {@link com.smartfreight.inbox.startup.StuckTicketRecovery}
  * already runs at startup: that recovery only fires on a JVM restart. A RUNNING
@@ -46,7 +46,7 @@ public class StuckTicketSweeper {
 
     /**
      * Statuses a ticket can silently hang in when its pipeline message is lost.
-     * RECEIVED (Phase 1.3 session 3): a ticket whose "ticket.created" message went poison
+     * RECEIVED: a ticket whose "ticket.created" message went poison
      * before classification. Sweeping sends it down the RETRY_LATER → NEW path, which
      * skips classification — intentional fail-open, same as a classifier outage.
      */
@@ -74,7 +74,7 @@ public class StuckTicketSweeper {
      * fixedDelay 5 min: stuck detection is not latency-sensitive (the threshold is
      * tens of minutes anyway), and one bulk UPDATE per run keeps the cost trivial.
      *
-     * Phase 2.2: SYSTEM tenant state — stuck tickets of all tenants are swept in one
+     * SYSTEM tenant state — stuck tickets of all tenants are swept in one
      * bulk UPDATE (tenant attribution stays in the rows). Context wraps the
      * transaction; see RetryScheduler for why @Transactional cannot be used here.
      */

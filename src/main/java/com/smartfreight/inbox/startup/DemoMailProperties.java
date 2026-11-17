@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Demo mail harness settings (Phase 4.8 S2), bound from the {@code demo.mail.*} keys.
+ * Demo mail harness settings, bound from the {@code demo.mail.*} keys.
  *
  * <p>When {@link #enabled}, {@link DemoMailboxBootstrap} points the demo tenants' mailboxes at
  * the fake mail servers from the compose {@code demo} profile: GreenMail for inbound IMAPS,

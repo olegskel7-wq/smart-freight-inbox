@@ -34,3 +34,10 @@ scrape_configs:
   - job_name: 'rabbitmq'
     static_configs:
       - targets: ['rabbitmq:15692']
+
+  # Gate C3: Keycloak in production mode exposes metrics (KC_METRICS_ENABLED) on its management port
+  # 9000 — never published to the host, never proxied by nginx; reachable only over llm_internal.
+  - job_name: 'keycloak'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['keycloak:9000']

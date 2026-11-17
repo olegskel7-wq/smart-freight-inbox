@@ -28,9 +28,9 @@
 	</scm>
 	<properties>
 		<java.version>17</java.version>
-		<!-- 1.21.3 to align with testcontainers-keycloak 3.9.1 (Phase 2.3 S3 e2e), which
+		<!-- 1.21.x to align with testcontainers-keycloak 3.9.1 (Phase 2.3 S3 e2e), which
 		     pulls the testcontainers core at 1.21.x — keeping one version avoids core/module skew -->
-		<testcontainers.version>1.21.3</testcontainers.version>
+		<testcontainers.version>1.21.4</testcontainers.version>
 		<pdfbox.version>3.0.3</pdfbox.version>
 		<poi.version>5.3.0</poi.version>
 		<commons-csv.version>1.12.0</commons-csv.version>
@@ -41,7 +41,9 @@
 		     also passed in the Dockerfile, which builds the SPA in a dedicated node stage). -->
 		<skipFrontend>false</skipFrontend>
 		<frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
-		<node.version>v20.18.0</node.version>
+		<!-- vite 8 needs Node 20.19+ / 22.12+: on 20.18 npm skips rolldown's native binding and the
+		     build fails. Same major as the CI frontend job. -->
+		<node.version>v22.14.0</node.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -163,6 +165,12 @@
 			<artifactId>resilience4j-circuitbreaker</artifactId>
 			<version>${resilience4j.version}</version>
 		</dependency>
+		<!-- Cloud LLM provider (ROADMAP LLM strategy L2b): the official Anthropic SDK behind LlmClient. -->
+		<dependency>
+			<groupId>com.anthropic</groupId>
+			<artifactId>anthropic-java</artifactId>
+			<version>3.3.0</version>
+		</dependency>
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-micrometer</artifactId>
@@ -263,6 +271,14 @@
 			<version>4.12.0</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- Architecture rules (ArchitectureTest). Core library with plain @Test methods, not the
+		     archunit-junit5 engine, so it does not depend on the JUnit Platform version. -->
+		<dependency>
+			<groupId>com.tngtech.archunit</groupId>
+			<artifactId>archunit</artifactId>
+			<version>1.4.1</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -339,7 +355,8 @@
 						<phase>verify</phase>
 						<goals><goal>report</goal></goals>
 					</execution>
-					<!-- Tikrina minimalų padengimo procentą – žemiau 60% build'as nepavyks -->
+					<!-- Coverage gate: kept a few points under what the suite measures, so that a real drop
+					     fails CI while ordinary noise does not. -->
 					<execution>
 						<id>check</id>
 						<goals><goal>check</goal></goals>
@@ -350,7 +367,12 @@
 										<limit>
 											<counter>INSTRUCTION</counter>
 											<value>COVEREDRATIO</value>
-											<minimum>0.60</minimum>
+											<minimum>0.85</minimum>
+										</limit>
+										<limit>
+											<counter>BRANCH</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>0.70</minimum>
 										</limit>
 									</limits>
 								</rule>

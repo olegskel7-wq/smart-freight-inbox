@@ -5,7 +5,7 @@ import com.smartfreight.inbox.entity.TenantDocument;
 import java.time.LocalDateTime;
 
 /**
- * Metadata view of a {@link TenantDocument} for the ticket detail API (Phase 3.2) — never the
+ * Metadata view of a {@link TenantDocument} for the ticket detail API — never the
  * file bytes. Used both for the currently attached document and the documents available to attach.
  */
 public record DocumentRefDto(

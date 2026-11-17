@@ -1,24 +1,24 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { User } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
-type Msg = { kind: 'success' | 'danger'; text: string } | null
-
-// React port of users.html (Phase 3.2). Operator management backed by Keycloak: list, add, reset
-// password, delete (the API blocks deleting your own account). The Bootstrap modals are replaced
-// with inline forms — an always-visible "Add operator" card and a per-row password field toggled
-// open. Each mutation returns the refreshed list, which re-renders the table. The old Thymeleaf
-// page stays live until cutover.
+// Operator management backed by Keycloak: list, add, reset
+// password, delete (the API blocks deleting your own account). Inline forms instead of modals —
+// an always-visible "Add operator" card and a per-row password field toggled
+// open. Each mutation returns the refreshed list, which re-renders the table.
 export default function UsersPage() {
   const api = useApi()
 
-  const [users, setUsers] = useState<User[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
   // Add-operator form.
   const [email, setEmail] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('OPERATOR')
 
@@ -26,30 +26,22 @@ export default function UsersPage() {
   const [pwForId, setPwForId] = useState<string | null>(null)
   const [pwValue, setPwValue] = useState('')
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setUsers(await api.get<User[]>('/api/users'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load users')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<User[]>('/api/users'), [api])
+  const { data: users, setData: setUsers, error } = usePageData(load, 'Failed to load users')
 
   const createUser = async (e: React.FormEvent) => {
     e.preventDefault()
     setMsg(null)
     try {
-      setUsers(await api.post<User[]>('/api/users', { email, password, role }))
+      setUsers(await api.post<User[]>('/api/users', { email, firstName, lastName, password, role }))
       setMsg({ kind: 'success', text: `User ${email.trim().toLowerCase()} created.` })
       setEmail('')
+      setFirstName('')
+      setLastName('')
       setPassword('')
       setRole('OPERATOR')
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Create failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Create failed') })
     }
   }
 
@@ -60,7 +52,7 @@ export default function UsersPage() {
       setUsers(await api.post<User[]>(`/api/users/${id}/role`, { role: newRole }))
       setMsg({ kind: 'success', text: `Role updated to ${newRole}.` })
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Role change failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Role change failed') })
     }
   }
 
@@ -73,7 +65,7 @@ export default function UsersPage() {
       setPwForId(null)
       setPwValue('')
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Password change failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Password change failed') })
     }
   }
 
@@ -84,7 +76,7 @@ export default function UsersPage() {
       setUsers(await api.del<User[]>(`/api/users/${id}`))
       setMsg({ kind: 'success', text: 'User deleted.' })
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Delete failed') })
     }
   }
 
@@ -93,12 +85,7 @@ export default function UsersPage() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="Operators"
@@ -110,12 +97,24 @@ export default function UsersPage() {
         <div className="card-header fw-semibold">Add operator</div>
         <div className="card-body">
           <form onSubmit={createUser} className="row g-2 align-items-end">
-            <div className="col-md-4">
+            <div className="col-md-6">
               <label className="form-label small mb-1">Email</label>
               <input type="email" className="form-control form-control-sm" placeholder="operator@company.com"
                      value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div className="col-md-3">
+              <label className="form-label small mb-1">First name</label>
+              <input type="text" className="form-control form-control-sm" maxLength={100}
+                     value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+            </div>
+            <div className="col-md-3">
+              <label className="form-label small mb-1">
+                Last name <span className="text-muted">(signs their replies)</span>
+              </label>
+              <input type="text" className="form-control form-control-sm" maxLength={100}
+                     value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+            </div>
+            <div className="col-md-5">
               <label className="form-label small mb-1">
                 Password <span className="text-muted">(min 10, Aa1)</span>
               </label>
@@ -123,7 +122,7 @@ export default function UsersPage() {
                      placeholder="10+ chars, mixed case + digit"
                      value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
-            <div className="col-md-2">
+            <div className="col-md-4">
               <label className="form-label small mb-1">Role</label>
               <select className="form-select form-select-sm" value={role}
                       onChange={(e) => setRole(e.target.value)}>

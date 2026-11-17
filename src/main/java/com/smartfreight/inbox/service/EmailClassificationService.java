@@ -9,31 +9,30 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
-import java.util.Map;
+import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Incoming email relevance + type classifier.
  *
  * Uses Qwen 2.5 (same model as AiExtractionService) to decide whether an email is
- * a freight/shipping inquiry and, since Phase 1.4, which business type it is —
+ * a freight/shipping inquiry and which business type it is —
  * one LLM call answers both questions with a single word:
  *
  *   IRRELEVANT                       - other mail, parked as a terminal IRRELEVANT ticket
  *   RFQ / STATUS_UPDATE / BOOKING_CONFIRM / INVOICE_QUERY / DOCUMENT_REQUEST / GENERAL
  *                                    - relevant, with the type persisted on the ticket
  *
- * The typed prompt is gated by the {@code feature.ticket-type} flag (plan-gating seam,
- * same convention as attachment parsing / rate sheets). With the flag off the classifier
- * falls back to the pre-1.4 binary RELEVANT/IRRELEVANT prompt and assigns no type.
+ * (The pre-1.4 binary RELEVANT/IRRELEVANT mode and its {@code feature.ticket-type} flag were removed
+ * on 17 Nov 2026 — no tenant used it. Tickets classified back then keep a null type.)
  *
  * Fail-open principle: if Ollama is unavailable or answers something unexpected, the
- * email is treated as RELEVANT (type GENERAL when typed) so that no real customer
+ * email is treated as RELEVANT (type GENERAL) so that no real customer
  * request is lost due to an AI outage.
  *
- * Execution context (Phase 1.3 session 3): called from TicketProcessingService inside
+ * Execution context: called from TicketClassificationStep inside
  * the RabbitMQ consumer for tickets in RECEIVED status — never on the IMAP thread.
  */
 @Service
@@ -41,15 +40,19 @@ public class EmailClassificationService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailClassificationService.class);
 
-    /** Feature flag gating the typed (Phase 1.4) prompt; off = pre-1.4 binary classification. */
-    public static final String FEATURE_KEY = "feature.ticket-type";
-
     /**
-     * Feature flag gating the Phase 3.10 smart-routing extension (urgency + sentiment in the same call).
-     * Default ON. It only adds signals on top of the typed verdict — when {@link #FEATURE_KEY} is off
-     * (binary mode) there is no type to ride along, so urgency/sentiment are not requested either.
+     * Feature flag gating the smart-routing extension (urgency + sentiment in the same call).
+     * Default ON. It only adds signals on top of the typed verdict.
      */
     public static final String FEATURE_SMART_ROUTING = "feature.smart-routing";
+
+    /**
+     * Per-tenant setting: the Keycloak user UUID that escalated (HIGH urgency / negative
+     * sentiment) tickets are auto-assigned to. Blank/unset → no auto-assign (escalation still tightens
+     * the SLA + floats the ticket to the top of the queue). Resolved via the standard
+     * {@code tenant_setting → app_setting → default} chain.
+     */
+    public static final String KEY_ESCALATION_ASSIGNEE = "routing.escalation-assignee";
 
     /** Maximum email body length sent to the classifier — shorter than for extraction since one-word answer is faster. */
     private static final int MAX_CLASSIFICATION_BODY_CHARS = 1000;
@@ -61,22 +64,22 @@ public class EmailClassificationService {
      * Outcome of one classification call.
      *
      * @param relevant          whether the email is a freight inquiry (false = park as IRRELEVANT)
-     * @param type              business type; null when irrelevant or when {@code feature.ticket-type} is off
-     * @param urgency           how time-critical the email is (Phase 3.10); NORMAL when smart routing is off
-     * @param sentimentNegative whether the customer's tone reads negative (Phase 3.10); false when off
+     * @param type              business type; null when irrelevant
+     * @param urgency           how time-critical the email is; NORMAL when smart routing is off
+     * @param sentimentNegative whether the customer's tone reads negative; false when off
      */
     public record ClassificationResult(boolean relevant, TicketType type,
                                        Urgency urgency, boolean sentimentNegative) {
 
-        /** Relevance + type with no routing signals (NORMAL/calm) — retry path, binary mode, fail-open. */
+        /** Relevance + type with no routing signals (NORMAL/calm) — retry path, fail-open. */
         public ClassificationResult(boolean relevant, TicketType type) {
             this(relevant, type, Urgency.NORMAL, false);
         }
 
         /**
-         * The single definition of "escalated" (Phase 3.10): HIGH urgency or a negative tone. Drives the
+         * The single definition of "escalated" (docs/adr/0012-smart-routing.md): HIGH urgency or a negative tone. Drives the
          * tighter SLA window and the escalation auto-assign — see {@link SlaService#deadlineFor} and
-         * {@link TicketProcessingService}. (The escalated-first list sort re-encodes this as column order,
+         * {@link TicketClassificationStep}. (The escalated-first list sort re-encodes this as column order,
          * and the metric counts the two reasons separately, so those two stay self-contained by design.)
          */
         public boolean isEscalated() {
@@ -88,17 +91,17 @@ public class EmailClassificationService {
 
     private final String model;
 
-    private final OllamaClientProvider ollamaClients;
+    private final LlmClient llmClient;
     private final SettingsService settingsService;
     private final MeterRegistry meterRegistry;
     private final Counter relevantCounter;
     private final Counter irrelevantCounter;
 
-    public EmailClassificationService(OllamaClientProvider ollamaClients,
+    public EmailClassificationService(LlmClient llmClient,
                                       SettingsService settingsService,
                                       MeterRegistry meterRegistry,
                                       @Value("${ollama.extraction-model:qwen2.5:7b}") String model) {
-        this.ollamaClients = ollamaClients;
+        this.llmClient = llmClient;
         this.settingsService = settingsService;
         this.meterRegistry = meterRegistry;
         this.model = model;
@@ -132,103 +135,65 @@ public class EmailClassificationService {
             return ClassificationResult.IRRELEVANT;
         }
 
-        boolean typed = settingsService.isFeatureEnabled(FEATURE_KEY, true);
-        // Smart routing (Phase 3.10) rides on the typed verdict — no type, nothing to route.
-        boolean smartRouting = typed && settingsService.isFeatureEnabled(FEATURE_SMART_ROUTING, true);
+        boolean smartRouting = settingsService.isFeatureEnabled(FEATURE_SMART_ROUTING, true);
 
         String truncatedBody = body.substring(0, Math.min(body.length(), MAX_CLASSIFICATION_BODY_CHARS));
         String safeSubject = subject != null ? subject : "";
 
-        String instruction = typed ? (smartRouting ? typedRoutingPrompt() : typedPrompt()) : binaryPrompt();
+        String instruction = smartRouting ? typedRoutingPrompt() : typedPrompt();
         String prompt = instruction
                 + "\n\nSubject: " + safeSubject + "\n"
                 + "Email:\n" + truncatedBody;
 
         String answer;
         try {
-            Map<String, Object> requestBody = Map.of(
-                    "model", model,
-                    "prompt", prompt,
-                    "stream", false
-            );
-
-            // Phase 2.2 S3: client + breaker resolved per call for the CURRENT tenant's endpoint.
-            WebClient ollamaWebClient = ollamaClients.client();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block(CLASSIFICATION_TIMEOUT));
-            ollamaClients.recordUsage("classification", model, response);
-
-            if (response == null) {
+            Optional<String> text = llmClient.generate("classification", model, prompt, CLASSIFICATION_TIMEOUT);
+            if (text.isEmpty()) {
                 log.warn("Ollama returned null for classification - treating as relevant (fail-open)");
-                return record(failOpen(typed));
+                return record(failOpen());
             }
-            answer = String.valueOf(response.getOrDefault("response", "")).trim().toUpperCase();
+            answer = text.get().trim().toUpperCase(Locale.ROOT);
         } catch (CallNotPermittedException e) {
             // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
-            // ticket as RETRY_LATER (Phase 1.7) — a real classification verdict will be made
-            // on retry (see TicketProcessingService: unclassified typed tickets re-enter step 0).
+            // ticket as RETRY_LATER — a real classification verdict will be made
+            // on retry (see TicketClassificationStep#needsClassification: unclassified tickets re-enter step 0).
             log.warn("Ollama circuit breaker is open — classification call not attempted");
             throw e;
         } catch (Exception e) {
             log.warn("Classification call failed: {} - treating as relevant (fail-open)", e.getMessage());
-            return record(failOpen(typed));
+            return record(failOpen());
         }
 
         log.debug("Classification response: '{}'", answer);
-        return record(parseAnswer(answer, typed, smartRouting));
+        return record(parseAnswer(answer, smartRouting));
     }
 
-    /**
-     * Whether typed classification (Phase 1.4) is active. In typed mode a persisted
-     * {@code ticketType} is the durable marker that classification produced a verdict —
-     * the pipeline uses this to re-run step 0 for tickets that were parked by an open
-     * circuit breaker before classification could happen (Phase 1.7). Binary mode
-     * persists nothing, so there the retry path keeps its historical skip.
-     */
-    public boolean isTypedMode() {
-        return settingsService.isFeatureEnabled(FEATURE_KEY, true);
-    }
-
-    /** Backwards-compatible parse with no smart-routing signals (relevance + type only). */
-    static ClassificationResult parseAnswer(String answer, boolean typed) {
-        return parseAnswer(answer, typed, false);
+    /** Parse with no smart-routing signals (relevance + type only). */
+    static ClassificationResult parseAnswer(String answer) {
+        return parseAnswer(answer, false);
     }
 
     /**
      * Maps the model's answer to a result.
      *
-     * In smart-routing mode (typed + {@code feature.smart-routing}) the model replies
+     * In smart-routing mode ({@code feature.smart-routing}) the model replies
      * {@code TYPE|URGENCY|SENTIMENT} (e.g. {@code RFQ|HIGH|NEGATIVE}); the answer is split on '|' and
      * each field parsed independently and leniently. Otherwise only the first field (the type / RELEVANT
      * / IRRELEVANT word) matters and the routing fields stay at their fail-open defaults (NORMAL/calm).
      *
      * IRRELEVANT is checked first (it contains "RELEVANT" as a substring) and short-circuits — spam
-     * carries no urgency/sentiment. In typed mode the type field is matched against the {@link TicketType}
-     * names; a bare RELEVANT or anything unrecognised falls back to GENERAL (fail-open). In binary mode
-     * the pre-1.4 contract holds: relevant with no type.
+     * carries no urgency/sentiment. The type field is matched against the {@link TicketType} names; a bare
+     * RELEVANT or anything unrecognised falls back to GENERAL (fail-open).
      *
      * Package-private for unit testing.
      */
-    static ClassificationResult parseAnswer(String answer, boolean typed, boolean smartRouting) {
+    static ClassificationResult parseAnswer(String answer, boolean smartRouting) {
         String[] fields = answer.split("\\|");   // split always yields length >= 1
         String typeField = fields[0].trim();
 
         if (typeField.startsWith("IRRELEVANT")) {
             return ClassificationResult.IRRELEVANT;
         }
-        if (!typed) {
-            if (!typeField.startsWith("RELEVANT")) {
-                logUnexpected(answer, "relevant");
-            }
-            return new ClassificationResult(true, null);
-        }
-
         TicketType type = firstStartingWith(typeField, TicketType.values(), null);
         if (type == null) {
             if (!typeField.startsWith("RELEVANT")) {
@@ -258,14 +223,14 @@ public class EmailClassificationService {
         return fallback;
     }
 
-    /** Raw model output can echo the email, so its content goes to DEBUG only (Gate B3). */
+    /** Raw model output can echo the email, so its content goes to DEBUG only. */
     private static void logUnexpected(String answer, String fallback) {
         log.warn("Unexpected classification answer ({} chars) - treating as {} (fail-open)", answer.length(), fallback);
         log.debug("Unexpected classification answer: '{}'", answer);
     }
 
-    private static ClassificationResult failOpen(boolean typed) {
-        return new ClassificationResult(true, typed ? TicketType.GENERAL : null);
+    private static ClassificationResult failOpen() {
+        return new ClassificationResult(true, TicketType.GENERAL);
     }
 
     /** Updates metrics and logs the outcome; returns the result unchanged. */
@@ -282,7 +247,7 @@ public class EmailClassificationService {
         } else {
             log.info("Email classified as RELEVANT - proceeding to pipeline");
         }
-        // Phase 3.10: count escalations (HIGH urgency and/or negative tone) for routing observability.
+        // Count escalations (HIGH urgency and/or negative tone) for routing observability.
         // Like smartfreight_tickets_type_total above, this counts classification VERDICTS, not unique
         // tickets — a ticket whose pipeline rolls back after classification and re-classifies on retry
         // is counted again. That's acceptable for an observability gauge (and consistent with the type
@@ -296,7 +261,7 @@ public class EmailClassificationService {
         return result;
     }
 
-    /** Phase 1.4 prompt: one word — IRRELEVANT or a business type. */
+    /** Typed prompt: one word — IRRELEVANT or a business type. */
     private static String typedPrompt() {
         return "You are a logistics email classifier.\n"
                 + "If this email is NOT related to freight, shipping or logistics, reply IRRELEVANT.\n"
@@ -312,7 +277,7 @@ public class EmailClassificationService {
     }
 
     /**
-     * Phase 3.10 prompt: the typed verdict plus urgency and sentiment in ONE answer, pipe-separated —
+     * Smart-routing prompt: the typed verdict plus urgency and sentiment in ONE answer, pipe-separated —
      * {@code TYPE|URGENCY|SENTIMENT}. Kept terse and example-anchored so a local 7B stays on format;
      * the parser is lenient and fail-open, so drift degrades to NORMAL/calm rather than an error.
      */
@@ -330,11 +295,5 @@ public class EmailClassificationService {
                 + "Reply with ONLY that one line, no explanation.";
     }
 
-    /** Pre-1.4 binary prompt, used when feature.ticket-type is off. */
-    private static String binaryPrompt() {
-        return "You are a logistics email classifier.\n"
-                + "Decide if this email is a freight or shipping inquiry "
-                + "(container status, location, ETA, delivery, customs, tracking, shipment update, etc.).\n"
-                + "Reply with exactly one word: RELEVANT or IRRELEVANT.";
-    }
+    /** Binary prompt, used when feature.ticket-type is off. */
 }

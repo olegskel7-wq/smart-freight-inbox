@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * GET {@code /api/settings} payload (Phase 3.2) — everything the React Settings page renders, mirroring
+ * GET {@code /api/settings} payload — everything the React Settings page renders, mirroring
  * the model the Thymeleaf {@code settings.html} was given. Stored CSV/number settings are passed through
  * as their raw strings (the SPA edits them the same way the form did); the auto-send type allow-list is
  * split into a list for the checkboxes. The platform SMTP block is read-only (environment-sourced).
@@ -38,8 +38,8 @@ public record SettingsResponse(
      * Row view of a tenant mailbox. {@code sendsAs} is the address replies go out from when this mailbox
      * has its own SMTP (else null → the SPA shows the platform fallback); {@code running} reflects whether
      * the IMAP adapter is registered yet (the reconciler starts it within ~30 s). {@code loginOk} is the
-     * last login probe's verdict (Gate B4; null = not probed yet), with the time of the last good login
-     * and the masked failure reason. The raw SMTP fields seed the edit form (Gate B15); the password is
+     * last login probe's verdict (null = not probed yet), with the time of the last good login
+     * and the masked failure reason. The raw SMTP fields seed the edit form; the password is
      * never returned.
      */
     public record MailboxDto(

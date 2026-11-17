@@ -2,9 +2,9 @@ package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.controller.dto.TrainingExampleDto;
 import com.smartfreight.inbox.controller.dto.TrainingExamplesResponse;
-import com.smartfreight.inbox.repository.TrainingExampleRepository;
 import com.smartfreight.inbox.service.FeedbackLoopService;
 import com.smartfreight.inbox.service.SettingsService;
+import com.smartfreight.inbox.service.TrainingExampleService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /training-examples} page (Phase 3.2). It mirrors
+ * JSON API backing the React {@code /training-examples} page. It mirrors
  * {@link TrainingExampleController} (the Thymeleaf curation UI) but speaks DTOs over
  * {@code /api/training-examples} and is secured by the stateless resource-server chain (bearer JWT).
  * The two controllers run side by side during the migration; this one collapses to the only one when
@@ -28,12 +28,12 @@ import java.util.List;
 @RequestMapping("/api/training-examples")
 public class TrainingExampleApiController {
 
-    private final TrainingExampleRepository repository;
+    private final TrainingExampleService trainingExamples;
     private final SettingsService settingsService;
 
-    public TrainingExampleApiController(TrainingExampleRepository repository,
+    public TrainingExampleApiController(TrainingExampleService trainingExamples,
                                         SettingsService settingsService) {
-        this.repository = repository;
+        this.trainingExamples = trainingExamples;
         this.settingsService = settingsService;
     }
 
@@ -51,15 +51,13 @@ public class TrainingExampleApiController {
      */
     @DeleteMapping("/{id}")
     public TrainingExamplesResponse delete(@PathVariable Long id) {
-        if (repository.existsById(id)) {
-            repository.deleteById(id);
-        }
+        trainingExamples.deleteIfPresent(id);
         return buildResponse();
     }
 
     /** Snapshots the current tenant's captured corrections (newest first) into the DTO. */
     private TrainingExamplesResponse buildResponse() {
-        List<TrainingExampleDto> examples = repository.findAllByOrderByCreatedAtDesc()
+        List<TrainingExampleDto> examples = trainingExamples.listNewestFirst()
                 .stream()
                 .map(TrainingExampleDto::from)
                 .toList();

@@ -5,7 +5,7 @@ import com.smartfreight.inbox.entity.KnowledgeDoc;
 import java.time.LocalDateTime;
 
 /**
- * One knowledge-base document for the React {@code /knowledge} page (Phase 3.9).
+ * One knowledge-base document for the React {@code /knowledge} page.
  *
  * <p>Unlike {@link TrainingExampleDto} the full {@link #content} is shipped, not a preview: knowledge
  * documents are short operator-authored text (FAQ answers / policies), and the page lets the operator

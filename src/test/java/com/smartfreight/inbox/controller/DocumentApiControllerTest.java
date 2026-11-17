@@ -24,6 +24,7 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -66,9 +67,17 @@ class DocumentApiControllerTest {
         when(settingsService.isFeatureEnabled(eq(DocumentService.FEATURE_KEY), anyBoolean()))
                 .thenReturn(true);
 
+        // store() stays a mock; reads and deletes run the real service over the repository mock.
+        DocumentService real = new DocumentService(documentRepository);
+        when(documentService.listNewestFirst()).thenAnswer(i -> real.listNewestFirst());
+        when(documentService.find(any())).thenAnswer(i -> real.find(i.getArgument(0)));
+        doAnswer(i -> {
+            real.deleteIfPresent(i.getArgument(0));
+            return null;
+        }).when(documentService).deleteIfPresent(any());
+
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DocumentApiController(
-                        documentService, documentRepository, settingsService))
+                .standaloneSetup(new DocumentApiController(documentService, settingsService))
                 .build();
     }
 

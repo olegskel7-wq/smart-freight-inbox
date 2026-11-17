@@ -12,8 +12,11 @@ jobs:
     name: Deploy to VPS
     runs-on: ubuntu-latest
 
-    # Деплоим только если CI прошёл успешно
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Деплоим только если CI прошёл успешно И деплой включён.
+    # ⚠️ ВЫКЛЮЧЕНО с 01.11.2026: VPS ещё нет (Gate C). Чтобы включить — GitHub → Settings → Secrets and
+    # variables → Actions: секреты DEPLOY_* (см. ниже) + Variables → DEPLOY_ENABLED = true.
+    # Без переменной job пропускается (skipped), а не падает на «missing server host».
+    if: ${{ github.event.workflow_run.conclusion == 'success' && vars.DEPLOY_ENABLED == 'true' }}
 
     steps:
       # 1. Скачать код (нужен docker-compose.yml и конфиги)
@@ -34,8 +37,10 @@ jobs:
       #   DEPLOY_USER      — SSH user (e.g. ubuntu)
       #   DEPLOY_SSH_KEY   — private SSH key contents (~/.ssh/id_rsa)
       #   DEPLOY_PATH      — project path on the server (e.g. /home/ubuntu/smartfreight)
-      #   DEPLOY_ENV_B64   — base64-encoded .env file contents
-      #                      Encode locally: base64 -w 0 .env.prod | pbcopy
+      #
+      # Gate C5: NO application secrets pass through GitHub. They are provisioned once on the server
+      # (SECRETS_DIR, outside DEPLOY_PATH) and the server's .env holds only non-secret config —
+      # docs/ops/secrets.md. (The old DEPLOY_ENV_B64 GitHub secret is unused — delete it.)
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -51,11 +56,7 @@ jobs:
             echo "=== Pulling latest code ==="
             git pull origin main
 
-            echo "=== Writing .env file ==="
-            printf '%s' "${{ secrets.DEPLOY_ENV_B64 }}" | base64 -d > .env
-            chmod 600 .env
-
-            echo "=== Checking .env (no dev credentials / dev-only switches) ==="
+            echo "=== Checking .env + SECRETS_DIR (no dev credentials / in-repo secrets / dev-only switches) ==="
             sh scripts/check-prod-env.sh .env
 
             echo "=== Rebuilding app containers ==="

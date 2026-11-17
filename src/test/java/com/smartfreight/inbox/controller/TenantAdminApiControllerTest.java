@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.Tenant;
+import com.smartfreight.inbox.service.LlmProviderSettings;
+import com.smartfreight.inbox.service.OperatorName;
 import com.smartfreight.inbox.service.TenantManagementService;
 import com.smartfreight.inbox.service.TenantManagementService.TenantSummary;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,8 +19,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -36,7 +40,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @MockitoSettings(strictness = Strictness.LENIENT)
 class TenantAdminApiControllerTest {
 
+    private static final OperatorName DANA = new OperatorName("Dana", "Price");
+
     @Mock private TenantManagementService tenantManagementService;
+    @Mock private LlmProviderSettings llmProviders;
 
     private MockMvc mockMvc;
 
@@ -49,9 +56,11 @@ class TenantAdminApiControllerTest {
                 .build();
         when(tenantManagementService.overview())
                 .thenReturn(List.of(new TenantSummary(tenant, 3L)));
+        when(llmProviders.providerOf(1L)).thenReturn("local");
+        when(tenantManagementService.exists(1L)).thenReturn(true);
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new TenantAdminApiController(tenantManagementService))
+                .standaloneSetup(new TenantAdminApiController(tenantManagementService, llmProviders))
                 .build();
     }
 
@@ -62,45 +71,102 @@ class TenantAdminApiControllerTest {
                 .andExpect(jsonPath("$[0].id").value(1))
                 .andExpect(jsonPath("$[0].name").value("Default"))
                 .andExpect(jsonPath("$[0].userCount").value(3))
-                .andExpect(jsonPath("$[0].createdAt").exists());
+                .andExpect(jsonPath("$[0].createdAt").exists())
+                .andExpect(jsonPath("$[0].llmProvider").value("local"));
     }
 
     @Test
     void createDelegatesAndReturnsSnapshot() throws Exception {
-        when(tenantManagementService.createTenant(eq("Acme Ltd"), eq("ops@acme.co.uk"), eq("password123")))
+        when(tenantManagementService.createTenant(eq("Acme Ltd"), eq("ops@acme.co.uk"), eq(DANA), eq("password123")))
                 .thenReturn(Tenant.builder().id(2L).name("Acme Ltd").build());
 
         mockMvc.perform(post("/api/admin/tenants")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Acme Ltd\",\"adminEmail\":\"ops@acme.co.uk\","
-                                + "\"adminPassword\":\"password123\"}"))
+                                + "\"adminFirstName\":\"Dana\",\"adminLastName\":\"Price\",\"adminPassword\":\"password123\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("Default"));
 
-        verify(tenantManagementService).createTenant("Acme Ltd", "ops@acme.co.uk", "password123");
+        verify(tenantManagementService).createTenant("Acme Ltd", "ops@acme.co.uk", DANA, "password123");
+    }
+
+    @Test
+    void createWithoutTheAdminsNameIsBadRequest() throws Exception {
+        // Gate B6: a nameless first user signs replies "Customer Service Team" and is stopped by
+        // Keycloak's profile form on first login.
+        mockMvc.perform(post("/api/admin/tenants")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Acme Ltd\",\"adminEmail\":\"ops@acme.co.uk\","
+                                + "\"adminPassword\":\"password123\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(tenantManagementService, never()).createTenant(any(), any(), any(), any());
     }
 
     @Test
     void createPropagatesValidationErrorAsBadRequest() throws Exception {
         doThrow(new IllegalArgumentException("Tenant 'Default' already exists."))
-                .when(tenantManagementService).createTenant(eq("Default"), eq("ops@acme.co.uk"), eq("password123"));
+                .when(tenantManagementService).createTenant(eq("Default"), eq("ops@acme.co.uk"), eq(DANA), eq("password123"));
 
         mockMvc.perform(post("/api/admin/tenants")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Default\",\"adminEmail\":\"ops@acme.co.uk\","
-                                + "\"adminPassword\":\"password123\"}"))
+                                + "\"adminFirstName\":\"Dana\",\"adminLastName\":\"Price\",\"adminPassword\":\"password123\"}"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void createWithShortPasswordIsBadRequest() throws Exception {
         doThrow(new IllegalArgumentException("Password must be at least 8 characters long."))
-                .when(tenantManagementService).createTenant(eq("Acme Ltd"), eq("ops@acme.co.uk"), eq("short"));
+                .when(tenantManagementService).createTenant(eq("Acme Ltd"), eq("ops@acme.co.uk"), eq(DANA), eq("short"));
 
         mockMvc.perform(post("/api/admin/tenants")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Acme Ltd\",\"adminEmail\":\"ops@acme.co.uk\","
-                                + "\"adminPassword\":\"short\"}"))
+                                + "\"adminFirstName\":\"Dana\",\"adminLastName\":\"Price\",\"adminPassword\":\"short\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    // ---- LLM provider switch (SUPER_ADMIN) ------------------------------------------------
+
+    private org.springframework.test.web.servlet.ResultActions switchTo(long id, String body) throws Exception {
+        return mockMvc.perform(post("/api/admin/tenants/" + id + "/llm-provider")
+                .contentType("application/json").content(body));
+    }
+
+    @Test
+    void llmProvider_switchesTheTenant_andAnswersWithTheList() throws Exception {
+        when(llmProviders.providerOf(1L)).thenReturn("cloud");
+
+        switchTo(1, "{\"provider\":\"cloud\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].llmProvider").value("cloud"));
+
+        verify(llmProviders).setProvider(1L, "cloud");
+    }
+
+    @Test
+    void llmProvider_unknownTenant_is404_andNothingIsWritten() throws Exception {
+        switchTo(99, "{\"provider\":\"cloud\"}").andExpect(status().isNotFound());
+
+        verify(llmProviders, never()).setProvider(any(), any());
+    }
+
+    @Test
+    void llmProvider_unknownProvider_is400() throws Exception {
+        doThrow(new IllegalArgumentException("LLM provider must be 'local' or 'cloud'."))
+                .when(llmProviders).setProvider(1L, "gpt");
+
+        switchTo(1, "{\"provider\":\"gpt\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(status().reason("LLM provider must be 'local' or 'cloud'."));
+    }
+
+    @Test
+    void llmProvider_cloudWithoutAKey_is409() throws Exception {
+        doThrow(new IllegalStateException("The cloud LLM is not configured: put ANTHROPIC_API_KEY in SECRETS_DIR first."))
+                .when(llmProviders).setProvider(1L, "cloud");
+
+        switchTo(1, "{\"provider\":\"cloud\"}").andExpect(status().isConflict());
     }
 }

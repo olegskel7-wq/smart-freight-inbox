@@ -27,7 +27,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Delivers queued webhook events to tenant endpoints (Phase 3.5).
+ * Delivers queued webhook events to tenant endpoints.
  *
  * <p>The send half of the webhook outbox, mirroring {@code OutboxRelay}: a scheduled poll locks due
  * {@code PENDING} deliveries with {@code FOR UPDATE SKIP LOCKED} (multi-instance safe) inside a
@@ -63,7 +63,7 @@ public class WebhookDispatcher {
     @Value("${webhook.max-attempts:8}")
     private int maxAttempts;
 
-    /** Auto-disable a subscription after this many fully-failed (DEAD) deliveries in a row (Phase 3.5 S2). */
+    /** Auto-disable a subscription after this many fully-failed (DEAD) deliveries in a row. */
     @Value("${webhook.auto-disable-after:3}")
     private int autoDisableAfter;
 
@@ -136,7 +136,7 @@ public class WebhookDispatcher {
             return;
         }
 
-        // Phase 3.5 S2: re-validate the URL at delivery time. A name safe when the operator saved it can
+        // Re-validate the URL at delivery time. A name safe when the operator saved it can
         // resolve to an internal address later (DNS rebinding); re-resolving here closes that hole. An
         // unsafe URL is terminal — retrying would just re-resolve to the same blocked address.
         try {
@@ -183,7 +183,7 @@ public class WebhookDispatcher {
     }
 
     /**
-     * Phase 3.5 S2: tracks a subscription's delivery health after a row settles. A {@code DELIVERED}
+     * Tracks a subscription's delivery health after a row settles. A {@code DELIVERED}
      * resets the consecutive-failure run; a {@code DEAD} delivery extends it, and once the run reaches
      * {@code webhook.auto-disable-after} the endpoint is auto-disabled with a recorded reason so a
      * permanently-dead receiver stops generating doomed deliveries (and the UI can show why). A delivery

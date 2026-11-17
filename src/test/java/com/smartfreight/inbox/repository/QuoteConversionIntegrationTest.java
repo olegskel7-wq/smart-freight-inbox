@@ -94,6 +94,18 @@ class QuoteConversionIntegrationTest {
     }
 
     @Test
+    void bookingFromALongerAddressEndingTheSameWay_doesNotConvert() {
+        quote("an@example.com", SINCE.plusDays(1));
+        booking("jan@example.com", SINCE.plusDays(2));
+        booking("Jan <jan@example.com>", SINCE.plusDays(2));
+
+        QuoteConversion c = quotes.quoteConversionSince(SINCE);
+
+        assertThat(c.getQuotes()).isEqualTo(1);
+        assertThat(c.getConverted()).isZero();
+    }
+
+    @Test
     void perQuoteCounting_sameCustomerQuotedTwiceBookedOnce_convertsBoth() {
         quote("carol@example.com", SINCE.plusDays(1));
         quote("carol@example.com", SINCE.plusDays(3));

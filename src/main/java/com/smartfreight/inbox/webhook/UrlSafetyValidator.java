@@ -7,7 +7,7 @@ import java.net.URI;
 import java.net.UnknownHostException;
 
 /**
- * Validates a webhook destination URL before it is saved (Phase 3.5).
+ * Validates a webhook destination URL before it is saved.
  *
  * <p>In a multi-tenant platform a webhook URL is attacker-controlled input: without checks a tenant
  * could point one at internal infrastructure (the database, the metadata endpoint, another tenant's

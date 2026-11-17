@@ -6,13 +6,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
- * CRUD facade for operator accounts used by the self-service UI (Phase 2.2 S2,
- * reworked for Keycloak in Phase 2.3 S2).
+ * CRUD facade for operator accounts used by the self-service UI.
  *
- * <p>Backing store is now <b>Keycloak</b> (decision 2, single realm): users carry a
+ * <p>Backing store is <b>Keycloak</b> (single realm, see docs/adr/0007-keycloak-identity.md): users carry a
  * {@code tenant_id} attribute and a realm role, and passwords live in Keycloak — they never
  * touch our DB. The legacy {@code app_user} table is gone (V27).
  *
@@ -25,7 +25,7 @@ import java.util.Set;
 public class UserManagementService {
 
     /** Minimum acceptable password length — matches the realm {@code passwordPolicy} (length(10)). */
-    private static final int MIN_PASSWORD_LENGTH = 10;
+    static final int MIN_PASSWORD_LENGTH = 10;
 
     /**
      * User-facing description of the realm password policy (length(10) + upperCase + lowerCase +
@@ -33,12 +33,12 @@ public class UserManagementService {
      * operator gets the actual rule instead of an opaque 500 — the realm stays the single source of
      * truth for the full policy, we just translate its rejection.
      */
-    private static final String PASSWORD_POLICY_MESSAGE =
+    static final String PASSWORD_POLICY_MESSAGE =
             "Password does not meet the security policy: at least 10 characters, including an uppercase "
             + "letter, a lowercase letter and a digit, and it must not be the same as the email.";
 
     /**
-     * Tenant-level roles an admin may hand out (Phase 3.3). SUPER_ADMIN is platform-level and only
+     * Tenant-level roles an admin may hand out. SUPER_ADMIN is platform-level and only
      * granted via the realm seed — it must never be assignable from the tenant self-service UI.
      */
     private static final Set<String> ASSIGNABLE_ROLES = Set.of("OPERATOR", "ADMIN");
@@ -58,28 +58,46 @@ public class UserManagementService {
      * Creates a new operator account in Keycloak, scoped to the caller's tenant.
      *
      * @param email       login email — must be globally unique
+     * @param name        first/last name — signs the operator's replies
      * @param rawPassword initial password — stored by Keycloak (non-temporary)
      * @param role        realm role name (without the {@code ROLE_} prefix)
-     * @throws IllegalArgumentException if the password is too short or the email is already taken
+     * @throws IllegalArgumentException if the password is too short, the email is already taken, or
+     *                                  Keycloak rejects the password or the name
      */
-    public void createUser(String email, String rawPassword, String role) {
+    public void createUser(String email, OperatorName name, String rawPassword, String role) {
         validatePassword(rawPassword);
         validateRole(role);
-        String normalised = email.trim().toLowerCase();
+        String normalised = email.trim().toLowerCase(Locale.ROOT);
         if (keycloakAdminService.emailExists(normalised)) {
             throw new IllegalArgumentException("User with email " + normalised + " already exists.");
         }
         try {
-            keycloakAdminService.createUser(normalised, rawPassword, currentTenantId(), role);
+            keycloakAdminService.createUser(normalised, name, rawPassword, currentTenantId(), role);
         } catch (WebClientResponseException.BadRequest e) {
-            // Keycloak enforces the full realm passwordPolicy (upper/lower/digit/notUsername) that our
-            // cheap length check cannot — translate its 400 into a clear message, not an opaque 500.
-            throw new IllegalArgumentException(PASSWORD_POLICY_MESSAGE);
+            throw rejection(e);
         }
     }
 
     /**
-     * Changes an operator's tenant role (OPERATOR ↔ ADMIN, Phase 3.3). Refuses to change the
+     * Translates Keycloak's 400 on user creation into a clear message, not an opaque 500. Keycloak
+     * enforces the full realm passwordPolicy (upper/lower/digit/notUsername) that our cheap length
+     * check cannot, and its user profile refuses some characters in a name; each gets its own message
+     * so a bad name is never reported as a bad password.
+     */
+    static IllegalArgumentException rejection(WebClientResponseException.BadRequest e) {
+        String body = e.getResponseBodyAsString();
+        if (body.contains("invalidPassword")) {
+            return new IllegalArgumentException(PASSWORD_POLICY_MESSAGE);
+        }
+        if (body.contains("person-name")) {
+            return new IllegalArgumentException(
+                    "The name contains characters that are not allowed (such as < > & \" $ % ! # ; * / =).");
+        }
+        return new IllegalArgumentException("The identity provider rejected this user — check the email and name.");
+    }
+
+    /**
+     * Changes an operator's tenant role (OPERATOR ↔ ADMIN). Refuses to change the
      * caller's own role — an admin demoting themselves could lock the tenant out of its own
      * management surface (mirrors the {@link #deleteUser} self-guard).
      *

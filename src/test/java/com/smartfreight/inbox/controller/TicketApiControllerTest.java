@@ -3,25 +3,10 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.entity.enums.TicketType;
-import com.smartfreight.inbox.repository.EmailTicketRepository;
-import com.smartfreight.inbox.webhook.WebhookEventPublisher;
 import com.smartfreight.inbox.webhook.WebhookEventType;
-import com.smartfreight.inbox.repository.TenantDocumentRepository;
-import com.smartfreight.inbox.service.EmailReplyService;
-import com.smartfreight.inbox.service.FeedbackLoopService;
-import com.smartfreight.inbox.service.KeycloakAdminService;
-import com.smartfreight.inbox.service.QuoteFollowUpService;
-import com.smartfreight.inbox.service.SendRateLimiter;
 import com.smartfreight.inbox.service.TicketAuditService;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import com.smartfreight.inbox.entity.enums.Urgency;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -29,15 +14,15 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.hamcrest.Matchers.endsWith;
+import static org.hamcrest.Matchers.hasLength;
+import static org.hamcrest.Matchers.startsWith;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -53,41 +38,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Standalone MockMvc tests for the JSON ticket API (Phase 3.2). No security/tenant filter here —
- * those are covered by KeycloakJwtRoleConverterTest / TenantFilterTest; this verifies the
- * controller's behaviour and DTO output.
+ * Standalone MockMvc tests for the JSON ticket API: controller behaviour and DTO output
+ * (wiring in {@link TicketApiMockMvcSupport}).
  */
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
-class TicketApiControllerTest {
-
-    @Mock private EmailTicketRepository emailTicketRepository;
-    @Mock private EmailReplyService emailReplyService;
-    @Mock private TicketAuditService auditService;
-    @Mock private SendRateLimiter sendRateLimiter;
-    @Mock private QuoteFollowUpService quoteFollowUpService;
-    @Mock private TenantDocumentRepository documentRepository;
-    @Mock private FeedbackLoopService feedbackLoopService;
-    @Mock private KeycloakAdminService keycloakAdminService;
-    @Mock private WebhookEventPublisher webhookEventPublisher;
-
-    private MockMvc mockMvc;
-
-    @BeforeEach
-    void setUp() {
-        TicketApiController controller = new TicketApiController(
-                emailTicketRepository, emailReplyService, auditService, sendRateLimiter,
-                quoteFollowUpService, documentRepository, feedbackLoopService, keycloakAdminService,
-                webhookEventPublisher);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller)
-                .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
-                .build();
-    }
-
-    @AfterEach
-    void tearDown() {
-        SecurityContextHolder.clearContext();
-    }
+class TicketApiControllerTest extends TicketApiMockMvcSupport {
 
     /** Puts a Keycloak JWT (subject = user id, optional realm roles) in the context. */
     private void authenticateAs(String subject, String... roles) {
@@ -97,18 +51,6 @@ class TicketApiControllerTest {
                 .claim("tenant_id", 1L)
                 .build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
-    }
-
-    private EmailTicket ticket(long id, TicketStatus status) {
-        return EmailTicket.builder()
-                .id(id)
-                .messageId("<m" + id + "@x>")
-                .senderEmail("customer@x.com")
-                .subject("Subject " + id)
-                .status(status)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
     }
 
     @Test
@@ -172,6 +114,23 @@ class TicketApiControllerTest {
         assertThat(orders).hasSize(1);
         assertThat(orders.get(0).getProperty()).isEqualTo("createdAt");
         assertThat(orders.get(0).isAscending()).isTrue();
+    }
+
+    @Test
+    void summaryDtoCarriesOneLineCappedSnippet() throws Exception {
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        t.setBody("Morning,\n\n  Is CMAU5551234 still held?\r\n" + "x".repeat(400));
+        EmailTicket empty = ticket(2, TicketStatus.DRAFT_READY);
+        when(emailTicketRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(t, empty), Pageable.ofSize(50), 2));
+
+        mockMvc.perform(get("/api/tickets"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].snippet").value(
+                        startsWith("Morning, Is CMAU5551234 still held? xxx")))
+                .andExpect(jsonPath("$.content[0].snippet").value(endsWith("…")))
+                .andExpect(jsonPath("$.content[0].snippet").value(hasLength(160)))
+                .andExpect(jsonPath("$.content[1].snippet").doesNotExist());
     }
 
     @Test
@@ -295,12 +254,32 @@ class TicketApiControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CLOSED"));
 
-        verify(emailReplyService).sendReply(t);
+        verify(emailReplyService).sendReply(t, null);
         verify(quoteFollowUpService).armFromTicket(t);
         verify(feedbackLoopService).captureIfEdited(t);
         // Phase 3.5 S2: reply.sent fires for any sent reply; quote.sent only for RFQ (this ticket is untyped).
         verify(webhookEventPublisher).publish(eq(WebhookEventType.REPLY_SENT), any(), any());
         verify(webhookEventPublisher, never()).publish(eq(WebhookEventType.QUOTE_SENT), any(), any());
+    }
+
+    // Drafts are unsigned; the send is signed with the sending operator's Keycloak name.
+    @Test
+    void draftSendSignsAsTheSendingOperator() throws Exception {
+        Jwt jwt = Jwt.withTokenValue("token").header("alg", "none")
+                .subject("op-1").claim("name", "Jane Doe").claim("tenant_id", 1L).build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        EmailTicket t = ticket(1, TicketStatus.DRAFT_READY);
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(t));
+        when(sendRateLimiter.tryAcquire(anyLong())).thenReturn(true);
+
+        mockMvc.perform(post("/api/tickets/1/draft")
+                        .contentType("application/json")
+                        .content("{\"action\":\"send\",\"draftReply\":\"Reply\"}"))
+                .andExpect(status().isOk());
+
+        verify(emailReplyService).sendReply(t, "Jane Doe");
+        // The stored text stays unsigned — the acceptance KPI compares it to the unsigned AI draft.
+        assertThat(t.getDraftReply()).isEqualTo("Reply");
     }
 
     @Test
@@ -334,7 +313,7 @@ class TicketApiControllerTest {
                         .content("{\"action\":\"send\",\"draftReply\":\"Reply\"}"))
                 .andExpect(status().isTooManyRequests());
 
-        verify(emailReplyService, never()).sendReply(any());
+        verify(emailReplyService, never()).sendReply(any(), any());
     }
 
     @Test
@@ -348,7 +327,7 @@ class TicketApiControllerTest {
                 .andExpect(status().isOk());
 
         verify(emailTicketRepository, never()).save(any());
-        verify(emailReplyService, never()).sendReply(any());
+        verify(emailReplyService, never()).sendReply(any(), any());
     }
 
     @Test

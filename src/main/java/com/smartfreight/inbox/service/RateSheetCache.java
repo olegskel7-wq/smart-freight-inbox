@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Redis cache for the rate-sheet lookup (Phase 2.6).
+ * Redis cache for the rate-sheet lookup.
  *
  * <p>{@link RateSheetService#buildRateContext} runs on every drafting pass and starts by
  * fetching all non-expired rates for the day. That query is identical across enquiries within
@@ -43,8 +43,8 @@ public class RateSheetCache {
      * All rates quotable on {@code on} for the current tenant, cached per (tenant, date).
      *
      * <p>The date rolls the key over at midnight on its own; within a day the authoritative
-     * invalidation is {@link #evictAll()} on CSV import, with the {@code CacheConfig} TTL as a
-     * backstop for any path that mutates rates without going through the import.
+     * invalidation is {@link #evictAll()} on every change to the sheet (CSV import, delete one,
+     * clear all), with the {@code CacheConfig} TTL as a backstop.
      */
     @Cacheable(cacheNames = CACHE,
             key = "T(com.smartfreight.inbox.tenancy.TenantContext).tenantIdOrNull() + ':' + #on")
@@ -53,9 +53,9 @@ public class RateSheetCache {
     }
 
     /**
-     * Drops every cached rate list. Called after a CSV import changes the sheet; clearing the
-     * whole region (rather than one tenant's keys) is simpler and safe — imports are a rare,
-     * operator-driven action. {@link TenantContext} is irrelevant to a full clear.
+     * Drops every cached rate list. Called after anything changes the sheet; clearing the
+     * whole region (rather than one tenant's keys) is simpler and safe — sheet changes are rare,
+     * operator-driven actions. {@link TenantContext} is irrelevant to a full clear.
      */
     @CacheEvict(cacheNames = CACHE, allEntries = true)
     public void evictAll() {

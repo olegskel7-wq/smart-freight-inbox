@@ -25,7 +25,7 @@ public class TicketMetricsBinder implements MeterBinder {
     @Override
     public void bindTo(MeterRegistry registry) {
         for (TicketStatus status : TicketStatus.values()) {
-            // Phase 2.2: sampled on the scrape thread (no tenant) — SYSTEM state so the
+            // Sampled on the scrape thread (no tenant) — SYSTEM state so the
             // ops dashboard counts tickets across all tenants.
             Gauge.builder("smartfreight_tickets_current_count",
                           emailTicketRepository,

@@ -10,7 +10,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 
 /**
- * Outbox health gauges (Phase 1.3, session 2).
+ * Outbox health gauges.
  *
  * Complements the relay's counters (published / publish-failures): counters show
  * throughput, these gauges show the BACKLOG — the thing an operator actually
@@ -29,7 +29,7 @@ import java.time.LocalDateTime;
 public class OutboxMetrics {
 
     public OutboxMetrics(OutboxEventRepository outboxEventRepository, MeterRegistry meterRegistry) {
-        // Phase 2.2: gauges sample on the Prometheus scrape thread, which has no tenant —
+        // Gauges sample on the Prometheus scrape thread, which has no tenant —
         // SYSTEM state, because ops metrics must see the whole backlog, not one tenant's.
         Gauge.builder("smartfreight_outbox_pending", outboxEventRepository,
                         repo -> TenantContext.callAsSystem(repo::countByPublishedAtIsNull))

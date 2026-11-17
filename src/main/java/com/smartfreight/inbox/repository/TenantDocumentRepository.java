@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Access to the per-tenant document store (Phase 2.7).
+ * Access to the per-tenant document store.
  *
  * <p>Tenant-filtered by Hibernate {@code @TenantId}; every call site (web requests, the pipeline
  * consumer, both send paths) runs inside a tenant scope, so results never leak across tenants.

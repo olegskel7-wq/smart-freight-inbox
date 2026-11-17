@@ -44,7 +44,7 @@ public class StuckTicketRecovery {
      * Fires once when the application context is fully initialised
      * (after Flyway, after JPA, before incoming traffic).
      *
-     * Phase 2.2: SYSTEM tenant state — recovery spans all tenants in one bulk UPDATE.
+     * SYSTEM tenant state — recovery spans all tenants in one bulk UPDATE.
      * Context wraps the transaction (see RetryScheduler for why not @Transactional).
      */
     @EventListener(ApplicationReadyEvent.class)

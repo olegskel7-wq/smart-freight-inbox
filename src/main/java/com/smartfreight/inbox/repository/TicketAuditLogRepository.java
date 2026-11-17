@@ -25,7 +25,7 @@ public interface TicketAuditLogRepository extends JpaRepository<TicketAuditLog, 
     List<TicketAuditLog> findByTicketIdOrderByCreatedAtDesc(Long ticketId);
 
     /**
-     * Counts actions of one kind recorded on or after the cutoff (Phase 2.1 analytics).
+     * Counts actions of one kind recorded on or after the cutoff (analytics).
      * The audit log is the source of truth for "how many replies went out" — counting
      * tickets by status would miss manual sends (a CLOSED ticket may or may not have
      * been replied to) and attribute sends to the ticket's creation date instead of
@@ -38,8 +38,8 @@ public interface TicketAuditLogRepository extends JpaRepository<TicketAuditLog, 
     long countByActionAndCreatedAtGreaterThanEqual(String action, LocalDateTime since);
 
     /**
-     * Average first-response time in seconds for tickets first answered in the period
-     * (Phase 2.1). "First answered" = the earliest SEND or AUTO_SEND audit entry of a
+     * Average first-response time in seconds for tickets first answered in the period.
+     * "First answered" = the earliest SEND or AUTO_SEND audit entry of a
      * ticket; the clock starts at the ticket's createdAt (email received). Attribution
      * follows the reply KPIs: a ticket belongs to the period its first reply went out in,
      * regardless of when the email arrived — and repeat replies never re-count a ticket.

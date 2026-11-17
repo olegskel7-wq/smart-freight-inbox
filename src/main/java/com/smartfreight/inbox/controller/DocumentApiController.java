@@ -3,7 +3,6 @@ package com.smartfreight.inbox.controller;
 import com.smartfreight.inbox.controller.dto.DocumentRefDto;
 import com.smartfreight.inbox.controller.dto.DocumentsResponse;
 import com.smartfreight.inbox.entity.enums.DocumentType;
-import com.smartfreight.inbox.repository.TenantDocumentRepository;
 import com.smartfreight.inbox.service.DocumentService;
 import com.smartfreight.inbox.service.SettingsService;
 import org.springframework.core.io.ByteArrayResource;
@@ -25,7 +24,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /documents} page (Phase 3.2). It mirrors {@link DocumentController}
+ * JSON API backing the React {@code /documents} page. It mirrors {@link DocumentController}
  * (the Thymeleaf document-store UI) but speaks DTOs over {@code /api/documents} and is secured by the
  * stateless resource-server chain (bearer JWT). The two controllers run side by side during the
  * migration; this one collapses to the only one when Thymeleaf is removed.
@@ -40,14 +39,11 @@ import java.util.List;
 public class DocumentApiController {
 
     private final DocumentService documentService;
-    private final TenantDocumentRepository documentRepository;
     private final SettingsService settingsService;
 
     public DocumentApiController(DocumentService documentService,
-                                 TenantDocumentRepository documentRepository,
                                  SettingsService settingsService) {
         this.documentService = documentService;
-        this.documentRepository = documentRepository;
         this.settingsService = settingsService;
     }
 
@@ -86,7 +82,7 @@ public class DocumentApiController {
      */
     @GetMapping("/{id}/download")
     public ResponseEntity<ByteArrayResource> download(@PathVariable Long id) {
-        return documentRepository.findById(id)
+        return documentService.find(id)
                 .map(doc -> ResponseEntity.ok()
                         .contentType(doc.getContentType() != null
                                 ? MediaType.parseMediaType(doc.getContentType())
@@ -104,15 +100,13 @@ public class DocumentApiController {
      */
     @DeleteMapping("/{id}")
     public DocumentsResponse delete(@PathVariable Long id) {
-        if (documentRepository.existsById(id)) {
-            documentRepository.deleteById(id);
-        }
+        documentService.deleteIfPresent(id);
         return buildResponse();
     }
 
     /** Snapshots the current tenant's documents (newest first) plus the selectable type options. */
     private DocumentsResponse buildResponse() {
-        List<DocumentRefDto> documents = documentRepository.findAllByOrderByUploadedAtDesc().stream()
+        List<DocumentRefDto> documents = documentService.listNewestFirst().stream()
                 .map(DocumentRefDto::from)
                 .toList();
         List<DocumentsResponse.DocTypeOption> docTypes = Arrays.stream(DocumentType.values())

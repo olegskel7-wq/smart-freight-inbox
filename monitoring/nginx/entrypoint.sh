@@ -1,24 +1,101 @@
 #!/bin/sh
-# Generate a self-signed certificate on first run so the nginx container
-# can serve HTTPS without any manual setup. For production, replace
-# /etc/nginx/certs/server.crt and server.key with a real cert/key pair.
+# Runs from /docker-entrypoint.d before nginx starts (Gate C4). Three jobs:
+#   1. render nginx.conf (a template) with PUBLIC_HOST into conf.d/default.conf;
+#   2. point /etc/nginx/tls/server.{crt,key} at the right certificate:
+#        - Let's Encrypt for PUBLIC_HOST, once certbot has issued it (/etc/letsencrypt/live/<host>/);
+#        - else the local pair in /etc/nginx/certs (mkcert or self-signed — generated here when the
+#          dir is empty, i.e. a fresh clone or the first start on a server before certbot ran);
+#   3. leave a background loop that re-checks every 10 minutes and reloads nginx when the
+#      certificate changed — first issuance and every renewal are picked up without a restart.
+# On a real host (anything but localhost) it also adds a catch-all server that refuses requests for
+# any other name (an IP scan, a spoofed Host header) instead of serving the app to them.
 
 set -e
 
-CERT_DIR=/etc/nginx/certs
-CRT="${CERT_DIR}/server.crt"
-KEY="${CERT_DIR}/server.key"
+PUBLIC_HOST="${PUBLIC_HOST:-localhost}"
+case "$PUBLIC_HOST" in
+    *[!A-Za-z0-9.-]*|'') echo "[nginx-init] PUBLIC_HOST '$PUBLIC_HOST' is not a host name" >&2; exit 1 ;;
+esac
 
-if [ ! -f "${CRT}" ] || [ ! -f "${KEY}" ]; then
-    echo "[nginx-init] Generating self-signed certificate at ${CERT_DIR}"
-    mkdir -p "${CERT_DIR}"
-    apk add --no-cache openssl >/dev/null 2>&1 || true
-    openssl req -x509 -nodes -newkey rsa:2048 \
-        -days 365 \
-        -keyout "${KEY}" \
-        -out "${CRT}" \
-        -subj "/C=GB/ST=Suffolk/L=Felixstowe/O=SmartFreight/CN=smartfreight.local"
-    echo "[nginx-init] Done. WARNING: self-signed — replace with a real cert before going live."
-else
-    echo "[nginx-init] Reusing existing certificate"
+LOCAL_DIR=/etc/nginx/certs
+LE_DIR="/etc/letsencrypt/live/${PUBLIC_HOST}"
+TLS_DIR=/etc/nginx/tls
+
+# --- 1. config ---------------------------------------------------------------------------------
+# Locally the real server blocks are the default ones (any name or a bare IP reaches the app). On a
+# real host a catch-all is: any other name (or none — an IP literal sends no SNI) gets its TLS
+# handshake refused / its plain-http connection closed; Let's Encrypt's http-01 request carries
+# PUBLIC_HOST, so it still reaches the real server block.
+case "$PUBLIC_HOST" in
+    localhost|127.0.0.1) DEFAULT_SERVER=default_server ;;
+    *)
+        DEFAULT_SERVER=
+        cat > /etc/nginx/conf.d/unknown-host.conf <<'EOF'
+server {
+    listen 443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
+    # Right SNI but another Host header lands here after the handshake: answer nothing.
+    return 444;
+}
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+EOF
+        ;;
+esac
+export PUBLIC_HOST DEFAULT_SERVER
+# Only these two are substituted: nginx variables ($host, $remote_addr, …) must survive.
+envsubst '${PUBLIC_HOST} ${DEFAULT_SERVER}' < /etc/nginx/smartfreight/nginx.conf.template > /etc/nginx/conf.d/default.conf
+
+# --- 2. certificate ----------------------------------------------------------------------------
+# A pair generated here carries a marker with its host name; when PUBLIC_HOST changes it is replaced
+# (a mkcert pair has no marker and is never touched).
+MARKER="${LOCAL_DIR}/.self-signed-for"
+if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" != "$PUBLIC_HOST" ]; then
+    rm -f "${LOCAL_DIR}/server.crt" "${LOCAL_DIR}/server.key" "$MARKER"
 fi
+if [ ! -f "${LOCAL_DIR}/server.crt" ] || [ ! -f "${LOCAL_DIR}/server.key" ]; then
+    echo "[nginx-init] Generating a self-signed certificate for ${PUBLIC_HOST} in ${LOCAL_DIR}"
+    mkdir -p "${LOCAL_DIR}"
+    apk add --no-cache openssl >/dev/null 2>&1 || true
+    openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+        -keyout "${LOCAL_DIR}/server.key" -out "${LOCAL_DIR}/server.crt" \
+        -subj "/O=SmartFreight/CN=${PUBLIC_HOST}" -addext "subjectAltName=DNS:${PUBLIC_HOST}" 2>/dev/null
+    printf '%s' "$PUBLIC_HOST" > "$MARKER"
+fi
+
+# Prints which certificate is active ("letsencrypt" / "local") after pointing the symlinks at it.
+pick_cert() {
+    if [ -s "${LE_DIR}/fullchain.pem" ] && [ -s "${LE_DIR}/privkey.pem" ]; then
+        crt="${LE_DIR}/fullchain.pem"; key="${LE_DIR}/privkey.pem"; src=letsencrypt
+    else
+        crt="${LOCAL_DIR}/server.crt"; key="${LOCAL_DIR}/server.key"; src=local
+    fi
+    mkdir -p "${TLS_DIR}"
+    ln -sfn "$crt" "${TLS_DIR}/server.crt"
+    ln -sfn "$key" "${TLS_DIR}/server.key"
+    echo "$src"
+}
+
+# Content fingerprint of the active pair: changes on first issuance, on a renewal (certbot swaps the
+# live/ symlinks to new archive files) and on a hand-replaced local cert.
+fingerprint() { cat "${TLS_DIR}/server.crt" "${TLS_DIR}/server.key" 2>/dev/null | md5sum; }
+
+echo "[nginx-init] ${PUBLIC_HOST}: using the $(pick_cert) certificate"
+
+# --- 3. pick up issuance / renewals ------------------------------------------------------------
+(
+    last="$(fingerprint)"
+    while :; do
+        sleep 600
+        src="$(pick_cert)"
+        now="$(fingerprint)"
+        if [ "$now" != "$last" ] && nginx -t -q 2>/dev/null; then
+            echo "[nginx-tls] certificate changed (${src}) — reloading nginx"
+            nginx -s reload && last="$now"
+        fi
+    done
+) &

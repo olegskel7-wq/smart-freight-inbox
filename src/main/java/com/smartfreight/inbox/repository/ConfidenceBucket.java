@@ -1,7 +1,7 @@
 package com.smartfreight.inbox.repository;
 
 /**
- * Native-query projection: one bar of the AI-confidence histogram (Phase 2.1).
+ * Native-query projection: one bar of the AI-confidence histogram.
  *
  * Backed by {@link EmailTicketRepository#confidenceHistogramSince}. Bucket {@code i} covers
  * confidences {@code [i/10, (i+1)/10)}; the SQL folds the exact value 1.0 into bucket 9 so

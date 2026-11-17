@@ -25,6 +25,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class UserManagementServiceTest {
 
+    private static final OperatorName DANA = new OperatorName("Dana", "Price");
+
     private static final long TENANT = 1L;
 
     @Mock
@@ -48,34 +50,62 @@ class UserManagementServiceTest {
         when(keycloakAdminService.emailExists("new@acme.co")).thenReturn(false);
 
         try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
-            service.createUser("  NEW@Acme.co ", "secret-pass", "OPERATOR");
+            service.createUser("  NEW@Acme.co ", DANA, "secret-pass", "OPERATOR");
         }
 
-        verify(keycloakAdminService).createUser("new@acme.co", "secret-pass", TENANT, "OPERATOR");
+        verify(keycloakAdminService).createUser("new@acme.co", DANA, "secret-pass", TENANT, "OPERATOR");
     }
 
     @Test
     void createUser_rejectsShortPassword() {
         try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
-            assertThatThrownBy(() -> service.createUser("new@acme.co", "short", "OPERATOR"))
+            assertThatThrownBy(() -> service.createUser("new@acme.co", DANA, "short", "OPERATOR"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("at least 10");
         }
-        verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
+        verify(keycloakAdminService, never()).createUser(anyString(), any(), anyString(), any(), anyString());
     }
 
     @Test
     void createUser_translatesKeycloakPolicyRejectionToBadRequest() {
         when(keycloakAdminService.emailExists("new@acme.co")).thenReturn(false);
-        when(keycloakAdminService.createUser(anyString(), anyString(), any(), anyString()))
-                .thenThrow(WebClientResponseException.create(
-                        400, "Bad Request", HttpHeaders.EMPTY, new byte[0], null));
+        when(keycloakAdminService.createUser(anyString(), any(), anyString(), any(), anyString()))
+                .thenThrow(WebClientResponseException.create(400, "Bad Request", HttpHeaders.EMPTY,
+                        "{\"errorMessage\":\"invalidPasswordMinUpperCaseCharsMessage\"}".getBytes(), null));
 
         try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
-            assertThatThrownBy(() -> service.createUser("new@acme.co", "weakpasswordnouppercase", "OPERATOR"))
+            assertThatThrownBy(() -> service.createUser("new@acme.co", DANA, "weakpasswordnouppercase", "OPERATOR"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("security policy");
         }
+    }
+
+    @Test
+    void createUser_keycloakNameRejection_isNotReportedAsAPasswordProblem() {
+        when(keycloakAdminService.emailExists("new@acme.co")).thenReturn(false);
+        when(keycloakAdminService.createUser(anyString(), any(), anyString(), any(), anyString()))
+                .thenThrow(WebClientResponseException.create(400, "Bad Request", HttpHeaders.EMPTY,
+                        "{\"field\":\"firstName\",\"errorMessage\":\"error-person-name-invalid-character\"}".getBytes(),
+                        null));
+
+        try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
+            assertThatThrownBy(() -> service.createUser("new@acme.co", new OperatorName("<b>", "Price"),
+                    "secret-pass", "OPERATOR"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("name contains characters")
+                    .hasMessageNotContaining("security policy");
+        }
+    }
+
+    @Test
+    void operatorName_requiresBothParts_andTrims() {
+        assertThat(OperatorName.of("  Dana ", " Price  ")).isEqualTo(DANA);
+        assertThatThrownBy(() -> OperatorName.of("Dana", "  "))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("required");
+        assertThatThrownBy(() -> OperatorName.of(null, "Price"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("required");
+        assertThatThrownBy(() -> OperatorName.of("x".repeat(101), "Price"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("at most 100");
     }
 
     @Test
@@ -97,21 +127,21 @@ class UserManagementServiceTest {
         when(keycloakAdminService.emailExists("taken@acme.co")).thenReturn(true);
 
         try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
-            assertThatThrownBy(() -> service.createUser("taken@acme.co", "secret-pass", "OPERATOR"))
+            assertThatThrownBy(() -> service.createUser("taken@acme.co", DANA, "secret-pass", "OPERATOR"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("already exists");
         }
-        verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
+        verify(keycloakAdminService, never()).createUser(anyString(), any(), anyString(), any(), anyString());
     }
 
     @Test
     void createUser_rejectsNonAssignableRole() {
         try (TenantContext.Scope ignored = TenantContext.openAs(TENANT)) {
-            assertThatThrownBy(() -> service.createUser("new@acme.co", "secret-pass", "SUPER_ADMIN"))
+            assertThatThrownBy(() -> service.createUser("new@acme.co", DANA, "secret-pass", "SUPER_ADMIN"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Invalid role");
         }
-        verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
+        verify(keycloakAdminService, never()).createUser(anyString(), any(), anyString(), any(), anyString());
     }
 
     @Test

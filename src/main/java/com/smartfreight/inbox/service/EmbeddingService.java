@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Produces text embeddings via the CURRENT tenant's Ollama endpoint (Phase 3.1).
+ * Produces text embeddings via the CURRENT tenant's Ollama endpoint.
  *
  * <p>Used by the {@link FeedbackLoopService} to embed captured corrections and (Session 2) the
  * incoming enquiry, so the feedback loop can rank past corrections by semantic similarity with

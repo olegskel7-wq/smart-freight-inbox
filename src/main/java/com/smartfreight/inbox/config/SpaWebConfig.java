@@ -12,7 +12,7 @@ import java.io.IOException;
 /**
  * Serves the React SPA bundle and makes client-side deep links work.
  *
- * <p>Since the Phase 3.2 cutover the SPA is the application UI and is served from the root.
+ * <p>The SPA is the application UI and is served from the root.
  * The Vite build still lands in {@code classpath:/static/app/} (the build outDir is unchanged;
  * only the public base moved from {@code /app/} to {@code /}). Real files (assets, index.html,
  * favicon) are served directly; any other path — e.g. {@code /tickets} or {@code /tickets/42}

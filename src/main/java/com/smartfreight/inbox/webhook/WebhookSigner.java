@@ -9,7 +9,7 @@ import java.security.GeneralSecurityException;
 import java.util.HexFormat;
 
 /**
- * Signs outbound webhook requests with HMAC-SHA256 (Phase 3.5).
+ * Signs outbound webhook requests with HMAC-SHA256.
  *
  * <p>The receiver verifies authenticity and integrity by recomputing the signature with the shared
  * secret. The signed string is {@code "<timestamp>.<body>"} (the Stripe/GitHub scheme): including the

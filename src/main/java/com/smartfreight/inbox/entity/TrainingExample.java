@@ -17,7 +17,7 @@ import org.hibernate.annotations.TenantId;
 import java.time.LocalDateTime;
 
 /**
- * A captured operator correction (Phase 3.1 — AI Feedback Loop).
+ * A captured operator correction for the AI feedback loop (see docs/adr/0010-rag-feedback-and-knowledge.md).
  *
  * <p>When an operator edits an AI draft and sends it, the pair "what the AI wrote
  * ({@link #aiDraft}) → what the operator actually sent ({@link #operatorFinal})" is recorded

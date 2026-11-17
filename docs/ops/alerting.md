@@ -14,17 +14,20 @@ them. Locally they are optional (the Alertmanager log warns when a channel is of
 2. Send any message to the new bot (a bot cannot message you first).
 3. Get your chat id: open `https://api.telegram.org/bot<TOKEN>/getUpdates` → `"chat":{"id": ...}`.
    For a group: add the bot to the group, post a message, same URL (group ids are negative).
-4. `.env`:
+4. The token is a secret — a file in `SECRETS_DIR` (Gate C5, [`secrets.md`](secrets.md)); the chat id goes in `.env`:
    ```
-   TELEGRAM_BOT_TOKEN=<token>
-   TELEGRAM_CHAT_ID=<chat id>
+   printf '%s' '<token>' > "$SECRETS_DIR/TELEGRAM_BOT_TOKEN"
    ```
+   `.env`: `TELEGRAM_CHAT_ID=<chat id>`
 
 ## 2. Dead man's switch (the whole stack is down)
 
 1. Create a free check on **healthchecks.io**: period **1 min**, grace **5 min**; add your email
    (and/or its Telegram integration) as the notification channel.
-2. Copy the ping URL (`https://hc-ping.com/<uuid>`) → `.env`: `HEALTHCHECKS_PING_URL=<url>`.
+2. Copy the ping URL (`https://hc-ping.com/<uuid>`) → a secret file (anyone holding it can fake
+   "alive"): `printf '%s' '<url>' > "$SECRETS_DIR/HEALTHCHECKS_PING_URL"`.
+
+Then `docker compose up -d --force-recreate alertmanager` (a secret file is read at container start).
 
 ## 3. External uptime ping (the site is unreachable from the internet) — on the VPS only
 

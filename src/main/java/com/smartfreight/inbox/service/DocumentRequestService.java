@@ -8,14 +8,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
-import java.util.Map;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Resolves a DOCUMENT_REQUEST enquiry (Phase 2.7): determines which document the customer is
+ * Resolves a DOCUMENT_REQUEST enquiry: determines which document the customer is
  * asking for, and looks up the matching stored document.
  *
  * <p>Detection mirrors {@link EmailClassificationService}: one short Qwen call against the current
@@ -23,7 +22,7 @@ import java.util.Optional;
  * DocumentType#OTHER} on any error. Like the classifier — and unlike the interactive read-only
  * {@code InboxQueryService} — it is part of the email pipeline, so a {@link
  * CallNotPermittedException} from an OPEN breaker is propagated, letting the pipeline park the
- * ticket as RETRY_LATER (Phase 1.7) rather than mislabelling it.
+ * ticket as RETRY_LATER rather than mislabelling it.
  */
 @Service
 public class DocumentRequestService {
@@ -59,15 +58,15 @@ public class DocumentRequestService {
             Answer with one type name only.""";
 
     private final String model;
-    private final OllamaClientProvider ollamaClients;
+    private final LlmClient llmClient;
     private final SettingsService settingsService;
     private final TenantDocumentRepository documentRepository;
 
-    public DocumentRequestService(OllamaClientProvider ollamaClients,
+    public DocumentRequestService(LlmClient llmClient,
                                   SettingsService settingsService,
                                   TenantDocumentRepository documentRepository,
                                   @Value("${ollama.extraction-model:qwen2.5:7b}") String model) {
-        this.ollamaClients = ollamaClients;
+        this.llmClient = llmClient;
         this.settingsService = settingsService;
         this.documentRepository = documentRepository;
         this.model = model;
@@ -92,28 +91,12 @@ public class DocumentRequestService {
         String prompt = template.replace("{email}", truncated);
 
         try {
-            Map<String, Object> requestBody = Map.of(
-                    "model", model,
-                    "prompt", prompt,
-                    "stream", false
-            );
-            WebClient ollamaWebClient = ollamaClients.client();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = ollamaClients.circuitBreaker().executeSupplier(() -> ollamaWebClient
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block(DETECT_TIMEOUT));
-            ollamaClients.recordUsage("document-detect", model, response);
-
-            if (response == null) {
+            Optional<String> answer = llmClient.generate("document-detect", model, prompt, DETECT_TIMEOUT);
+            if (answer.isEmpty()) {
                 log.warn("Ollama returned null for document detection — defaulting to OTHER");
                 return DocumentType.OTHER;
             }
-            String answer = String.valueOf(response.getOrDefault("response", ""));
-            DocumentType type = parseType(answer);
+            DocumentType type = parseType(answer.get());
             log.info("Document request detected as {}", type);
             return type;
         } catch (CallNotPermittedException e) {
@@ -139,13 +122,13 @@ public class DocumentRequestService {
      * <p>Scans for each type's enum name (e.g. {@code BILL_OF_LADING}), its spaced form
      * ({@code BILL OF LADING}) and its label, and returns the type whose token appears EARLIEST in
      * the answer (first mentioned wins, mirroring {@code InboxQueryService}). Nothing recognised →
-     * {@link DocumentType#OTHER}. Package-private for unit testing without a WebClient.
+     * {@link DocumentType#OTHER}. Package-private for unit testing without a model.
      */
     static DocumentType parseType(String answer) {
         if (answer == null || answer.isBlank()) {
             return DocumentType.OTHER;
         }
-        String upper = answer.toUpperCase();
+        String upper = answer.toUpperCase(Locale.ROOT);
         DocumentType best = DocumentType.OTHER;
         int bestIdx = Integer.MAX_VALUE;
         for (DocumentType type : DocumentType.values()) {
@@ -155,7 +138,7 @@ public class DocumentRequestService {
             int idx = earliestIndex(upper,
                     type.name(),
                     type.name().replace('_', ' '),
-                    type.getLabel().toUpperCase());
+                    type.getLabel().toUpperCase(Locale.ROOT));
             if (idx >= 0 && idx < bestIdx) {
                 bestIdx = idx;
                 best = type;

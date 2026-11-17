@@ -1,23 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { DocumentsResponse } from '../types.ts'
-
-type Msg = { kind: 'success' | 'danger'; text: string } | null
+import { errorMessage } from '../util/errors.ts'
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
 function formatSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`
 }
 
-// React port of documents.html (Phase 3.2). Per-tenant document store: upload a file against a
+// Per-tenant document store: upload a file against a
 // shipment identifier + type, download (bearer-authenticated blob), delete. Each mutation returns the
 // refreshed snapshot, which re-renders the table. The old Thymeleaf page stays live until cutover.
 export default function DocumentsPage() {
   const api = useApi()
 
-  const [data, setData] = useState<DocumentsResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
   // Upload form state.
@@ -25,21 +24,15 @@ export default function DocumentsPage() {
   const [docType, setDocType] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      const res = await api.get<DocumentsResponse>('/api/documents')
-      setData(res)
+  const load = useCallback(
+    () => api.get<DocumentsResponse>('/api/documents').then((res) => {
       // Default the type dropdown to the first option once the catalogue is known.
       setDocType((prev) => prev || res.docTypes[0]?.value || '')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load documents')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+      return res
+    }),
+    [api],
+  )
+  const { data, setData, error } = usePageData(load, 'Failed to load documents')
 
   const upload = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -61,7 +54,7 @@ export default function DocumentsPage() {
       setIdentifier('')
       if (fileInput.current) fileInput.current.value = ''
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Upload failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Upload failed') })
     }
   }
 
@@ -77,7 +70,7 @@ export default function DocumentsPage() {
       a.remove()
       URL.revokeObjectURL(url)
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Download failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Download failed') })
     }
   }
 
@@ -88,7 +81,7 @@ export default function DocumentsPage() {
       setData(await api.del<DocumentsResponse>(`/api/documents/${id}`))
       setMsg({ kind: 'success', text: 'Document deleted.' })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 
@@ -101,12 +94,7 @@ export default function DocumentsPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="Document store"

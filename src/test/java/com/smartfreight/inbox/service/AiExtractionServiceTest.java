@@ -2,6 +2,7 @@ package com.smartfreight.inbox.service;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -61,7 +63,7 @@ class AiExtractionServiceTest {
         circuitBreaker = CircuitBreaker.ofDefaults("ollama-test");
         lenient().when(ollamaClients.client()).thenReturn(webClient);
         lenient().when(ollamaClients.circuitBreaker()).thenReturn(circuitBreaker);
-        service = new AiExtractionService(ollamaClients, settingsService,
+        service = new AiExtractionService(new LlmClient(ollamaClients), settingsService,
                 new SimpleMeterRegistry(), "qwen2.5:7b");
     }
 
@@ -117,6 +119,20 @@ class AiExtractionServiceTest {
 
         assertEquals("MSCU1234567", result);
         verify(ollamaClients).recordUsage(eq("extraction"), anyString(), any());
+    }
+
+    @Test
+    void timer_isTaggedWithTheConfiguredModel() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        service = new AiExtractionService(new LlmClient(ollamaClients), settingsService, registry, "custom-extractor:3b");
+        stubOllama(Map.of("response", "MSCU1234567", "done", true));
+
+        service.extractIdentifier("Please check container MSCU1234567");
+
+        Timer timer = registry.find("smartfreight_ollama_request_seconds")
+                .tags("model", "custom-extractor:3b", "operation", "extraction").timer();
+        assertNotNull(timer);
+        assertEquals(1, timer.count());
     }
 
     /**
@@ -208,5 +224,38 @@ class AiExtractionServiceTest {
         String result = service.extractIdentifier("Update on MSCU1234567?");
 
         assertEquals("MSCU1234567", result);
+    }
+
+    // ---- the Ollama call, over a stubbed endpoint ------------------------------------------
+
+    /** The service over a stubbed Ollama; the stored prompt resolves to the code default. */
+    private AiExtractionService extractor(OllamaStub ollama) {
+        return new AiExtractionService(new LlmClient(ollama.provider), settingsService, new SimpleMeterRegistry(), "qwen-test");
+    }
+
+    @Test
+    void extract_sendsTheEmailToTheExtractionModel() {
+        OllamaStub ollama = new OllamaStub();
+        ollama.answers(Map.of("response", "MSCU1234567", "done", true));
+
+        assertEquals("MSCU1234567", extractor(ollama).extractIdentifier("Where is MSCU1234567?"));
+
+        assertEquals("/api/generate", ollama.sentPath());
+        Map<?, ?> body = ollama.sentBody();
+        assertEquals("qwen-test", body.get("model"));
+        assertEquals(false, body.get("stream"));
+        assertEquals(3, body.size());
+        org.assertj.core.api.Assertions.assertThat((String) body.get("prompt")).endsWith("Where is MSCU1234567?");
+        verify(ollama.provider).recordUsage(eq("extraction"), eq("qwen-test"), any());
+    }
+
+    @Test
+    void extract_emptyOllamaBody_fallsBackToTheRegex_andIsMetered() {
+        OllamaStub ollama = new OllamaStub();
+        ollama.answers(null);
+
+        assertEquals("MSCU1234567", extractor(ollama).extractIdentifier("Container MSCU1234567 please"));
+
+        verify(ollama.provider).recordUsage("extraction", "qwen-test", null);
     }
 }

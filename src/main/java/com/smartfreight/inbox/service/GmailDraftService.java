@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -48,6 +49,7 @@ public class GmailDraftService {
     private final TenantMailboxRepository mailboxes;
     private final SecretCipher secretCipher;
     private final MailTlsPolicy mailTlsPolicy;
+    private final ReplySignatureService signatureService;
     private final Counter draftSavedCounter;
     private final Counter draftFailedCounter;
 
@@ -55,11 +57,13 @@ public class GmailDraftService {
                              TenantMailboxRepository mailboxes,
                              SecretCipher secretCipher,
                              MailTlsPolicy mailTlsPolicy,
+                             ReplySignatureService signatureService,
                              MeterRegistry meterRegistry) {
         this.settingsService = settingsService;
         this.mailboxes = mailboxes;
         this.secretCipher = secretCipher;
         this.mailTlsPolicy = mailTlsPolicy;
+        this.signatureService = signatureService;
         this.draftSavedCounter = Counter.builder("smartfreight_gmail_draft_total")
                 .description("Gmail draft save results")
                 .tag("result", "saved")
@@ -152,7 +156,7 @@ public class GmailDraftService {
 
         try {
             for (Folder f : store.getDefaultFolder().list("*")) {
-                if (f.getFullName().toLowerCase().contains("draft")) {
+                if (f.getFullName().toLowerCase(Locale.ROOT).contains("draft")) {
                     log.debug("Found Drafts folder by name match: {}", f.getFullName());
                     return f;
                 }
@@ -177,7 +181,8 @@ public class GmailDraftService {
 
         String subject = ticket.getSubject() != null ? ticket.getSubject() : "";
         message.setSubject("Re: " + subject, "UTF-8");
-        message.setText(ticket.getDraftReply() != null ? ticket.getDraftReply().trim() : "", "UTF-8", "plain");
+        // Sent from the mail client, not through us: no operator is known, so the team signature.
+        message.setText(signatureService.sign(ticket.getDraftReply(), null), "UTF-8", "plain");
 
         if (ticket.getMessageId() != null) {
             message.setHeader("In-Reply-To", ticket.getMessageId());

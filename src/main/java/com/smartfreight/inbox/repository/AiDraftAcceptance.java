@@ -1,7 +1,7 @@
 package com.smartfreight.inbox.repository;
 
 /**
- * Native-query projection: AI-draft acceptance over a reporting period (Phase 3.1 S3).
+ * Native-query projection: AI-draft acceptance over a reporting period.
  *
  * Backed by {@link EmailTicketRepository#aiDraftAcceptanceSince}. {@code total} is the number of
  * replies first sent in the period that carried an AI draft; {@code accepted} is how many went out

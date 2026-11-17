@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Keeps the IMAP adapter fleet in sync with the {@code tenant_mailbox} table (Phase 2.2 S3).
+ * Keeps the IMAP adapter fleet in sync with the {@code tenant_mailbox} table.
  *
  * <p>Every pass reads ALL tenants' enabled mailboxes (system context — this is exactly the
  * cross-tenant scheduler case the SYSTEM state exists for) and hands the list to

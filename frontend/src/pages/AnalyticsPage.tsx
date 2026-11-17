@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   BarElement,
@@ -10,15 +10,18 @@ import {
 } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { AnalyticsResponse, InboxAnswer } from '../types.ts'
 import { statusBadgeClass } from '../util/format.ts'
+import { statusLabel, typeLabel } from '../util/labels.ts'
+import { errorMessage } from '../util/errors.ts'
 
 // Chart.js is tree-shaken — register only the pieces the two bar charts use. Served from our own
 // bundle, never a CDN: the product promise is that data never leaves the server.
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
-// Bucket i covers [i/10, (i+1)/10); 1.0 folds into the top bucket — parity with the template.
+// Bucket i covers [i/10, (i+1)/10); 1.0 folds into the top bucket.
 const CONFIDENCE_LABELS = [
   '0–.1', '.1–.2', '.2–.3', '.3–.4', '.4–.5',
   '.5–.6', '.6–.7', '.7–.8', '.8–.9', '.9–1',
@@ -26,31 +29,25 @@ const CONFIDENCE_LABELS = [
 
 const pct = (v: number) => v.toFixed(1) + '%'
 
+// The period from the URL. The server settles any whole number to one of its allowed periods, so
+// only a value it cannot bind as an int (`abc`, `1.5`, beyond int range) falls back to 30 days here.
+function periodOf(value: string | null): number {
+  const days = Number(value || '30')
+  return Number.isInteger(days) && Math.abs(days) <= 2 ** 31 - 1 ? days : 30
+}
+
 export default function AnalyticsPage() {
   const api = useApi()
   const [params, setParams] = useSearchParams()
-  const days = Number(params.get('days') ?? '30')
+  const days = periodOf(params.get('days'))
 
-  const [data, setData] = useState<AnalyticsResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(() => api.get<AnalyticsResponse>(`/api/analytics?days=${days}`), [api, days])
+  // A failed question shares the load's error slot, which replaces the page.
+  const { data, error, setError } = usePageData(load, 'Failed to load analytics')
 
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState<InboxAnswer | null>(null)
   const [asking, setAsking] = useState(false)
-
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      const result = await api.get<AnalyticsResponse>(`/api/analytics?days=${days}`)
-      setData(result)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load analytics')
-    }
-  }, [api, days])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   const ask = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,7 +56,7 @@ export default function AnalyticsPage() {
     try {
       setAnswer(await api.post<InboxAnswer>('/api/analytics/ask', { question }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to ask')
+      setError(errorMessage(err, 'Failed to ask'))
     } finally {
       setAsking(false)
     }
@@ -99,7 +96,7 @@ export default function AnalyticsPage() {
 
       {data.featureEnabled && s && (
         <>
-          {/* Ask your inbox (Phase 2.8) — metric-router over the figures below. */}
+          {/* Ask your inbox — metric-router over the figures below. */}
           {data.queryEnabled && (
             <div className="card shadow-sm mb-4">
               <div className="card-body">
@@ -228,7 +225,7 @@ export default function AnalyticsPage() {
                         {s.byType.map((t) => (
                           <tr key={t.type}>
                             <td className="ps-3" style={{ width: 170 }}>
-                              <span className="badge bg-primary">{t.type}</span>
+                              <span className="badge bg-primary">{typeLabel(t.type)}</span>
                             </td>
                             <td className="text-end pe-3 fw-semibold" style={{ width: 70 }}>{t.count}</td>
                             <td><Bars pct={t.count > 0 ? t.pct : 0} /></td>
@@ -298,7 +295,7 @@ export default function AnalyticsPage() {
                     {s.byStatus.map((st) => (
                       <tr key={st.status}>
                         <td className="ps-3" style={{ width: 200 }}>
-                          <span className={`badge ${statusBadgeClass(st.status)}`}>{st.status}</span>
+                          <span className={`badge ${statusBadgeClass(st.status)}`}>{statusLabel(st.status)}</span>
                         </td>
                         <td className="text-end pe-3 fw-semibold" style={{ width: 100 }}>{st.count}</td>
                         <td><Bars pct={st.count > 0 ? st.pct : 0} /></td>

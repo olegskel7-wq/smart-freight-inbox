@@ -1,10 +1,9 @@
 package com.smartfreight.inbox.controller;
 
-import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.messaging.DlqAdminService;
 import com.smartfreight.inbox.messaging.TicketEventPublisher;
-import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.service.TicketProcessingService;
+import com.smartfreight.inbox.service.TicketQueryService;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +21,7 @@ import java.util.List;
  * Administrative endpoints for ticket maintenance.
  *
  * <p>Under {@code /api/admin/**}, so the resource-server chain (SecurityConfig @Order(1)) gates it
- * with ROLE_OPERATOR — the same authority the old Thymeleaf chain enforced. {@code reprocess} is
+ * with ROLE_ADMIN (an OPERATOR gets 403; pinned by {@code AdminMaintenanceRuleTest}). {@code reprocess} is
  * surfaced as a button on the React {@code /tickets} page; the DLQ operations stay API-only (rare,
  * dangerous platform maintenance — a runbook/curl surface, not an everyday operator control).
  */
@@ -32,16 +31,16 @@ public class AdminController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminController.class);
 
-    private final EmailTicketRepository emailTicketRepository;
+    private final TicketQueryService ticketQueries;
     private final TicketProcessingService ticketProcessingService;
     private final TicketEventPublisher ticketEventPublisher;
     private final DlqAdminService dlqAdminService;
 
-    public AdminController(EmailTicketRepository emailTicketRepository,
+    public AdminController(TicketQueryService ticketQueries,
                            TicketProcessingService ticketProcessingService,
                            TicketEventPublisher ticketEventPublisher,
                            DlqAdminService dlqAdminService) {
-        this.emailTicketRepository = emailTicketRepository;
+        this.ticketQueries = ticketQueries;
         this.ticketProcessingService = ticketProcessingService;
         this.ticketEventPublisher = ticketEventPublisher;
         this.dlqAdminService = dlqAdminService;
@@ -55,7 +54,7 @@ public class AdminController {
      * 2. After Ollama recovery, those tickets need to be reprocessed.
      * 3. An operator rejected a draft (RETRY_LATER) and the AI needs to run again.
      *
-     * Algorithm (Phase 1.3, via the transactional outbox):
+     * Algorithm (via the transactional outbox):
      * 1. Bulk FAILED → NEW reset.
      * 2. Retrieve ONLY ticket IDs with NEW and RETRY_LATER statuses (projection).
      * 3. Record a retry event per ticket in the outbox — same transaction as the reset,
@@ -63,7 +62,7 @@ public class AdminController {
      * 4. OutboxRelay → RabbitMQ → TicketEventConsumer does the actual AI work, with
      *    concurrency capped by the consumer (no Ollama stampede however many tickets).
      *
-     * @Transactional is cheap here, unlike the pre-1.3 version: the method only does
+     * @Transactional is cheap here: the method only does
      * two quick DB writes — all LLM waiting happens in the consumer, off this thread.
      *
      * @return 200 OK with the number of queued tickets
@@ -73,19 +72,17 @@ public class AdminController {
     public ResponseEntity<String> reprocessAll() {
         int reset = ticketProcessingService.prepareForRetry();
 
-        // RECEIVED included as a manual unstick path: its consumer re-runs classification,
-        // so re-enqueueing a ticket whose original event is still in flight stays idempotent.
-        List<Long> ids = emailTicketRepository.findIdsByStatusIn(
-                List.of(TicketStatus.RECEIVED, TicketStatus.NEW, TicketStatus.RETRY_LATER));
+        // RECEIVED, NEW, RETRY_LATER — see TicketQueryService.reprocessableTicketIds.
+        List<Long> ids = ticketQueries.reprocessableTicketIds();
 
         if (ids.isEmpty()) {
             return ResponseEntity.ok("No tickets to reprocess (reset " + reset + " from FAILED).");
         }
 
         log.info("Async reprocessing queued for {} ticket(s) (reset {} from FAILED)", ids.size(), reset);
-        // Phase 2.2: the id query above is tenant-filtered (@TenantId + RLS), so every id
+        // The id query above is tenant-filtered (@TenantId + RLS), so every id
         // belongs to the request's tenant — reprocess is a per-tenant operation now.
-        // S3: authenticated /admin requests always carry a tenant; anything else is a bug.
+        // Authenticated /admin requests always carry a tenant; anything else is a bug.
         Long tenantId = TenantContext.requireTenantId();
         for (Long id : ids) {
             ticketEventPublisher.publishRetryRequested(id, tenantId);

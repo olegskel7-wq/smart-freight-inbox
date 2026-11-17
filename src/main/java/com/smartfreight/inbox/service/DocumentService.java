@@ -11,13 +11,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Optional;
 
 /**
- * Stores and removes per-tenant freight documents (Phase 2.7).
+ * Stores, finds and removes per-tenant freight documents.
  *
- * <p>Keeps {@link com.smartfreight.inbox.controller.DocumentController} thin — the same split as
- * {@link RateSheetService} behind the rate-sheet controller. Persistence is tenant-scoped by
- * Hibernate {@code @TenantId}: the row is stamped with the current tenant on insert.
+ * <p>Keeps {@code DocumentApiController} thin — the same split as {@link RateSheetService} behind the
+ * rate-sheet controller. Persistence is tenant-scoped by Hibernate {@code @TenantId} + RLS: the row is
+ * stamped with the current tenant on insert, and another tenant's document is never found.
  */
 @Service
 public class DocumentService {
@@ -55,6 +57,30 @@ public class DocumentService {
         log.info("Stored document {} ({}) for identifier {} ({} bytes)",
                 saved.getId(), docType, saved.getIdentifier(), saved.getFileSize());
         return saved;
+    }
+
+    public Optional<TenantDocument> find(Long id) {
+        return documentRepository.findById(id);
+    }
+
+    /** The current tenant's documents, newest first. */
+    public List<TenantDocument> listNewestFirst() {
+        return documentRepository.findAllByOrderByUploadedAtDesc();
+    }
+
+    /** The documents filed under one shipment identifier, newest first. */
+    public List<TenantDocument> forIdentifier(String identifier) {
+        return documentRepository.findByIdentifierOrderByUploadedAtDesc(identifier);
+    }
+
+    /**
+     * Deletes the document if the current tenant has it. Idempotent: an unknown or cross-tenant id
+     * (invisible under RLS) is a no-op instead of the error a bare {@code deleteById} raises.
+     */
+    public void deleteIfPresent(Long id) {
+        if (documentRepository.existsById(id)) {
+            documentRepository.deleteById(id);
+        }
     }
 
     /** Current authenticated operator name, or {@code "unknown"} when there is no principal. */

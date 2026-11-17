@@ -9,7 +9,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 /**
- * Access to the captured-corrections store (Phase 3.1).
+ * Access to the captured-corrections store.
  *
  * <p>Tenant-filtered by Hibernate {@code @TenantId}; every call site (the send path, the
  * /training-examples page, the pipeline in Session 2) runs inside a tenant scope, so results
@@ -39,7 +39,7 @@ public interface TrainingExampleRepository extends JpaRepository<TrainingExample
     void setEmbedding(@Param("id") Long id, @Param("vector") String vector);
 
     /**
-     * The {@code limit} most semantically similar past corrections for a ticket type (Phase 3.1 S2).
+     * The {@code limit} most semantically similar past corrections for a ticket type.
      *
      * <p>Ranks by pgvector cosine distance ({@code <=>}) against the embedded incoming enquiry,
      * pre-filtered to the same ticket type so a document-request correction never informs an RFQ
@@ -64,7 +64,7 @@ public interface TrainingExampleRepository extends JpaRepository<TrainingExample
                                       @Param("limit") int limit);
 
     /**
-     * Recency fallback for retrieval (Phase 3.1 S2): the newest {@code limit} corrections for a
+     * Recency fallback for retrieval: the newest {@code limit} corrections for a
      * ticket type, used when the enquiry could not be embedded (Ollama down / breaker open) so the
      * feedback loop still contributes examples — mirrors how {@code InboxQueryService} degrades.
      *

@@ -35,10 +35,10 @@ case "$SOURCE" in
   offsite)
     for db in smartfreight keycloak; do
       file="$(docker compose run --rm -T --entrypoint /bin/sh backup-offsite -c \
-          ". /etc/offsite/offsite-env.sh >/dev/null 2>&1; rclone lsf vault:daily/ --include '$db-*.sql.gz' | sort | tail -n 1" | tr -d '\r')"
+          ". /file-env.sh; . /etc/offsite/offsite-env.sh >/dev/null 2>&1; rclone lsf vault:daily/ --include '$db-*.sql.gz' | sort | tail -n 1" | tr -d '\r')"
       [ -n "$file" ] || { echo "restore-test: no $db dump offsite" >&2; exit 1; }
       docker compose run --rm -T --entrypoint /bin/sh backup-offsite -c \
-          ". /etc/offsite/offsite-env.sh >/dev/null 2>&1; rclone cat vault:daily/$file" > "$WORK/$db.sql.gz"
+          ". /file-env.sh; . /etc/offsite/offsite-env.sh >/dev/null 2>&1; rclone cat vault:daily/$file" > "$WORK/$db.sql.gz"
       echo "$db: offsite vault:daily/$file (decrypted)" >> "$WORK/sources"
     done ;;
   *) echo "usage: $0 [local|offsite] [report.md]" >&2; exit 2 ;;

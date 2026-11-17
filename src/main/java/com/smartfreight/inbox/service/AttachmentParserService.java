@@ -23,9 +23,10 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 
 /**
- * Extracts plain text from email attachments (Phase 1.1).
+ * Extracts plain text from email attachments.
  *
  * <p>Most freight RFQs arrive as a short email body plus a PDF or Excel attachment carrying the
  * actual request (container numbers, addresses, rates). Without parsing them the AI pipeline is
@@ -111,7 +112,7 @@ public class AttachmentParserService {
 
     /** Dispatches a single attachment to the right parser by file extension. Never throws. */
     private String parsePart(BodyPart part, String filename) {
-        String lower = filename.toLowerCase();
+        String lower = filename.toLowerCase(Locale.ROOT);
         try {
             if (part.getSize() > MAX_ATTACHMENT_BYTES) {
                 log.info("Attachment too large ({} bytes), skipping", part.getSize());

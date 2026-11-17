@@ -1,7 +1,7 @@
 package com.smartfreight.inbox.entity.enums;
 
 /**
- * Type of a freight document a customer can request or an operator can store (Phase 2.7).
+ * Type of a freight document a customer can request or an operator can store.
  *
  * <p>Used in two places: the per-tenant {@code tenant_document} store tags each uploaded file
  * with one of these, and the AI classifier ({@link com.smartfreight.inbox.service.DocumentRequestService})

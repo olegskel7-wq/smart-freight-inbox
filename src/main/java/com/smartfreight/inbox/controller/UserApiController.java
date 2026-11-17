@@ -1,6 +1,7 @@
 package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.controller.dto.UserDto;
+import com.smartfreight.inbox.service.OperatorName;
 import com.smartfreight.inbox.service.UserManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,23 +18,20 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
- * JSON API backing the React {@code /users} page (Phase 3.2). It mirrors
- * {@link UserManagementController} (the Thymeleaf operator-management UI) but speaks DTOs over
- * {@code /api/users} and is secured by the stateless resource-server chain (bearer JWT). The two
- * controllers run side by side during the migration; this one collapses to the only one when
- * Thymeleaf is removed.
+ * JSON API backing the React {@code /users} page: DTOs over {@code /api/users}, secured by the
+ * stateless resource-server chain (bearer JWT).
  *
- * <p>Operators are Keycloak realm users (Phase 2.3); {@link UserManagementService} scopes every
- * call to the caller's tenant and owns the validation (password length, duplicate email, self-delete
- * guard) — a rejected value surfaces here as {@link IllegalArgumentException} → {@code 400} with the
- * message, exactly the text the Thymeleaf page showed as a flash error. Every mutation returns the
- * refreshed operator list so the SPA re-renders without a second round trip.
+ * <p>Operators are Keycloak realm users; {@link UserManagementService} scopes every
+ * call to the caller's tenant and owns the validation (password policy, duplicate email, self-delete
+ * and self-role-change guards) — a rejected value surfaces here as {@link IllegalArgumentException} →
+ * {@code 400} with the message. Every mutation returns the refreshed operator list so the SPA
+ * re-renders without a second round trip.
  *
- * <p>No {@code SecurityConfig} change: {@code /api/users/**} falls under the @Order(1) chain's
- * {@code anyRequest().authenticated()} — {@code /users} was never SUPER_ADMIN-gated (only
- * {@code /admin/tenants/**} is), and the service's per-tenant scoping is the real boundary.
+ * <p>{@code SecurityConfig} gates {@code /api/users/**} with ROLE_ADMIN (an OPERATOR gets 403; pinned
+ * by {@code UsersAdminRuleTest}); the service's per-tenant scoping keeps an ADMIN inside their own tenant.
  */
 @RestController
 @RequestMapping("/api/users")
@@ -47,13 +45,13 @@ public class UserApiController {
         this.userManagementService = userManagementService;
     }
 
-    /** New-operator payload (role defaults to OPERATOR when blank; OPERATOR/ADMIN accepted, Phase 3.3). */
-    public record CreateUserRequest(String email, String password, String role) {}
+    /** New-operator payload (role defaults to OPERATOR when blank; OPERATOR/ADMIN accepted). */
+    public record CreateUserRequest(String email, String firstName, String lastName, String password, String role) {}
 
     /** Password-reset payload for an existing operator. */
     public record ChangePasswordRequest(String newPassword) {}
 
-    /** Role-change payload (OPERATOR ↔ ADMIN, Phase 3.3). */
+    /** Role-change payload (OPERATOR ↔ ADMIN). */
     public record ChangeRoleRequest(String role) {}
 
     /** GET /api/users — the caller's tenant operators. */
@@ -73,8 +71,9 @@ public class UserApiController {
         }
         String role = (request.role() == null || request.role().isBlank()) ? "OPERATOR" : request.role();
         try {
-            userManagementService.createUser(request.email(), request.password(), role);
-            log.info("User created: {}", request.email().trim().toLowerCase());
+            userManagementService.createUser(request.email(),
+                    OperatorName.of(request.firstName(), request.lastName()), request.password(), role);
+            log.info("User created: {}", request.email().trim().toLowerCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
@@ -82,7 +81,7 @@ public class UserApiController {
     }
 
     /**
-     * POST /api/users/{id}/role — changes an operator's tenant role (OPERATOR ↔ ADMIN, Phase 3.3).
+     * POST /api/users/{id}/role — changes an operator's tenant role (OPERATOR ↔ ADMIN).
      * The caller's email comes off the JWT; the service refuses a self-role-change to avoid an admin
      * locking the tenant out of its own management surface. An invalid role / cross-tenant target /
      * self-target answers {@code 400} with the message.

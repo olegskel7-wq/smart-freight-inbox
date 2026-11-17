@@ -1,34 +1,24 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
+import { typeLabel } from '../util/labels.ts'
 import type { TrainingExamplesResponse } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
-type Msg = { kind: 'success' | 'danger'; text: string } | null
-
-// React port of training-examples.html (Phase 3.2). Captured operator corrections (the AI feedback
+// Captured operator corrections (the AI feedback
 // loop): list + delete for dataset curation. The text previews are abbreviated server-side. Delete
 // returns the refreshed snapshot, which re-renders the table. The old Thymeleaf page stays live
 // until cutover.
 export default function TrainingExamplesPage() {
   const api = useApi()
 
-  const [data, setData] = useState<TrainingExamplesResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setData(await api.get<TrainingExamplesResponse>('/api/training-examples'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load training examples')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<TrainingExamplesResponse>('/api/training-examples'), [api])
+  const { data, setData, error } = usePageData(load, 'Failed to load training examples')
 
   const deleteExample = async (id: number) => {
     if (!window.confirm('Delete this training example?')) return
@@ -37,7 +27,7 @@ export default function TrainingExamplesPage() {
       setData(await api.del<TrainingExamplesResponse>(`/api/training-examples/${id}`))
       setMsg({ kind: 'success', text: 'Training example deleted.' })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 
@@ -46,12 +36,7 @@ export default function TrainingExamplesPage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="AI training examples"
@@ -91,7 +76,7 @@ export default function TrainingExamplesPage() {
                 {data.examples.map((e) => (
                   <tr key={e.id}>
                     <td className="ps-3">
-                      <span className="badge text-bg-secondary">{e.ticketType ?? 'Unclassified'}</span>
+                      <span className="badge text-bg-secondary">{typeLabel(e.ticketType)}</span>
                     </td>
                     <td className="small text-muted" style={{ maxWidth: 240 }}>{e.enquiryPreview}</td>
                     <td className="small" style={{ maxWidth: 260 }}>{e.aiDraftPreview}</td>

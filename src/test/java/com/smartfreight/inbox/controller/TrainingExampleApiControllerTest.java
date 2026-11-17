@@ -5,6 +5,7 @@ import com.smartfreight.inbox.entity.enums.TicketType;
 import com.smartfreight.inbox.repository.TrainingExampleRepository;
 import com.smartfreight.inbox.service.FeedbackLoopService;
 import com.smartfreight.inbox.service.SettingsService;
+import com.smartfreight.inbox.service.TrainingExampleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -61,7 +62,7 @@ class TrainingExampleApiControllerTest {
                 .thenReturn(true);
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new TrainingExampleApiController(repository, settingsService))
+                .standaloneSetup(new TrainingExampleApiController(new TrainingExampleService(repository), settingsService))
                 .build();
     }
 

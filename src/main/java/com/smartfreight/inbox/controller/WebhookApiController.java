@@ -21,7 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 /**
- * JSON API backing the React {@code /webhooks} page (Phase 3.5): manage outbound webhook subscriptions
+ * JSON API backing the React {@code /webhooks} page: manage outbound webhook subscriptions
  * and inspect their delivery log. ADMIN-gated by the resource-server chain
  * ({@code /api/webhooks/**} → ROLE_ADMIN in {@link com.smartfreight.inbox.config.SecurityConfig}),
  * mirroring the other tenant-admin surfaces (Settings, Users). Validation lives in

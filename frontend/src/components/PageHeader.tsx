@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-// Shared page header (Phase 3 UI refresh): an h4 title with an optional muted subtitle, and an
+// Shared page header: an h4 title with an optional muted subtitle, and an
 // optional right-aligned slot (used for the per-page feature-off badge). Keeps every page's
 // heading consistent with the tickets dashboard.
 export default function PageHeader({ title, subtitle, children }: {

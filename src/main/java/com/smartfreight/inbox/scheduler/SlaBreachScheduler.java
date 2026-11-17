@@ -16,14 +16,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Marks open tickets whose SLA deadline has passed (Phase 1.5).
+ * Marks open tickets whose SLA deadline has passed.
  *
  * One bulk UPDATE per run, same pattern as {@link StuckTicketSweeper}: idempotent
  * (only rows with slaBreached = false are touched), so concurrent instances or
  * overlapping runs are harmless.
  *
- * CLOSED and IRRELEVANT tickets are excluded — a ticket answered in time never
- * becomes breached, and spam carries no SLA. DRAFT_READY and FAILED still count
+ * CLOSED, AUTO_SENT and IRRELEVANT tickets are excluded — a ticket answered in time
+ * never becomes breached, and spam carries no SLA. DRAFT_READY and FAILED still count
  * as open: the SLA promise is a *reply*, and an unsent draft is not a reply.
  *
  * Once set, the flag is never cleared (including by a later reply) — breaches are
@@ -35,8 +35,8 @@ public class SlaBreachScheduler {
     private static final Logger log = LoggerFactory.getLogger(SlaBreachScheduler.class);
 
     /** Statuses where the SLA clock no longer applies. */
-    static final List<TicketStatus> SLA_EXEMPT_STATUSES =
-            List.of(TicketStatus.CLOSED, TicketStatus.IRRELEVANT);
+    public static final List<TicketStatus> SLA_EXEMPT_STATUSES =
+            List.of(TicketStatus.CLOSED, TicketStatus.AUTO_SENT, TicketStatus.IRRELEVANT);
 
     private final EmailTicketRepository emailTicketRepository;
     private final SlaService slaService;
@@ -61,11 +61,11 @@ public class SlaBreachScheduler {
      */
     @Scheduled(fixedDelayString = "${sla.breach-check-interval-ms:60000}", initialDelay = 60_000)
     public void markBreachedTickets() {
-        // Phase 2.2: SYSTEM tenant state — one bulk UPDATE marks breaches across all
+        // SYSTEM tenant state — one bulk UPDATE marks breaches across all
         // tenants. Context wraps the transaction (see RetryScheduler for why).
         //
         // The flag check MUST run inside the system context too: SlaService.isEnabled()
-        // reads a setting through SettingsService, and since S3 an unset TenantContext
+        // reads a setting through SettingsService, and an unset TenantContext
         // fails loud. In system state the platform-level feature.sla-timer is read, which
         // matches the cross-tenant scope of the bulk UPDATE.
         int breached = TenantContext.callAsSystem(() -> {

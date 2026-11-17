@@ -2,6 +2,7 @@ package com.smartfreight.inbox.controller;
 
 import com.smartfreight.inbox.entity.CarrierRate;
 import com.smartfreight.inbox.repository.CarrierRateRepository;
+import com.smartfreight.inbox.service.RateSheetCache;
 import com.smartfreight.inbox.service.RateSheetService;
 import com.smartfreight.inbox.service.SettingsService;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,9 +65,20 @@ class RateApiControllerTest {
         when(settingsService.isFeatureEnabled(eq(RateSheetService.FEATURE_KEY), anyBoolean()))
                 .thenReturn(true);
 
+        // importCsv() stays a mock; listing and deleting run the real service over the repository mock.
+        RateSheetService real = new RateSheetService(carrierRateRepository, new RateSheetCache(carrierRateRepository), settingsService);
+        when(rateSheetService.listSorted()).thenAnswer(i -> real.listSorted());
+        doAnswer(i -> {
+            real.deleteIfPresent(i.getArgument(0));
+            return null;
+        }).when(rateSheetService).deleteIfPresent(any());
+        doAnswer(i -> {
+            real.deleteAll();
+            return null;
+        }).when(rateSheetService).deleteAll();
+
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new RateApiController(
-                        rateSheetService, carrierRateRepository, settingsService))
+                .standaloneSetup(new RateApiController(rateSheetService, settingsService))
                 .build();
     }
 

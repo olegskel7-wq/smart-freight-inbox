@@ -38,8 +38,7 @@ import static org.mockito.Mockito.*;
  * Verifies:
  * - RECEIVED + classifier says irrelevant → ticket parked as IRRELEVANT, pipeline never runs
  * - RECEIVED + classifier says relevant   → full pipeline runs to DRAFT_READY
- * - NEW (retry re-entry), binary mode     → classifier deliberately skipped (fail-open)
- * - NEW + null type, typed mode (1.7)     → classifier re-entered (first verdict, not a re-judgement)
+ * - NEW + null type (1.7)                 → classifier re-entered (first verdict, not a re-judgement)
  * - terminal status                       → no-op, nothing touched
  * - CallNotPermittedException (1.7)       → process() parks the ticket as RETRY_LATER, not FAILED
  *
@@ -105,12 +104,17 @@ class TicketProcessingClassificationTest {
 
     @BeforeEach
     void setUp() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         service = new TicketProcessingService(
-                emailTicketRepository, emailClassificationService, aiExtractionService,
-                itemLookupService, aiDraftingService, rateSheetService, gmailDraftService,
-                slaService, autoSendService, shipmentWatchService, documentRequestService,
-                feedbackLoopService, knowledgeBaseService, embeddingService, settingsService,
-                webhookEventPublisher, ticketAuditService, new SimpleMeterRegistry());
+                emailTicketRepository,
+                new TicketClassificationStep(emailClassificationService, slaService, settingsService,
+                        ticketAuditService, webhookEventPublisher),
+                new IdentifierLookupStep(aiExtractionService, itemLookupService),
+                new ReplyDraftStep(settingsService, documentRequestService, aiDraftingService,
+                        new DraftContextAssembler(rateSheetService, feedbackLoopService, knowledgeBaseService, embeddingService),
+                        autoSendService, meterRegistry),
+                new DraftRoutingStep(autoSendService, shipmentWatchService, gmailDraftService),
+                autoSendService, meterRegistry);
         // In production `self` is the Spring proxy (@Transactional); in a unit test the
         // plain instance is enough — transactional semantics are not under test here.
         ReflectionTestUtils.setField(service, "self", service);
@@ -132,7 +136,7 @@ class TicketProcessingClassificationTest {
         when(rateSheetService.buildRateContext(anyString())).thenReturn("");
         when(feedbackLoopService.retrieveExamples(any(), anyString(), any())).thenReturn("");
         when(knowledgeBaseService.retrieveContext(anyString(), any())).thenReturn("");
-        when(aiDraftingService.generateDraft(anyString(), any(), anyString(), anyString(), anyString()))
+        when(aiDraftingService.generateDraft(any(ReplyDraftRequest.class)))
                 .thenReturn("Dear customer, ...");
     }
 
@@ -181,7 +185,7 @@ class TicketProcessingClassificationTest {
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(emailClassificationService.classify(any(), any()))
                 .thenReturn(new ClassificationResult(true, TicketType.RFQ, Urgency.HIGH, true));
-        when(settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""))
+        when(settingsService.getString(EmailClassificationService.KEY_ESCALATION_ASSIGNEE, ""))
                 .thenReturn("operator-uuid-9");
         stubHappyPipeline();
 
@@ -199,7 +203,7 @@ class TicketProcessingClassificationTest {
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(emailClassificationService.classify(any(), any()))
                 .thenReturn(new ClassificationResult(true, TicketType.RFQ, Urgency.HIGH, false));
-        when(settingsService.getString(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE, ""))
+        when(settingsService.getString(EmailClassificationService.KEY_ESCALATION_ASSIGNEE, ""))
                 .thenReturn("");
         stubHappyPipeline();
 
@@ -223,7 +227,7 @@ class TicketProcessingClassificationTest {
 
         // A manual owner is never overwritten; the setting is not even read.
         assertThat(ticket.getAssigneeUserId()).isEqualTo("already-mine");
-        verify(settingsService, never()).getString(eq(TicketProcessingService.SETTING_ESCALATION_ASSIGNEE), anyString());
+        verify(settingsService, never()).getString(eq(EmailClassificationService.KEY_ESCALATION_ASSIGNEE), anyString());
     }
 
     // Phase 3.9: the feedback loop and the knowledge base receive the SAME memoised embedding supplier,
@@ -286,40 +290,11 @@ class TicketProcessingClassificationTest {
     }
 
     @Test
-    void receivedTicket_relevantWithoutType_featureOff_typeStaysNull() {
-        EmailTicket ticket = ticket(TicketStatus.RECEIVED);
-        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
-        when(emailClassificationService.classify(any(), any()))
-                .thenReturn(new ClassificationResult(true, null));
-        stubHappyPipeline();
-
-        service.processAttempt(1L, System.nanoTime());
-
-        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
-        assertThat(ticket.getTicketType()).isNull();
-    }
-
-    @Test
-    void newTicket_retryReentry_binaryMode_skipsClassification() {
-        EmailTicket ticket = ticket(TicketStatus.NEW);
-        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
-        // Binary mode persists no classification verdict — the historical fail-open skip holds.
-        when(emailClassificationService.isTypedMode()).thenReturn(false);
-        stubHappyPipeline();
-
-        service.processAttempt(1L, System.nanoTime());
-
-        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
-        verify(emailClassificationService, never()).classify(any(), any());
-    }
-
-    @Test
     void newTicket_retryReentry_typedModeAndNoType_reentersClassification() {
         // Phase 1.7: a ticket parked by an open breaker before step 0 completed re-enters
         // classification on retry — null type in typed mode marks "never got a verdict".
         EmailTicket ticket = ticket(TicketStatus.NEW);
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
-        when(emailClassificationService.isTypedMode()).thenReturn(true);
         when(emailClassificationService.classify(any(), any()))
                 .thenReturn(new ClassificationResult(true, TicketType.RFQ));
         stubHappyPipeline();
@@ -363,6 +338,7 @@ class TicketProcessingClassificationTest {
     @Test
     void draftReady_confidenceStored_notEligible_savesGmailDraft() {
         EmailTicket ticket = ticket(TicketStatus.NEW);
+        ticket.setTicketType(TicketType.STATUS_UPDATE);   // a retry of a classified ticket
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         stubHappyPipeline();
         when(autoSendService.confidenceFor(any(), anyBoolean(), anyBoolean(), anyBoolean()))
@@ -379,6 +355,7 @@ class TicketProcessingClassificationTest {
     @Test
     void draftReady_eligible_skipsGmailDraft_andReportsToCaller() {
         EmailTicket ticket = ticket(TicketStatus.NEW);
+        ticket.setTicketType(TicketType.STATUS_UPDATE);   // a retry of a classified ticket
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         stubHappyPipeline();
         when(autoSendService.confidenceFor(any(), anyBoolean(), anyBoolean(), anyBoolean()))
@@ -430,7 +407,7 @@ class TicketProcessingClassificationTest {
         assertThat(ticket.getRequestedDocType()).isEqualTo(DocumentType.POD);
         assertThat(ticket.getAttachedDocumentId()).isEqualTo(7L);
         verify(aiDraftingService).generateDocumentReply(anyString(), eq(DocumentType.POD), any(), eq(true));
-        verify(aiDraftingService, never()).generateDraft(anyString(), any(), anyString(), anyString());
+        verify(aiDraftingService, never()).generateDraft(any());
     }
 
     @Test
@@ -461,7 +438,7 @@ class TicketProcessingClassificationTest {
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DRAFT_READY);
         assertThat(ticket.getAttachedDocumentId()).isNull();
-        verify(aiDraftingService).generateDraft(anyString(), any(), anyString(), anyString(), anyString());
+        verify(aiDraftingService).generateDraft(any(ReplyDraftRequest.class));
         verify(documentRequestService, never()).detectRequestedType(anyString());
     }
 
@@ -477,8 +454,8 @@ class TicketProcessingClassificationTest {
     void process_breakerOpenDuringExtraction_parksTicketAsRetryLater_keepsRetryBudget() {
         EmailTicket ticket = ticket(TicketStatus.NEW);
         ticket.setRetryCount(2);
+        ticket.setTicketType(TicketType.STATUS_UPDATE);   // classified before it was parked
         when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
-        when(emailClassificationService.isTypedMode()).thenReturn(false);
         when(aiExtractionService.extractIdentifier(anyString())).thenThrow(breakerOpen());
 
         service.process(1L);

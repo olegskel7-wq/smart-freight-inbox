@@ -44,3 +44,10 @@ build/
 ### Claude Code ###
 .claude/
 CLAUDE.md
+
+# Golden-set snapshots (scripts/golden-snapshot.ps1) - local, depend on the live stack and model
+golden-snapshots/
+
+# LLM eval tooling (scripts/eval) - npm dependencies and run logs
+scripts/eval/node_modules/
+scripts/eval/runs/

@@ -14,7 +14,7 @@ import org.hibernate.annotations.TenantId;
 import java.time.LocalDateTime;
 
 /**
- * A tenant's outbound webhook endpoint (Phase 3.5).
+ * A tenant's outbound webhook endpoint.
  *
  * <p>CRM-agnostic: the tenant points this at any HTTPS receiver — their CRM's catch-hook, Zapier,
  * Make, or a bespoke endpoint — and SmartFreight POSTs a signed JSON envelope whenever a subscribed
@@ -60,7 +60,7 @@ public class WebhookSubscription {
     private boolean enabled = true;
 
     /**
-     * Count of fully-failed (DEAD) deliveries in a row (Phase 3.5 S2). The dispatcher increments it on
+     * Count of fully-failed (DEAD) deliveries in a row. The dispatcher increments it on
      * each DEAD delivery and resets it to 0 on any DELIVERED; when it crosses {@code webhook.auto-disable-after}
      * the endpoint is auto-disabled. Reset to 0 whenever the operator re-enables the subscription.
      */

@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -20,7 +21,7 @@ import java.util.Optional;
  *
  * Simulates a real integration with a port cargo management system (TOS/CMS). For a different
  * vertical a different {@link ItemLookupService} implementation would be wired in instead; the
- * pipeline ({@link TicketProcessingService}) is unaware of this concrete backend.
+ * pipeline ({@link IdentifierLookupStep}) is unaware of this concrete backend.
  *
  * If port-service is unavailable or the item is not found, {@link Optional#empty()} is returned and
  * the AI will generate a draft without data.
@@ -69,7 +70,7 @@ public class PortServiceItemLookup implements ItemLookupService {
             return Optional.empty();
         }
 
-        String normalized = identifier.trim().toUpperCase();
+        String normalized = identifier.trim().toUpperCase(Locale.ROOT);
 
         try {
             // 4xx ("not found") raises WebClientResponseException, which the breaker config

@@ -2,13 +2,18 @@ package com.smartfreight.inbox.exception;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
@@ -86,6 +91,30 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.message").value("This mailbox is already configured."));
     }
 
+    /** A body without a primitive field the record needs is a client error, not a 500. */
+    @Test
+    void bodyMissingAPrimitiveField_returns400() throws Exception {
+        mockMvc.perform(post("/test/flag").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Malformed or incomplete request body"));
+    }
+
+    @Test
+    void malformedJson_returns400() throws Exception {
+        mockMvc.perform(post("/test/flag").contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void pathValueOfTheWrongType_returns400NamingTheParameter() throws Exception {
+        mockMvc.perform(get("/test/items/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Invalid value for 'id'"));
+    }
+
     /**
      * Pagalbinis REST valdiklis, skirtas išimčių išmetimui testuose.
      *
@@ -109,6 +138,18 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/generic-exception")
         String throwGenericException() {
             throw new RuntimeException("Something went terribly wrong");
+        }
+
+        record Flag(boolean enabled) {}
+
+        @PostMapping("/flag")
+        String flag(@RequestBody Flag flag) {
+            return String.valueOf(flag.enabled());
+        }
+
+        @GetMapping("/items/{id}")
+        String item(@PathVariable("id") Long id) {
+            return String.valueOf(id);
         }
 
         @GetMapping("/conflict")

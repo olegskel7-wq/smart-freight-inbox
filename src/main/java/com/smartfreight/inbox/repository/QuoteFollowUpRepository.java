@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Access to proactive quote-follow-up subscriptions (Phase 2.5).
+ * Access to proactive quote-follow-up subscriptions.
  *
  * <p>Tenant-filtered by Hibernate {@code @TenantId} — except under the system context, where the
  * filter is off by design: {@code QuoteFollowUpScheduler} reads EVERY tenant's active follow-ups
@@ -24,7 +24,7 @@ public interface QuoteFollowUpRepository extends JpaRepository<QuoteFollowUp, Lo
     Optional<QuoteFollowUp> findByTicketId(Long ticketId);
 
     /**
-     * Quote-to-booking conversion for quotes sent in the period (Phase 3.6). Each sent RFQ quote is
+     * Quote-to-booking conversion for quotes sent in the period. Each sent RFQ quote is
      * a {@code quote_follow_up} row (armed at both send sites regardless of the follow-up flag); a
      * quote counts as converted when an inbound {@code BOOKING_CONFIRM} ticket from the same customer
      * arrived at or after the quote went out. This is the ROI metric "% of quotes that turned into
@@ -32,8 +32,9 @@ public interface QuoteFollowUpRepository extends JpaRepository<QuoteFollowUp, Lo
      *
      * <p>Per-quote denominator: a customer quoted three times then booking once converts all three of
      * those quotes — the unit is the quote, not the customer. Matching is sender-based, mirroring
-     * {@link EmailTicketRepository#existsInboundReplyFrom}: the cleaned {@code customer_email} stored
-     * on the quote must appear within the booking's raw {@code sender_email}. Native SQL, so the
+     * {@link EmailTicketRepository#existsInboundReplyFrom}: the booking's raw {@code sender_email} must
+     * equal the cleaned {@code customer_email} stored on the quote or end with {@code <customer_email>}
+     * (case-insensitive, never a substring). Native SQL, so the
      * email-ticket soft-delete predicate is explicit (Hibernate's {@code @SQLRestriction} does not
      * apply to native queries); both tables are tenant-scoped by the V19/V24 RLS policies via the
      * connection GUC. A freshly-sent quote that has not yet converted lowers the rate — inherent to
@@ -50,7 +51,9 @@ public interface QuoteFollowUpRepository extends JpaRepository<QuoteFollowUp, Lo
            "              AND b.deleted = false " +
            "              AND b.ticket_type = 'BOOKING_CONFIRM' " +
            "              AND b.created_at >= q.quote_sent_at " +
-           "              AND LOWER(b.sender_email) LIKE CONCAT('%', LOWER(q.customer_email), '%') " +
+           "              AND (LOWER(b.sender_email) = LOWER(q.customer_email) " +
+           "                   OR RIGHT(LOWER(b.sender_email), LENGTH(q.customer_email) + 2) " +
+           "                      = '<' || LOWER(q.customer_email) || '>') " +
            "       )) AS converted " +
            "  FROM quote_follow_up q " +
            " WHERE q.quote_sent_at >= :since")

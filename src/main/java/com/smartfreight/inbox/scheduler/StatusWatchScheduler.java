@@ -25,13 +25,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Proactive status-update poller (Phase 2.4).
+ * Proactive status-update poller (see docs/adr/0009-proactive-emails.md).
  *
  * <p>The product's default flow is reactive (a customer emails, the AI replies). This scheduler
  * adds the proactive direction: it polls the backend for every {@link ShipmentWatch} (a
@@ -45,7 +46,7 @@ import java.util.stream.Collectors;
  * stamped with the right tenant. The context wraps the transaction (TransactionTemplate inside
  * runAs, not {@code @Transactional}) — Hibernate fixes the session tenant at session open.
  *
- * <p>Send policy reuses the auto-send gate (Phase 1.6): a proactive update is delivered as an
+ * <p>Send policy reuses the auto-send gate: a proactive update is delivered as an
  * outbound {@link EmailTicket} routed through {@link AutoSendService} exactly like an inbound
  * draft — auto-sent when the operator has enabled auto-send for STATUS_UPDATE, otherwise left as
  * a DRAFT_READY for review. The SMTP send happens AFTER the DB transaction commits (same
@@ -229,7 +230,7 @@ public class StatusWatchScheduler {
         String raw = settingsService.getString(KEY_MILESTONES, DEFAULT_MILESTONES);
         Set<String> result = new java.util.HashSet<>();
         for (String name : raw.split(",")) {
-            String trimmed = name.trim().toUpperCase();
+            String trimmed = name.trim().toUpperCase(Locale.ROOT);
             if (!trimmed.isEmpty()) {
                 result.add(trimmed);
             }

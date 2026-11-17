@@ -4,7 +4,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Bridges the Spring-managed {@link TicketLiveEventService} to the JPA {@link TicketLiveEventListener},
- * which Hibernate instantiates outside the Spring container (Phase 3.2).
+ * which Hibernate instantiates outside the Spring container.
  *
  * <p>JPA entity listeners are not Spring beans, so they cannot use constructor injection portably.
  * Rather than rely on Hibernate's optional bean-container integration, this {@code @Component} captures

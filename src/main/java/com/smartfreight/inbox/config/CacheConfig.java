@@ -10,7 +10,7 @@ import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import java.time.Duration;
 
 /**
- * Spring Cache wiring (Phase 2.6). Backed by Redis ({@code spring.cache.type=redis}); the
+ * Spring Cache wiring. Backed by Redis ({@code spring.cache.type=redis}); the
  * region is keyed per tenant in {@link RateSheetCache}.
  *
  * <p>The TTL is a safety net, not the primary invalidation. CSV imports evict the region

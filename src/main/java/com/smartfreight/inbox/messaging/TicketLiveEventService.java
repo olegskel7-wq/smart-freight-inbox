@@ -9,11 +9,11 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Broadcasts {@link TicketLiveEvent}s to the per-tenant ticket topic over STOMP (Phase 3.2).
+ * Broadcasts {@link TicketLiveEvent}s to the per-tenant ticket topic over STOMP.
  *
  * <p>Invoked from {@link TicketLiveEventListener} on every ticket persist/update/soft-delete. The
  * broadcast is deferred to <b>after the surrounding transaction commits</b> — the same discipline as
- * the Phase 1.6 SMTP send: an event must describe a state that is actually durable, so a rolled-back
+ * the auto-send SMTP send: an event must describe a state that is actually durable, so a rolled-back
  * attempt (optimistic-lock retry, pipeline failure) never pushes a phantom change to operators. When
  * there is no active transaction (rare — most writes are transactional) the event is sent inline.
  *

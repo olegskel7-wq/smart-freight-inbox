@@ -14,7 +14,7 @@ import org.hibernate.annotations.TenantId;
 import java.time.LocalDateTime;
 
 /**
- * A proactive status-update subscription (Phase 2.4).
+ * A proactive status-update subscription.
  *
  * <p>The product is reactive by default — a customer emails, the AI replies. A watch turns
  * that single enquiry into an ongoing subscription: once a customer asks about a shipment

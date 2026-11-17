@@ -12,7 +12,7 @@ import java.util.Set;
 
 /**
  * Maps a Keycloak access-token's {@code roles} claim to Spring {@code ROLE_*} authorities
- * (Phase 3.2 — the {@code /api/**} resource-server chain).
+ * for the {@code /api/**} resource-server chain (see docs/adr/0008-react-spa-jwt.md).
  *
  * <p>A user with no roles defaults to {@code OPERATOR}; the tenant tiers nest as
  * {@code SUPER_ADMIN} ⇒ {@code ADMIN} ⇒ {@code OPERATOR} (granted alongside, not via a

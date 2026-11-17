@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -20,5 +21,10 @@ export default defineConfig({
       // STOMP WebSocket (Phase 3.2) — ws:true upgrades the connection to the backend.
       '/ws': { target: 'http://localhost:8080', ws: true },
     },
+  },
+  // `npm test`: component tests in jsdom, matchers from @testing-library/jest-dom.
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
   },
 })

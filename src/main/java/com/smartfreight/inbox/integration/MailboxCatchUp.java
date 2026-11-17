@@ -20,7 +20,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
@@ -30,7 +29,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Re-finds emails the IDLE adapter never turned into tickets (Gate B5) and ingests them.
+ * Re-finds emails the IDLE adapter never turned into tickets and ingests them.
  *
  * <p>The adapter is at-most-once: Spring Integration flags a message (\Seen or its own flag) when it
  * FETCHES it, before our handler persists it — so a DB outage, a crash or a redeploy mid-ingest loses
@@ -134,11 +133,8 @@ public class MailboxCatchUp {
     /** Look-back window start, clamped to when the mailbox was connected. */
     Instant windowStart(TenantMailbox mailbox, Instant now) {
         Instant windowStart = now.minus(lookBack);
-        if (mailbox.getCreatedAt() == null) {
-            return windowStart;
-        }
-        Instant connected = mailbox.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant();
-        return connected.isAfter(windowStart) ? connected : windowStart;
+        Instant connected = MailboxImapAdapterManager.connectedAt(mailbox);
+        return connected != null && connected.isAfter(windowStart) ? connected : windowStart;
     }
 
     private static String messageId(Message message) throws MessagingException {

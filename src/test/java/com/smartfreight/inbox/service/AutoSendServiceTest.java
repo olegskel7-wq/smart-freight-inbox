@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,7 +59,9 @@ class AutoSendServiceTest {
     void setUp() {
         service = new AutoSendService(emailTicketRepository, emailReplyService,
                 settingsService, sendRateLimiter, auditService, quoteFollowUpService,
-                webhookEventPublisher, new SimpleMeterRegistry());
+                webhookEventPublisher,
+                new SlaService(settingsService, new SlaProperties(), new SimpleMeterRegistry()),
+                new SimpleMeterRegistry());
     }
 
     private EmailTicket ticket(TicketStatus status, TicketType type, Double confidence) {
@@ -161,6 +165,23 @@ class AutoSendServiceTest {
     }
 
     @Test
+    void storedNaNThreshold_fallsBackToDefault() {
+        when(settingsService.getString(eq(AutoSendService.KEY_THRESHOLD), anyString())).thenReturn("NaN");
+
+        assertThat(service.threshold()).isEqualTo(AutoSendService.DEFAULT_THRESHOLD);
+    }
+
+    /** {@code confidence < NaN} is never true, so a NaN that reached the gate would let every ticket through. */
+    @Test
+    void storedNaNThreshold_stillBlocksLowConfidence() {
+        stubEnabledDefaults();
+        lenient().when(settingsService.getString(eq(AutoSendService.KEY_THRESHOLD), anyString())).thenReturn("NaN");
+
+        assertThat(service.shouldAutoSend(ticket(TicketStatus.DRAFT_READY, TicketType.STATUS_UPDATE, 0.1))).isFalse();
+        assertThat(service.shouldAutoSend(ticket(TicketStatus.DRAFT_READY, TicketType.STATUS_UPDATE, 0.9))).isTrue();
+    }
+
+    @Test
     void thresholdOutOfRange_isClamped() {
         when(settingsService.getString(eq(AutoSendService.KEY_THRESHOLD), anyString()))
                 .thenReturn("7");
@@ -175,6 +196,23 @@ class AutoSendServiceTest {
 
         assertThat(service.allowedTypes())
                 .containsExactlyInAnyOrder(TicketType.STATUS_UPDATE, TicketType.RFQ);
+    }
+
+    @Test
+    void lowerCaseTypeNames_parseUnderATurkishDefaultLocale() {
+        // Under tr, "i".toUpperCase() is the dotted "İ", so a locale-dependent parse would drop
+        // invoice_query; the case mapping must not follow the JVM default locale.
+        Locale saved = Locale.getDefault();
+        Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+        try {
+            when(settingsService.getString(eq(AutoSendService.KEY_TYPES), anyString()))
+                    .thenReturn("invoice_query, status_update");
+
+            assertThat(service.allowedTypes())
+                    .containsExactlyInAnyOrder(TicketType.INVOICE_QUERY, TicketType.STATUS_UPDATE);
+        } finally {
+            Locale.setDefault(saved);
+        }
     }
 
     // ---- autoSend: transition + refusal paths -------------------------------------------
@@ -199,6 +237,33 @@ class AutoSendServiceTest {
         // Phase 3.5 S2: reply.sent fires for a sent reply; quote.sent does NOT (not an RFQ).
         verify(webhookEventPublisher).publish(eq(WebhookEventType.REPLY_SENT), any(), any());
         verify(webhookEventPublisher, never()).publish(eq(WebhookEventType.QUOTE_SENT), any(), any());
+    }
+
+    @Test
+    void autoSend_pastTheSlaDeadline_flagsTheBreachBeforeLeavingTheOpenSet() {
+        EmailTicket late = ticket(TicketStatus.DRAFT_READY, TicketType.STATUS_UPDATE, 0.9);
+        late.setSlaDeadlineAt(LocalDateTime.now().minusMinutes(1));
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(late));
+        stubEnabledDefaults();
+        when(sendRateLimiter.tryAcquire(1L)).thenReturn(true);
+
+        service.autoSend(1L);
+
+        assertThat(late.getStatus()).isEqualTo(TicketStatus.AUTO_SENT);
+        assertThat(late.isSlaBreached()).isTrue();
+    }
+
+    @Test
+    void autoSend_withinTheSlaDeadline_doesNotFlag() {
+        EmailTicket onTime = ticket(TicketStatus.DRAFT_READY, TicketType.STATUS_UPDATE, 0.9);
+        onTime.setSlaDeadlineAt(LocalDateTime.now().plusHours(1));
+        when(emailTicketRepository.findById(1L)).thenReturn(Optional.of(onTime));
+        stubEnabledDefaults();
+        when(sendRateLimiter.tryAcquire(1L)).thenReturn(true);
+
+        service.autoSend(1L);
+
+        assertThat(onTime.isSlaBreached()).isFalse();
     }
 
     @Test

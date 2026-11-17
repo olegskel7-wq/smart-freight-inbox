@@ -5,7 +5,7 @@ import com.smartfreight.inbox.entity.WebhookDelivery;
 import java.time.LocalDateTime;
 
 /**
- * One delivery attempt row for the React webhook delivery log (Phase 3.5). The payload body is omitted
+ * One delivery attempt row for the React webhook delivery log. The payload body is omitted
  * from the list view (it is large and the same across a tenant's deliveries of one event); status,
  * attempts, the HTTP code and the last error are what the operator needs to debug a failing endpoint.
  */

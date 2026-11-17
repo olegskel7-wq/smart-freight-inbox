@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Access to per-tenant mailbox rows (Phase 2.2 S3).
+ * Access to per-tenant mailbox rows.
  *
  * <p>All queries are tenant-filtered by Hibernate {@code @TenantId} — except under the
  * system context, where the filter is off by design: {@code MailboxReconciler} reads

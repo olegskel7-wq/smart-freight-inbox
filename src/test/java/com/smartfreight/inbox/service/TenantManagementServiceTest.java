@@ -8,6 +8,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
 import java.util.Optional;
@@ -23,6 +24,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class TenantManagementServiceTest {
+
+    private static final OperatorName DANA = new OperatorName("Dana", "Price");
 
     @Mock
     private TenantRepository tenantRepository;
@@ -47,27 +50,42 @@ class TenantManagementServiceTest {
         when(tenantRepository.findByName("Acme Logistics")).thenReturn(Optional.empty());
         when(keycloakAdminService.emailExists("ops@acme.co.uk")).thenReturn(false);
 
-        Tenant created = service.createTenant("  Acme Logistics  ", "  OPS@Acme.co.uk ", "secret-pass");
+        Tenant created = service.createTenant("  Acme Logistics  ", "  OPS@Acme.co.uk ", DANA, "secret-pass");
 
         assertThat(created.getName()).isEqualTo("Acme Logistics");
-        // The operator goes into Keycloak (email normalised) scoped to the new tenant id.
-        verify(keycloakAdminService).createUser("ops@acme.co.uk", "secret-pass", 42L, "OPERATOR");
+        // The first user goes into Keycloak (email normalised) scoped to the new tenant id, as its
+        // ADMIN — an OPERATOR could not reach /settings to connect the tenant's mailbox (Gate B6).
+        verify(keycloakAdminService).createUser("ops@acme.co.uk", DANA, "secret-pass", 42L, "ADMIN");
+    }
+
+    @Test
+    void createTenant_passwordRejectedByRealmPolicy_isAClear400NotA500() {
+        when(tenantRepository.findByName("Acme")).thenReturn(Optional.empty());
+        when(keycloakAdminService.emailExists("ops@acme.co.uk")).thenReturn(false);
+        when(keycloakAdminService.createUser(any(), any(), any(), any(), any())).thenThrow(
+                WebClientResponseException.create(400, "Bad Request", null,
+                        "{\"errorMessage\":\"invalidPasswordMinUpperCaseCharsMessage\"}".getBytes(), null));
+
+        // 10+ chars passes our length check; Keycloak's upper/lower/digit policy rejects it.
+        assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", DANA, "alllowercase"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(UserManagementService.PASSWORD_POLICY_MESSAGE);
     }
 
     @Test
     void createTenant_rejectsDuplicateName() {
         when(tenantRepository.findByName("Acme")).thenReturn(Optional.of(new Tenant()));
 
-        assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", "secret-pass"))
+        assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", DANA, "secret-pass"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("already exists");
         verify(tenantRepository, never()).save(any());
-        verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
+        verify(keycloakAdminService, never()).createUser(anyString(), any(), anyString(), any(), anyString());
     }
 
     @Test
     void createTenant_rejectsBlankName() {
-        assertThatThrownBy(() -> service.createTenant("   ", "ops@acme.co.uk", "secret-pass"))
+        assertThatThrownBy(() -> service.createTenant("   ", "ops@acme.co.uk", DANA, "secret-pass"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("name");
     }
@@ -76,11 +94,11 @@ class TenantManagementServiceTest {
     void createTenant_rejectsShortPassword() {
         when(tenantRepository.findByName("Acme")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", "short"))
+        assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", DANA, "short"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("at least 8");
+                .hasMessageContaining("at least 10");
         verify(tenantRepository, never()).save(any());
-        verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
+        verify(keycloakAdminService, never()).createUser(anyString(), any(), anyString(), any(), anyString());
     }
 
     @Test
@@ -88,11 +106,11 @@ class TenantManagementServiceTest {
         when(tenantRepository.findByName("Acme")).thenReturn(Optional.empty());
         when(keycloakAdminService.emailExists("ops@acme.co.uk")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", "secret-pass"))
+        assertThatThrownBy(() -> service.createTenant("Acme", "ops@acme.co.uk", DANA, "secret-pass"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("already exists");
         verify(tenantRepository, never()).save(any());
-        verify(keycloakAdminService, never()).createUser(anyString(), anyString(), any(), anyString());
+        verify(keycloakAdminService, never()).createUser(anyString(), any(), anyString(), any(), anyString());
     }
 
     @Test

@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApi } from '../api/useApi.ts'
+import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { KnowledgeResponse } from '../types.ts'
+import { errorMessage } from '../util/errors.ts'
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
-type Msg = { kind: 'success' | 'danger'; text: string } | null
-
-// Knowledge-base management page (Phase 3.9 — KB deflection). Operators store free-text knowledge
+// Knowledge-base management page (docs/adr/0010-rag-feedback-and-knowledge.md). Operators store free-text knowledge
 // (FAQs / policies / quoting rules); the pipeline retrieves the most relevant documents at draft time
 // and grounds the reply with them. An always-visible card adds a new document; the same card edits an
 // existing one when a row's Edit is clicked. Every mutation returns the refreshed snapshot, which
@@ -14,8 +15,6 @@ type Msg = { kind: 'success' | 'danger'; text: string } | null
 export default function KnowledgePage() {
   const api = useApi()
 
-  const [data, setData] = useState<KnowledgeResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
 
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -23,18 +22,8 @@ export default function KnowledgePage() {
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      setData(await api.get<KnowledgeResponse>('/api/knowledge'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load knowledge base')
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
+  const load = useCallback(() => api.get<KnowledgeResponse>('/api/knowledge'), [api])
+  const { data, setData, error } = usePageData(load, 'Failed to load knowledge base')
 
   const resetForm = () => {
     setEditingId(null)
@@ -55,7 +44,7 @@ export default function KnowledgePage() {
       setMsg({ kind: 'success', text: editingId == null ? 'Knowledge document added.' : 'Knowledge document updated.' })
       resetForm()
     } catch (err) {
-      setMsg({ kind: 'danger', text: err instanceof Error ? err.message : 'Save failed' })
+      setMsg({ kind: 'danger', text: errorMessage(err, 'Save failed') })
     } finally {
       setSaving(false)
     }
@@ -78,7 +67,7 @@ export default function KnowledgePage() {
       if (editingId === id) resetForm()
       setMsg({ kind: 'success', text: 'Knowledge document deleted.' })
     } catch (e) {
-      setMsg({ kind: 'danger', text: e instanceof Error ? e.message : 'Delete failed' })
+      setMsg({ kind: 'danger', text: errorMessage(e, 'Delete failed') })
     }
   }
 
@@ -87,12 +76,7 @@ export default function KnowledgePage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="Knowledge base"

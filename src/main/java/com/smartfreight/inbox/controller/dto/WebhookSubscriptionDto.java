@@ -7,7 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * A webhook subscription for the React {@code /webhooks} page (Phase 3.5).
+ * A webhook subscription for the React {@code /webhooks} page.
  *
  * <p>The signing secret is NOT included — it is shown once at creation and never read back. The CSV
  * {@code event_types} column is split into a list for the UI's type picker.

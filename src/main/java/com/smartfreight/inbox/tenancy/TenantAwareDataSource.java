@@ -8,13 +8,13 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 /**
- * Feeds the current tenant into Postgres session GUCs for Row-Level Security (Phase 2.2).
+ * Feeds the current tenant into Postgres session GUCs for Row-Level Security.
  *
  * <p>Every connection checkout sets BOTH {@code app.tenant_id} and {@code app.is_system}
  * unconditionally — a pooled connection therefore can never carry a stale tenant from its
  * previous user, without needing a reset-on-return proxy. The V19 policies read these GUCs:
  * tenant state sees its own rows, system state sees everything, anonymous and unset states
- * get an empty GUC — fail closed, zero rows (S3 removed the unset-equals-default fallback).
+ * get an empty GUC — fail closed, zero rows (unset never falls back to the default tenant).
  *
  * <p>Unset does NOT throw here, unlike {@link TenantIdentifierResolver}: infrastructure
  * legitimately checks out connections with no tenant semantics (DataSource health checks,

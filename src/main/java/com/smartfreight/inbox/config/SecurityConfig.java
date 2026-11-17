@@ -20,7 +20,7 @@ import org.springframework.security.web.SecurityFilterChain;
 /**
  * Spring Security configuration.
  *
- * <p><b>Two filter chains coexist (post Phase 3.2 cutover — the app is now a React SPA):</b>
+ * <p><b>Two filter chains coexist (the UI is a React SPA, see docs/adr/0008-react-spa-jwt.md):</b>
  * <ol>
  *   <li><b>{@code /api/**}</b> — a stateless OAuth2 <i>resource server</i>. The React SPA obtains a
  *       Keycloak access token (authorization-code + PKCE, public client {@code smartfreight-spa})
@@ -57,7 +57,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Matcher order matters: most specific first. Tenant onboarding is platform-level
                 // (SUPER_ADMIN); team/settings/platform-maintenance are tenant-admin surfaces
-                // (ADMIN — Phase 3.3); everything else (tickets/analytics/rates/documents/learning)
+                // (ADMIN); everything else (tickets/analytics/rates/documents/learning)
                 // is day-to-day operator work, so it only needs an authenticated OPERATOR.
                 .requestMatchers("/api/admin/tenants/**").hasRole("SUPER_ADMIN")
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -103,7 +103,7 @@ public class SecurityConfig {
      * {@code jwk-set-uri}, issuer pinned to {@code issuer-uri}, no discovery call at startup so the
      * context boots without a live Keycloak), then hardened with {@link ExpectedClientJwtValidator}:
      * on top of issuer + signature we require the token's {@code azp} to be our own SPA client, so a
-     * token minted for any other client in the realm is rejected (ROADMAP 4.7). The JWKS is fetched
+     * token minted for any other client in the realm is rejected. The JWKS is fetched
      * lazily on first decode, so defining this bean keeps the existing startup behaviour.
      */
     @Bean

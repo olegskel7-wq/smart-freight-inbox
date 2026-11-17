@@ -1,15 +1,15 @@
 package com.smartfreight.inbox.entity.enums;
 
 /**
- * Business type of an incoming email (Phase 1.4 — extended classification).
+ * Business type of an incoming email.
  *
  * Assigned by the AI classifier in the same consumer step that decides relevance
  * (one Qwen call returns either IRRELEVANT or one of these types). The type is the
- * routing seam for downstream features: SLA deadlines per type (1.5), auto-send
- * thresholds (1.6), and eventually per-type workflows.
+ * routing seam for downstream features: SLA deadlines per type, the auto-send
+ * allow-list, and eventually per-type workflows.
  *
  * Nullable on {@link com.smartfreight.inbox.entity.EmailTicket}: tickets created
- * before 1.4, tickets re-entering via the retry path (classification is not
+ * before typed classification, tickets re-entering via the retry path (classification is not
  * repeated), and IRRELEVANT tickets have no type.
  */
 public enum TicketType {
