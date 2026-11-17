@@ -70,7 +70,8 @@ public class MailboxCredentials {
                 : Integer.toString(Objects.hashCode(mailbox.getPasswordEnc())));
     }
 
-    private static boolean isOAuth(TenantMailbox mailbox) {
+    /** Whether the mailbox signs in with a Microsoft 365 token (XOAUTH2) rather than a password. */
+    public static boolean isOAuth(TenantMailbox mailbox) {
         return mailbox.getAuthType() == MailboxAuthType.MS365_OAUTH;
     }
 }
