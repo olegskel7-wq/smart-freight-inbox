@@ -395,14 +395,19 @@ public interface EmailTicketRepository extends JpaRepository<EmailTicket, Long> 
      * {@code createdAt > since}. {@code @TenantId} scopes the query to the current tenant and
      * {@code @SQLRestriction} adds {@code deleted = false}.
      *
-     * @param email cleaned, lower-cased customer address (matched within the raw senderEmail)
+     * <p>The raw {@code senderEmail} is either the bare address or {@code Name <address>}, so it
+     * matches when it equals the address or ends with {@code <address>} — never as a substring
+     * ({@code jan@x} is not a reply from {@code an@x}), and with no LIKE wildcards to escape.
+     *
+     * @param email cleaned, lower-cased customer address
      * @param since the moment the quote was sent (strictly after)
      * @return true if any qualifying inbound ticket exists
      */
     @Query("SELECT COUNT(t) > 0 FROM EmailTicket t " +
            " WHERE t.proactive = false " +
            "   AND t.createdAt > :since " +
-           "   AND LOWER(t.senderEmail) LIKE CONCAT('%', :email, '%')")
+           "   AND (LOWER(t.senderEmail) = :email " +
+           "        OR RIGHT(LOWER(t.senderEmail), LENGTH(:email) + 2) = CONCAT('<', :email, '>'))")
     boolean existsInboundReplyFrom(@Param("email") String email,
                                    @Param("since") java.time.LocalDateTime since);
 
