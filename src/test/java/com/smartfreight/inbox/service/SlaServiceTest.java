@@ -1,6 +1,8 @@
 package com.smartfreight.inbox.service;
 
+import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketType;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,7 +37,7 @@ class SlaServiceTest {
         properties.getMinutes().put(TicketType.RFQ, 120L);
         properties.getMinutes().put(TicketType.BOOKING_CONFIRM, 30L);
         properties.setDefaultMinutes(480L);
-        slaService = new SlaService(settingsService, properties);
+        slaService = new SlaService(settingsService, properties, new SimpleMeterRegistry());
     }
 
     @Test
@@ -82,5 +84,49 @@ class SlaServiceTest {
         when(settingsService.isFeatureEnabled(SlaService.FEATURE_KEY, true)).thenReturn(false);
 
         assertThat(slaService.isEnabled()).isFalse();
+    }
+
+    // ------------------------------------------------------------ markBreachedIfOverdue
+
+    private static EmailTicket withDeadline(LocalDateTime deadline, boolean breached) {
+        EmailTicket ticket = new EmailTicket();
+        ticket.setSlaDeadlineAt(deadline);
+        ticket.setSlaBreached(breached);
+        return ticket;
+    }
+
+    @Test
+    void markBreachedIfOverdue_pastDeadline_setsTheFlagAndCountsIt() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        SlaService service = new SlaService(settingsService, new SlaProperties(), registry);
+        EmailTicket ticket = withDeadline(RECEIVED, false);
+
+        assertThat(service.markBreachedIfOverdue(ticket, RECEIVED.plusSeconds(1))).isTrue();
+
+        assertThat(ticket.isSlaBreached()).isTrue();
+        assertThat(registry.counter("smartfreight_sla_breached_total").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void markBreachedIfOverdue_atOrBeforeTheDeadline_leavesItAlone() {
+        EmailTicket atDeadline = withDeadline(RECEIVED, false);
+        EmailTicket early = withDeadline(RECEIVED, false);
+
+        assertThat(slaService.markBreachedIfOverdue(atDeadline, RECEIVED)).isFalse();
+        assertThat(slaService.markBreachedIfOverdue(early, RECEIVED.minusMinutes(5))).isFalse();
+
+        assertThat(atDeadline.isSlaBreached()).isFalse();
+        assertThat(early.isSlaBreached()).isFalse();
+    }
+
+    @Test
+    void markBreachedIfOverdue_noDeadlineOrAlreadyFlagged_isANoOp() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        SlaService service = new SlaService(settingsService, new SlaProperties(), registry);
+
+        assertThat(service.markBreachedIfOverdue(withDeadline(null, false), RECEIVED)).isFalse();
+        assertThat(service.markBreachedIfOverdue(withDeadline(RECEIVED.minusHours(1), true), RECEIVED)).isFalse();
+
+        assertThat(registry.counter("smartfreight_sla_breached_total").count()).isZero();
     }
 }

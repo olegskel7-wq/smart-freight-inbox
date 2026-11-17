@@ -9,8 +9,12 @@ import com.smartfreight.inbox.service.FeedbackLoopService;
 import com.smartfreight.inbox.service.KeycloakAdminService;
 import com.smartfreight.inbox.service.QuoteFollowUpService;
 import com.smartfreight.inbox.service.SendRateLimiter;
+import com.smartfreight.inbox.service.SettingsService;
+import com.smartfreight.inbox.service.SlaProperties;
+import com.smartfreight.inbox.service.SlaService;
 import com.smartfreight.inbox.service.TicketAuditService;
 import com.smartfreight.inbox.webhook.WebhookEventPublisher;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +46,7 @@ abstract class TicketApiMockMvcSupport {
     @Mock protected TenantDocumentRepository documentRepository;
     @Mock protected FeedbackLoopService feedbackLoopService;
     @Mock protected KeycloakAdminService keycloakAdminService;
+    @Mock protected SettingsService settingsService;
     @Mock protected WebhookEventPublisher webhookEventPublisher;
 
     protected MockMvc mockMvc;
@@ -50,10 +55,13 @@ abstract class TicketApiMockMvcSupport {
     void setUpMockMvc() {
         TicketDetailAssembler details =
                 new TicketDetailAssembler(emailTicketRepository, documentRepository, keycloakAdminService);
-        TicketApiController controller = new TicketApiController(emailTicketRepository, auditService, details);
+        // Real SLA rule (no I/O): the controllers flag an overdue ticket when they stop its clock.
+        SlaService slaService = new SlaService(settingsService, new SlaProperties(), new SimpleMeterRegistry());
+        TicketApiController controller = new TicketApiController(emailTicketRepository, auditService, details, slaService);
         TicketReplyController replies = new TicketReplyController(
                 emailTicketRepository, emailReplyService, auditService, sendRateLimiter,
-                quoteFollowUpService, documentRepository, feedbackLoopService, webhookEventPublisher, details);
+                quoteFollowUpService, documentRepository, feedbackLoopService, webhookEventPublisher, slaService,
+                details);
         TicketAssignmentController assignments =
                 new TicketAssignmentController(emailTicketRepository, auditService, details);
         mockMvc = MockMvcBuilders.standaloneSetup(controller, replies, assignments)

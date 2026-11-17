@@ -83,6 +83,7 @@ public class AutoSendService {
     private final TicketAuditService auditService;
     private final QuoteFollowUpService quoteFollowUpService;
     private final WebhookEventPublisher webhookEventPublisher;
+    private final SlaService slaService;
     private final Counter autoSentCounter;
     private final Counter autoFailedCounter;
 
@@ -93,6 +94,7 @@ public class AutoSendService {
                            TicketAuditService auditService,
                            QuoteFollowUpService quoteFollowUpService,
                            WebhookEventPublisher webhookEventPublisher,
+                           SlaService slaService,
                            MeterRegistry meterRegistry) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
@@ -101,6 +103,7 @@ public class AutoSendService {
         this.auditService = auditService;
         this.quoteFollowUpService = quoteFollowUpService;
         this.webhookEventPublisher = webhookEventPublisher;
+        this.slaService = slaService;
         this.autoSentCounter = Counter.builder("smartfreight_autosend_total")
                 .description("Automatic reply send results")
                 .tag("result", "sent")
@@ -208,6 +211,7 @@ public class AutoSendService {
             return;
         }
 
+        slaService.markBreachedIfOverdue(ticket, LocalDateTime.now());
         ticket.setStatus(TicketStatus.AUTO_SENT);
         ticket.setUpdatedAt(LocalDateTime.now());
         emailTicketRepository.save(ticket);
