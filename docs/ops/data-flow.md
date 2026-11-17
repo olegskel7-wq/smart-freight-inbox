@@ -34,6 +34,7 @@ flowchart LR
 | Follow-up / shipment-tracking subscriptions (customer email + shipment reference) | `quote_follow_up`, `shipment_watch` | as above | Contract end |
 | Webhook deliveries (ticket number, subject, sender) — only if the client configures a webhook | `webhook_delivery` → the client's own endpoint | HTTPS only, HMAC-signed | Contract end |
 | Mailbox credentials (app password) | `tenant_mailbox` | AES-256-GCM; the key is held outside the database | Mailbox removed / contract end |
+| Microsoft 365 connection: the client's Microsoft organisation id and the e-mail of the administrator who connected it (no password — Microsoft 365 mailboxes sign in with short-lived tokens) | `tenant_ms365_directory` | as above | Contract end |
 | Operator accounts: name, email, role, password hash | Keycloak database | passwords hashed by Keycloak; brute-force protection | Account removed / contract end |
 | Transient: processing queue (ticket numbers only), rate-sheet cache | RabbitMQ, Redis | internal network only | Seconds / 10 minutes |
 | Application logs | container logs on the server | contain ticket/client **numbers**, not email content or customer addresses; web access logs contain client IP addresses | Rotated: 5 × 20 MB per container |

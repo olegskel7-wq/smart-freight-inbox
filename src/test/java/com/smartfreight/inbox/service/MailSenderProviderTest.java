@@ -1,5 +1,6 @@
 package com.smartfreight.inbox.service;
 
+import com.smartfreight.inbox.entity.MailboxAuthType;
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
 import com.smartfreight.inbox.startup.DemoMailProperties;
@@ -40,7 +41,7 @@ class MailSenderProviderTest {
         cipher = mock(SecretCipher.class);
         platformSender = mock(JavaMailSender.class);
         demo = new DemoMailProperties();
-        provider = new MailSenderProvider(mailboxes, cipher, new MailTlsPolicy(demo), platformSender,
+        provider = new MailSenderProvider(mailboxes, new MailboxCredentials(cipher, mock(Ms365TokenProvider.class)), new MailTlsPolicy(demo), platformSender,
                 "platform@smartfreight.com");
     }
 
@@ -129,15 +130,57 @@ class MailSenderProviderTest {
     }
 
     @Test
-    void resolve_cipherNotConfigured_fallsBackWithoutQueryingMailboxes() {
+    void resolve_cipherNotConfigured_fallsBackToPlatform() {
+        // The password could not be decrypted — whether that matters depends on the mailbox's
+        // sign-in type (V38), so the mailbox is looked up and then refused.
         when(cipher.isConfigured()).thenReturn(false);
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(2L))
+                .thenReturn(Optional.of(smtpMailbox(2L, "quotes@acme.co.uk", "quotes@acme.co.uk")));
 
         MailSenderProvider.ResolvedSender resolved = provider.resolve(2L);
 
         assertThat(resolved.sender()).isSameAs(platformSender);
-        // No point reading mailboxes — the password could not be decrypted anyway.
-        verify(mailboxes, never()).findByIdAndEnabledTrueAndSmtpHostIsNotNull(any());
-        verify(mailboxes, never()).findFirstByEnabledTrueAndSmtpHostIsNotNullOrderByIdAsc();
+        verify(cipher, never()).decrypt(any());
+    }
+
+    // --- V38: Microsoft 365 (XOAUTH2) ---------------------------------------------------------
+
+    private static TenantMailbox ms365(TenantMailbox m) {
+        m.setAuthType(MailboxAuthType.MS365_OAUTH);
+        m.setMsDirectoryId("dir-1");
+        m.setPasswordEnc(null);
+        m.setSmtpHost("smtp.office365.com");
+        return m;
+    }
+
+    @Test
+    void resolve_ms365Mailbox_sendsWithXoauth2_andAFreshTokenAtEverySend() {
+        Ms365TokenProvider tokens = mock(Ms365TokenProvider.class);
+        when(tokens.isConfigured()).thenReturn(true);
+        when(tokens.accessToken("dir-1")).thenReturn("token-1", "token-2");
+        MailSenderProvider oauthProvider = new MailSenderProvider(mailboxes, new MailboxCredentials(cipher, tokens),
+                new MailTlsPolicy(demo), platformSender, "platform@smartfreight.com");
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(3L))
+                .thenReturn(Optional.of(ms365(smtpMailbox(3L, "ops@acme.co.uk", null))));
+
+        JavaMailSenderImpl sender = (JavaMailSenderImpl) oauthProvider.resolve(3L).sender();
+
+        assertThat(sender.getJavaMailProperties().getProperty("mail.smtp.auth.mechanisms")).isEqualTo("XOAUTH2");
+        // JavaMailSenderImpl reads getPassword() at every transport connect: the cached sender
+        // outlives the token, so each send must ask again.
+        assertThat(sender.getPassword()).isEqualTo("token-1");
+        assertThat(sender.getPassword()).isEqualTo("token-2");
+        verify(cipher, never()).decrypt(any());
+    }
+
+    @Test
+    void resolve_ms365MailboxWithoutEntraApp_fallsBackToPlatform() {
+        when(cipher.isConfigured()).thenReturn(true);
+        when(mailboxes.findByIdAndEnabledTrueAndSmtpHostIsNotNull(3L))
+                .thenReturn(Optional.of(ms365(smtpMailbox(3L, "ops@acme.co.uk", null))));
+
+        // setUp's token provider is a bare mock: isConfigured() == false, like unset MS365_CLIENT_*.
+        assertThat(provider.resolve(3L).sender()).isSameAs(platformSender);
     }
 
     @Test

@@ -38,7 +38,7 @@ class GmailDraftServiceTest {
         cipher = mock(SecretCipher.class);
         when(settings.isDraftEnabled()).thenReturn(true);
         when(cipher.isConfigured()).thenReturn(true);
-        service = new GmailDraftService(settings, mailboxes, cipher,
+        service = new GmailDraftService(settings, mailboxes, new MailboxCredentials(cipher, mock(Ms365TokenProvider.class)),
                 new MailTlsPolicy(new DemoMailProperties()),
                 new ReplySignatureService(mock(TenantRepository.class)), new SimpleMeterRegistry());
     }

@@ -47,7 +47,7 @@ public class GmailDraftService {
 
     private final SettingsService settingsService;
     private final TenantMailboxRepository mailboxes;
-    private final SecretCipher secretCipher;
+    private final MailboxCredentials credentials;
     private final MailTlsPolicy mailTlsPolicy;
     private final ReplySignatureService signatureService;
     private final Counter draftSavedCounter;
@@ -55,13 +55,13 @@ public class GmailDraftService {
 
     public GmailDraftService(SettingsService settingsService,
                              TenantMailboxRepository mailboxes,
-                             SecretCipher secretCipher,
+                             MailboxCredentials credentials,
                              MailTlsPolicy mailTlsPolicy,
                              ReplySignatureService signatureService,
                              MeterRegistry meterRegistry) {
         this.settingsService = settingsService;
         this.mailboxes = mailboxes;
-        this.secretCipher = secretCipher;
+        this.credentials = credentials;
         this.mailTlsPolicy = mailTlsPolicy;
         this.signatureService = signatureService;
         this.draftSavedCounter = Counter.builder("smartfreight_gmail_draft_total")
@@ -84,9 +84,9 @@ public class GmailDraftService {
             log.debug("Gmail draft saving disabled (notification.draft-enabled=false)");
             return;
         }
-        Optional<TenantMailbox> found = secretCipher.isConfigured()
-                ? Optional.ofNullable(ticket.getMailboxId()).flatMap(mailboxes::findByIdAndEnabledTrue)
-                : Optional.empty();
+        Optional<TenantMailbox> found = Optional.ofNullable(ticket.getMailboxId())
+                .flatMap(mailboxes::findByIdAndEnabledTrue)
+                .filter(credentials::canSignIn);
         if (found.isEmpty()) {
             log.debug("Ticket {} has no usable ingesting mailbox — no draft saved", ticket.getId());
             return;
@@ -96,10 +96,12 @@ public class GmailDraftService {
         Store store = null;
         Folder draftsFolder = null;
         try {
-            Session session = Session.getInstance(buildImapProperties(mailbox.getHost(), mailbox.getPort()));
+            Properties props = buildImapProperties(mailbox.getHost(), mailbox.getPort());
+            credentials.applyImaps(props, mailbox); // XOAUTH2 for a Microsoft 365 mailbox (V38)
+            Session session = Session.getInstance(props);
             store = session.getStore("imaps");
-            store.connect(mailbox.getHost(), mailbox.getPort(), mailbox.getUsername(),
-                    secretCipher.decrypt(mailbox.getPasswordEnc()));
+            // The password, or a current access token — one short connect, so either fits connect().
+            store.connect(mailbox.getHost(), mailbox.getPort(), mailbox.getUsername(), credentials.secret(mailbox));
 
             draftsFolder = findDraftsFolder(store);
             if (draftsFolder == null) {

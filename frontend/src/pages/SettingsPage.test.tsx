@@ -39,7 +39,7 @@ const SETTINGS: Settings = {
     {
       id: 5, host: 'imap.example.com', port: 993, username: 'ops@example.com', sendsAs: null,
       enabled: true, running: true, loginOk: true, lastLoginOkAt: null, loginError: null,
-      smtpHost: null, smtpPort: null, fromAddress: null,
+      smtpHost: null, smtpPort: null, fromAddress: null, authType: 'PASSWORD', msDirectoryId: null,
     },
   ],
 }
@@ -496,5 +496,62 @@ describe('SettingsPage mailboxes', () => {
     const save = posts('/api/settings/prompts')[0]
     expect(save.auth).toBe('Bearer renewed-token')
     expect(save.body).toMatchObject({ extractionPrompt: 'Extract {email} and the job ref' })
+  })
+
+  describe('Microsoft 365 (V38)', () => {
+    const DIR = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const STATUS = { configured: true, directories: [{ directoryId: DIR, boundBy: 'it@contoso.co.uk', boundAt: '2026-11-17T20:00:00' }] }
+
+    beforeEach(() => {
+      const base = respond
+      respond = (method, url) => {
+        if (url === '/api/settings/ms365') return json(STATUS)
+        if (url === '/api/settings/ms365/consent-link') return json({ url: 'https://login.microsoftonline.com/organizations/x' })
+        return base(method, url)
+      }
+    })
+
+    it('creates a consent link to send to the customer administrator', async () => {
+      const user = userEvent.setup()
+      render(<SettingsPage />)
+      await screen.findByText(/connected by it@contoso.co.uk/)
+
+      await user.click(screen.getByRole('button', { name: 'Connect Microsoft 365 organisation' }))
+
+      expect(await screen.findByLabelText('Consent link')).toHaveValue('https://login.microsoftonline.com/organizations/x')
+      expect(posts('/api/settings/ms365/consent-link')).toHaveLength(1)
+    })
+
+    it('adds an M365 mailbox under a connected organisation — no host, no password', async () => {
+      const user = userEvent.setup()
+      render(<SettingsPage />)
+      await screen.findByText(/connected by it@contoso.co.uk/)
+
+      await user.selectOptions(screen.getByLabelText('Microsoft 365 organisation'), DIR)
+      await user.type(screen.getByLabelText('Mailbox address'), 'ops@contoso.co.uk')
+      await user.click(screen.getByRole('button', { name: 'Add Microsoft 365 mailbox' }))
+
+      expect(posts('/api/settings/mailboxes/ms365')).toEqual([
+        expect.objectContaining({ body: { directoryId: DIR, username: 'ops@contoso.co.uk', sendReplies: true, fromAddress: null } }),
+      ])
+    })
+
+    it('edits an M365 row with its own form', async () => {
+      const ms365Row = mailboxRow({ id: 8, host: 'outlook.office365.com', username: 'ops@contoso.co.uk',
+        smtpHost: 'smtp.office365.com', smtpPort: 587, authType: 'MS365_OAUTH', msDirectoryId: DIR })
+      const base = respond
+      respond = (method, url) => url === '/api/settings' ? json({ ...SETTINGS, mailboxes: [ms365Row] }) : base(method, url)
+      const user = userEvent.setup()
+      render(<SettingsPage />)
+      await screen.findByText('Microsoft 365')
+
+      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+      const puts = calls.filter((c) => c.method === 'PUT' && c.url === '/api/settings/mailboxes/8/ms365')
+      expect(puts).toEqual([
+        expect.objectContaining({ body: { directoryId: DIR, username: 'ops@contoso.co.uk', sendReplies: true, fromAddress: null } }),
+      ])
+    })
   })
 })

@@ -55,7 +55,10 @@ public record SettingsResponse(
             String loginError,
             String smtpHost,
             Integer smtpPort,
-            String fromAddress) {
+            String fromAddress,
+            // V38: PASSWORD or MS365_OAUTH, and the bound Microsoft directory of an MS365_OAUTH row.
+            String authType,
+            String msDirectoryId) {
 
         public static MailboxDto from(TenantMailbox m, boolean running, MailboxHealth health) {
             String sendsAs = m.getSmtpHost() == null ? null : m.effectiveFromAddress();
@@ -65,7 +68,8 @@ public record SettingsResponse(
                     health == null ? null : health.up(),
                     health == null ? null : health.lastSuccessAt(),
                     health == null ? null : health.lastError(),
-                    m.getSmtpHost(), m.getSmtpPort(), m.getFromAddress());
+                    m.getSmtpHost(), m.getSmtpPort(), m.getFromAddress(),
+                    m.getAuthType().name(), m.getMsDirectoryId());
         }
     }
 }

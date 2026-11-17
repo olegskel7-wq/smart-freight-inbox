@@ -1,9 +1,11 @@
 package com.smartfreight.inbox.service;
 
+import com.smartfreight.inbox.entity.MailboxAuthType;
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
 import com.smartfreight.inbox.repository.ShipmentWatchRepository;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
+import com.smartfreight.inbox.repository.TenantMs365DirectoryRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,13 +31,16 @@ public class MailboxManagementService {
     private final EmailTicketRepository tickets;
     private final ShipmentWatchRepository watches;
     private final SecretCipher secretCipher;
+    private final TenantMs365DirectoryRepository directories;
 
     public MailboxManagementService(TenantMailboxRepository mailboxes, EmailTicketRepository tickets,
-                                    ShipmentWatchRepository watches, SecretCipher secretCipher) {
+                                    ShipmentWatchRepository watches, SecretCipher secretCipher,
+                                    TenantMs365DirectoryRepository directories) {
         this.mailboxes = mailboxes;
         this.tickets = tickets;
         this.watches = watches;
         this.secretCipher = secretCipher;
+        this.directories = directories;
     }
 
     /** The current tenant's mailboxes, oldest first. */
@@ -95,6 +100,9 @@ public class MailboxManagementService {
     public void update(Long id, String host, Integer port, String username, String rawPassword,
                        String smtpHost, Integer smtpPort, String fromAddress) {
         TenantMailbox mailbox = findInCurrentTenant(id);
+        if (mailbox.getAuthType() == MailboxAuthType.MS365_OAUTH) {
+            throw new IllegalArgumentException("This is a Microsoft 365 mailbox — edit it with the Microsoft 365 form.");
+        }
         Destination before = Destination.of(mailbox);
         applyConfig(mailbox, host, port, username, smtpHost, smtpPort, fromAddress);
         if (!mailbox.getUsername().equalsIgnoreCase(before.username())
@@ -111,6 +119,80 @@ public class MailboxManagementService {
         // Flush now so a (host, username) clash surfaces here as DataIntegrityViolationException
         // (→ 409 in the controller), not later at commit.
         mailboxes.saveAndFlush(mailbox);
+    }
+
+    /** Exchange Online's fixed endpoints for an MS365_OAUTH mailbox (XOAUTH2 on both). */
+    static final String MS365_IMAP_HOST = "outlook.office365.com";
+    static final int MS365_IMAP_PORT = 993;
+    static final String MS365_SMTP_HOST = "smtp.office365.com";
+    static final int MS365_SMTP_PORT = 587;
+
+    /**
+     * Adds a Microsoft 365 mailbox (V38) under a directory this tenant connected through the consent
+     * flow — never under a typed-in one: {@code directoryId} must be one of the tenant's bindings
+     * (and the composite FK enforces the same in the database). No password exists for it; IMAP and
+     * SMTP are Exchange Online's fixed endpoints, SMTP only when {@code sendReplies}.
+     *
+     * @throws IllegalArgumentException on blank input or a directory the tenant has not connected
+     */
+    @Transactional
+    public void createMs365(String directoryId, String username, boolean sendReplies, String fromAddress) {
+        TenantMailbox mailbox = new TenantMailbox();
+        applyMs365(mailbox, directoryId, username, sendReplies, fromAddress);
+        mailbox.setEnabled(true);
+        mailboxes.saveAndFlush(mailbox);
+    }
+
+    /**
+     * Edits a Microsoft 365 mailbox in place (V38): its directory (among the tenant's bindings), the
+     * address, whether it sends replies, and the from-address. The address follows the same freeze as
+     * a password mailbox — once mail has arrived, a new address is a new mailbox.
+     *
+     * @throws MailboxNotFoundException if the id is not one of the caller's mailboxes
+     * @throws MailboxInUseException    when renaming a mailbox that has received mail
+     * @throws IllegalArgumentException on blank input, a directory the tenant has not connected, or a
+     *                                  password mailbox (edited with {@link #update})
+     */
+    @Transactional
+    public void updateMs365(Long id, String directoryId, String username, boolean sendReplies, String fromAddress) {
+        TenantMailbox mailbox = findInCurrentTenant(id);
+        if (mailbox.getAuthType() != MailboxAuthType.MS365_OAUTH) {
+            throw new IllegalArgumentException("This mailbox signs in with a password — edit it with the mailbox form.");
+        }
+        String before = mailbox.getUsername();
+        applyMs365(mailbox, directoryId, username, sendReplies, fromAddress);
+        if (!mailbox.getUsername().equalsIgnoreCase(before)
+                && (tickets.existsByMailboxId(id) || watches.existsByMailboxId(id))) {
+            throw new MailboxInUseException();
+        }
+        mailboxes.saveAndFlush(mailbox);
+    }
+
+    private void applyMs365(TenantMailbox mailbox, String directoryId, String username,
+                            boolean sendReplies, String fromAddress) {
+        if (username == null || username.isBlank() || !username.contains("@")) {
+            throw new IllegalArgumentException("The mailbox address is required (e.g. ops@yourcompany.co.uk).");
+        }
+        String directory = directoryId == null ? "" : directoryId.trim().toLowerCase(java.util.Locale.ROOT);
+        if (directory.isEmpty() || directories.findByDirectoryId(directory).isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Connect this Microsoft 365 organisation first (Settings → Mailboxes → Connect Microsoft 365).");
+        }
+        mailbox.setAuthType(MailboxAuthType.MS365_OAUTH);
+        mailbox.setMsDirectoryId(directory);
+        mailbox.setPasswordEnc(null);
+        mailbox.setHost(MS365_IMAP_HOST);
+        mailbox.setPort(MS365_IMAP_PORT);
+        mailbox.setUsername(username.trim());
+        if (sendReplies) {
+            mailbox.setSmtpHost(MS365_SMTP_HOST);
+            mailbox.setSmtpPort(MS365_SMTP_PORT);
+            mailbox.setFromAddress(fromAddress != null && !fromAddress.isBlank() ? fromAddress.trim() : null);
+        } else {
+            mailbox.setSmtpHost(null);
+            mailbox.setSmtpPort(null);
+            mailbox.setFromAddress(null);
+        }
     }
 
     /**

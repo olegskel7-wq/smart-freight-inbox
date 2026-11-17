@@ -68,7 +68,7 @@ secret_of() { secret_in "$SECRETS_DIR" "$1"; }
 # Optional secrets: the platform mail account, and the backup/alert ones checked by their gates below.
 is_optional() {
     case "$1" in
-        IMAP_PASSWORD|SMTP_PASSWORD|TELEGRAM_*|HEALTHCHECKS_*|BACKUP_*|OFFSITE_*|ANTHROPIC_API_KEY) return 0 ;;
+        IMAP_PASSWORD|SMTP_PASSWORD|TELEGRAM_*|HEALTHCHECKS_*|BACKUP_*|OFFSITE_*|ANTHROPIC_API_KEY|MS365_CLIENT_SECRET) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -159,6 +159,11 @@ case ",$(value_of COMPOSE_PROFILES)," in
 esac
 [ "$(value_of NGINX_HTTP_PORT)" = "80" ] || problem "NGINX_HTTP_PORT must be 80 in $ENV_FILE (Let's Encrypt's http-01 check only connects to port 80)"
 [ -n "$(value_of ACME_STAGING)" ] && problem "ACME_STAGING is set (staging certificates are not trusted by browsers)"
+
+# V38: the Microsoft 365 app is optional, but half of it is a silent failure (no M365 mailbox signs in).
+if [ -n "$(value_of MS365_CLIENT_ID)" ] && [ -z "$(secret_of MS365_CLIENT_SECRET)" ]; then
+    problem "MS365_CLIENT_ID is set but MS365_CLIENT_SECRET is empty — no Microsoft 365 mailbox could sign in (docs/ops/m365-oauth2-setup.md)"
+fi
 
 # Dev-only switches that must be off on a server.
 [ -n "$(value_of USE_SYSTEM_CA_CERTS)" ] && problem "USE_SYSTEM_CA_CERTS is set (dev-only Norton CA trust)"

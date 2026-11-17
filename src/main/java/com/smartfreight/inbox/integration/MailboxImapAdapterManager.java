@@ -2,17 +2,20 @@ package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.service.MailTlsPolicy;
-import com.smartfreight.inbox.service.SecretCipher;
+import com.smartfreight.inbox.service.MailboxCredentials;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.mail.Authenticator;
 import jakarta.mail.MessagingException;
+import jakarta.mail.PasswordAuthentication;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.context.IntegrationFlowContext;
+import org.springframework.integration.mail.dsl.ImapIdleChannelAdapterSpec;
 import org.springframework.integration.mail.dsl.Mail;
 import org.springframework.stereotype.Component;
 
@@ -49,6 +52,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * password, enabled tenant) gets its adapter dropped and rebuilt. The IMAP password is
  * decrypted only here, at adapter build time, and lives solely inside the JavaMail
  * session — never in a field.
+ *
+ * <p>A Microsoft 365 mailbox (V38, {@code MS365_OAUTH}) signs in with XOAUTH2 and an app-only
+ * token that expires within the hour, so nothing is baked into the adapter: its URL carries no
+ * password and a JavaMail {@link Authenticator} asks {@link MailboxCredentials} for a current token
+ * at every connect. JavaMail first retries the token it used last (it keeps it in the store's
+ * URL); once that has expired the login fails and it falls back to the authenticator, so an IDLE
+ * reconnect after an hour costs one rejected attempt, not a dead mailbox.
  */
 @Component
 public class MailboxImapAdapterManager {
@@ -62,7 +72,7 @@ public class MailboxImapAdapterManager {
 
     private final IntegrationFlowContext flowContext;
     private final EmailIngestionService emailIngestionService;
-    private final SecretCipher secretCipher;
+    private final MailboxCredentials credentials;
     private final MailTlsPolicy mailTlsPolicy;
 
     /** mailbox id → fingerprint of the config the running adapter was built from. */
@@ -70,12 +80,12 @@ public class MailboxImapAdapterManager {
 
     public MailboxImapAdapterManager(IntegrationFlowContext flowContext,
                                      EmailIngestionService emailIngestionService,
-                                     SecretCipher secretCipher,
+                                     MailboxCredentials credentials,
                                      MailTlsPolicy mailTlsPolicy,
                                      MeterRegistry meterRegistry) {
         this.flowContext = flowContext;
         this.emailIngestionService = emailIngestionService;
-        this.secretCipher = secretCipher;
+        this.credentials = credentials;
         this.mailTlsPolicy = mailTlsPolicy;
         Gauge.builder("smartfreight_imap_adapters_active", running, Map::size)
                 .description("IMAP IDLE adapters currently registered (one per enabled tenant mailbox)")
@@ -118,14 +128,13 @@ public class MailboxImapAdapterManager {
     }
 
     private void start(TenantMailbox mailbox, String fingerprint) {
-        if (!secretCipher.isConfigured()) {
-            log.warn("Mailbox {} (tenant {}): MAILBOX_ENCRYPTION_KEY is not set — cannot decrypt "
-                    + "credentials, adapter not started", mailbox.getId(), mailbox.getTenantId());
+        if (!credentials.canSignIn(mailbox)) {
+            log.warn("Mailbox {} (tenant {}): {} — cannot sign in, adapter not started",
+                    mailbox.getId(), mailbox.getTenantId(), credentials.missingConfig(mailbox));
             return;
         }
         try {
-            String password = secretCipher.decrypt(mailbox.getPasswordEnc());
-            IntegrationFlow flow = buildFlow(mailbox, password);
+            IntegrationFlow flow = buildFlow(mailbox);
             flowContext.registration(flow).id(FLOW_ID_PREFIX + mailbox.getId()).register();
             running.put(mailbox.getId(), fingerprint);
             log.info("IMAP adapter started: mailbox {} ({}@{}:{}) for tenant {}",
@@ -154,16 +163,23 @@ public class MailboxImapAdapterManager {
      * The same IMAP IDLE pipeline the old static {@code ImapConfig} built, parameterised
      * by mailbox row — plus the tenant binding around ingestion.
      */
-    private IntegrationFlow buildFlow(TenantMailbox mailbox, String password) {
+    private IntegrationFlow buildFlow(TenantMailbox mailbox) {
         Long tenantId = mailbox.getTenantId();
         Long mailboxId = mailbox.getId();
         Instant connectedAt = connectedAt(mailbox);
-        String url = String.format("imaps://%s:%s@%s:%d/INBOX",
-                encode(mailbox.getUsername()), encode(password), mailbox.getHost(), mailbox.getPort());
+        boolean oauth = MailboxCredentials.isOAuth(mailbox);
+        // OAuth: no secret in the URL or the session — the authenticator hands out a fresh token.
+        String password = oauth ? null : credentials.secret(mailbox);
+        String url = String.format("imaps://%s%s@%s:%d/INBOX", encode(mailbox.getUsername()),
+                oauth ? "" : ":" + encode(password), mailbox.getHost(), mailbox.getPort());
 
+        ImapIdleChannelAdapterSpec adapter = Mail.imapIdleAdapter(url)
+                .javaMailProperties(javaMailProperties(mailbox, password));
+        if (oauth) {
+            adapter.javaMailAuthenticator(tokenAuthenticator(mailbox));
+        }
         return IntegrationFlow
-                .from(Mail.imapIdleAdapter(url)
-                        .javaMailProperties(javaMailProperties(mailbox, password))
+                .from(adapter
                         .shouldMarkMessagesAsRead(true)
                         .shouldDeleteMessages(false)
                         .selector(message -> receivedSinceConnection(connectedAt, message))
@@ -172,12 +188,18 @@ public class MailboxImapAdapterManager {
                 .get();
     }
 
-    /** The adapter's JavaMail session config; TLS verification comes from {@link MailTlsPolicy}. */
+    /**
+     * The adapter's JavaMail session config; TLS verification comes from {@link MailTlsPolicy},
+     * the sign-in mechanism from {@link MailboxCredentials}. {@code password} is null for an OAuth
+     * mailbox (its token comes from {@link #tokenAuthenticator} at connect time).
+     */
     Properties javaMailProperties(TenantMailbox mailbox, String password) {
         Properties p = new Properties();
         p.put("mail.store.protocol", "imaps");
         p.put("mail.imaps.user", mailbox.getUsername());
-        p.put("mail.imaps.password", password);
+        if (password != null) {
+            p.put("mail.imaps.password", password);
+        }
         p.put("mail.imaps.auth", "true");
         p.put("mail.imaps.connectiontimeout", "10000");
         p.put("mail.imaps.timeout", "60000");
@@ -185,7 +207,32 @@ public class MailboxImapAdapterManager {
         p.put("mail.imaps.partialfetch", "false");
         p.put("mail.imaps.fetchsize", "1048576");
         mailTlsPolicy.applyImaps(p, mailbox.getHost());
+        credentials.applyImaps(p, mailbox);
         return p;
+    }
+
+    /**
+     * Supplies the current access token at every connect (JavaMail calls it when it has no
+     * password, or when the one it last used is rejected). A token failure — Entra down, consent
+     * revoked — is logged and answered with no credentials: the connect fails, the adapter retries,
+     * and {@code MailboxHealthMonitor} raises the mailbox alert.
+     */
+    Authenticator tokenAuthenticator(TenantMailbox mailbox) {
+        Long mailboxId = mailbox.getId();
+        Long tenantId = mailbox.getTenantId();
+        String username = mailbox.getUsername();
+        return new Authenticator() {
+            @Override
+            protected PasswordAuthentication getPasswordAuthentication() {
+                try {
+                    return new PasswordAuthentication(username, credentials.secret(mailbox));
+                } catch (RuntimeException e) {
+                    log.error("Mailbox {} (tenant {}): no Microsoft 365 access token: {}",
+                            mailboxId, tenantId, e.getMessage());
+                    return null;
+                }
+            }
+        };
     }
 
     /**
@@ -245,7 +292,7 @@ public class MailboxImapAdapterManager {
 
     private static String fingerprint(TenantMailbox mailbox) {
         return mailbox.getTenantId() + "|" + mailbox.getHost() + "|" + mailbox.getPort()
-                + "|" + mailbox.getUsername() + "|" + mailbox.getPasswordEnc().hashCode();
+                + "|" + mailbox.getUsername() + "|" + MailboxCredentials.fingerprint(mailbox);
     }
 
     private static String encode(String value) {

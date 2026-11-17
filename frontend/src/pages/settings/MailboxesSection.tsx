@@ -1,8 +1,10 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import type { MailboxRow, Settings } from '../../types.ts'
 import { formatDateTime } from '../../util/format.ts'
 import MailboxFields from './MailboxFields.tsx'
 import { EMPTY_MAILBOX, type MailboxEdit, type MailboxForms, toEdit, toRequest } from './mailboxForm.ts'
+import { Ms365Fields, Ms365Panel } from './Ms365Mailboxes.tsx'
+import { type Ms365Form, toMs365Form, toMs365Request, useMs365 } from './ms365Form.ts'
 import { SettingsCard } from './SettingsCard.tsx'
 import type { DeleteAndReload, SaveSettings } from './useSettings.ts'
 
@@ -50,6 +52,22 @@ export default function MailboxesSection({ settings, forms, save, deleteAndReloa
   deleteAndReload: DeleteAndReload
 }) {
   const { newMailbox, setNewMailbox, editing, setEditing, addError, setAddError, editError, setEditError } = forms
+  const ms365 = useMs365()
+  // The edit form of an M365 row (its own shape: no host/port/password).
+  const [ms365Editing, setMs365Editing] = useState<(Ms365Form & { id: number }) | null>(null)
+  const [ms365EditError, setMs365EditError] = useState<string | null>(null)
+
+  const updateMs365 = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!ms365Editing) return
+    const { id, ...f } = ms365Editing
+    const saved = await save(
+      (api) => api.put<Settings>(`/api/settings/mailboxes/${id}/ms365`, toMs365Request(f)),
+      'Mailbox updated — changes apply within ~30 seconds.',
+      setMs365EditError,
+    )
+    if (saved) setMs365Editing(null)
+  }
 
   const addMailbox = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -75,8 +93,12 @@ export default function MailboxesSection({ settings, forms, save, deleteAndReloa
 
   const openEdit = (m: MailboxRow | null) => {
     setEditError(null)
-    setEditing(m ? toEdit(m) : null)
+    setMs365EditError(null)
+    const ms365Row = m?.authType === 'MS365_OAUTH'
+    setEditing(m && !ms365Row ? toEdit(m) : null)
+    setMs365Editing(m && ms365Row ? { id: m.id, ...toMs365Form(m) } : null)
   }
+  const editingId = editing?.id ?? ms365Editing?.id
 
   const setEdit = (patch: Partial<MailboxEdit>) =>
     setEditing((prev) => (prev ? { ...prev, ...patch } : prev))
@@ -124,7 +146,10 @@ export default function MailboxesSection({ settings, forms, save, deleteAndReloa
             {settings.mailboxes.map((m) => (
               <Fragment key={m.id}>
               <tr>
-                <td><code>{m.host}</code></td>
+                <td>
+                  <code>{m.host}</code>
+                  {m.authType === 'MS365_OAUTH' && <span className="badge bg-info text-dark ms-1">Microsoft 365</span>}
+                </td>
                 <td>{m.port}</td>
                 <td>{m.username}</td>
                 <td>
@@ -142,9 +167,9 @@ export default function MailboxesSection({ settings, forms, save, deleteAndReloa
                     type="button"
                     className="btn btn-outline-primary btn-sm d-block mb-1 ms-auto"
                     style={{ width: 90 }}
-                    onClick={() => openEdit(editing?.id === m.id ? null : m)}
+                    onClick={() => openEdit(editingId === m.id ? null : m)}
                   >
-                    {editing?.id === m.id ? 'Cancel' : 'Edit'}
+                    {editingId === m.id ? 'Cancel' : 'Edit'}
                   </button>
                   <button
                     type="button"
@@ -185,6 +210,22 @@ export default function MailboxesSection({ settings, forms, save, deleteAndReloa
                   </td>
                 </tr>
               )}
+              {ms365Editing?.id === m.id && ms365.status && (
+                <tr>
+                  <td colSpan={6} className="bg-body-tertiary">
+                    <form onSubmit={updateMs365} className="row g-2 py-1">
+                      <Ms365Fields value={ms365Editing} status={ms365.status} editing error={ms365EditError}
+                                   onChange={(p) => setMs365Editing((prev) => (prev ? { ...prev, ...p } : prev))} />
+                      <div className="col-12">
+                        <button type="submit" className="btn btn-primary btn-sm">Save changes</button>
+                        <button type="button" className="btn btn-link btn-sm" onClick={() => openEdit(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </td>
+                </tr>
+              )}
               </Fragment>
             ))}
           </tbody>
@@ -206,6 +247,9 @@ export default function MailboxesSection({ settings, forms, save, deleteAndReloa
           <span className="form-text ms-2">The password is stored encrypted (AES-256-GCM) and never displayed.</span>
         </div>
       </form>
+
+      <hr />
+      <Ms365Panel status={ms365.status} reload={ms365.reload} save={save} />
     </SettingsCard>
   )
 }

@@ -10,7 +10,9 @@ import com.smartfreight.inbox.repository.TenantMailboxRepository;
 import com.smartfreight.inbox.repository.TenantRepository;
 import com.smartfreight.inbox.service.MailSenderProvider;
 import com.smartfreight.inbox.service.MailTlsPolicy;
+import com.smartfreight.inbox.service.MailboxCredentials;
 import com.smartfreight.inbox.service.MailboxManagementService;
+import com.smartfreight.inbox.service.Ms365TokenProvider;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.startup.DemoMailProperties;
 import org.junit.jupiter.api.AfterEach;
@@ -75,9 +77,10 @@ class TicketMailboxTenantIsolationTest {
 
     @BeforeEach
     void setUp() {
-        provider = new MailSenderProvider(mailboxes, cipher, new MailTlsPolicy(new DemoMailProperties()),
+        provider = new MailSenderProvider(mailboxes, new MailboxCredentials(cipher, mock(Ms365TokenProvider.class)), new MailTlsPolicy(new DemoMailProperties()),
                 platformSender, "platform@smartfreight.com");
-        mailboxService = new MailboxManagementService(mailboxes, tickets, watches, cipher);
+        mailboxService = new MailboxManagementService(mailboxes, tickets, watches, cipher,
+                mock(com.smartfreight.inbox.repository.TenantMs365DirectoryRepository.class));
         tenantA = TenantContext.callAsSystem(
                 () -> tenants.save(Tenant.builder().name("mbx-a-" + UUID.randomUUID()).build()).getId());
         tenantB = TenantContext.callAsSystem(

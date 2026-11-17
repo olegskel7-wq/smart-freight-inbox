@@ -1,12 +1,17 @@
 package com.smartfreight.inbox.integration;
 
+import com.smartfreight.inbox.entity.MailboxAuthType;
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.service.MailTlsPolicy;
+import com.smartfreight.inbox.service.MailboxCredentials;
+import com.smartfreight.inbox.service.Ms365TokenProvider;
 import com.smartfreight.inbox.service.SecretCipher;
 import com.smartfreight.inbox.startup.DemoMailProperties;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.MessagingException;
+import jakarta.mail.PasswordAuthentication;
+import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +50,7 @@ class MailboxImapAdapterManagerTest {
         ingestion = mock(EmailIngestionService.class);
         demo = new DemoMailProperties();
         manager = new MailboxImapAdapterManager(mock(IntegrationFlowContext.class), ingestion,
-                mock(SecretCipher.class), new MailTlsPolicy(demo), new SimpleMeterRegistry());
+                mock(MailboxCredentials.class), new MailTlsPolicy(demo), new SimpleMeterRegistry());
     }
 
     @Test
@@ -138,6 +143,57 @@ class MailboxImapAdapterManagerTest {
         MimeMessage m = mock(MimeMessage.class);
         when(m.getReceivedDate()).thenReturn(Date.from(at));
         return m;
+    }
+
+    // --- V38: Microsoft 365 (XOAUTH2) ---------------------------------------------------------
+
+    /** A manager on REAL credentials logic (cipher + Entra token endpoint mocked). */
+    private MailboxImapAdapterManager oauthManager(Ms365TokenProvider tokens) {
+        return new MailboxImapAdapterManager(mock(IntegrationFlowContext.class), ingestion,
+                new MailboxCredentials(mock(SecretCipher.class), tokens), new MailTlsPolicy(demo),
+                new SimpleMeterRegistry());
+    }
+
+    private static TenantMailbox ms365Mailbox() {
+        TenantMailbox m = mailbox("outlook.office365.com");
+        m.setAuthType(MailboxAuthType.MS365_OAUTH);
+        m.setMsDirectoryId("dir-1");
+        return m;
+    }
+
+    @Test
+    void javaMailProperties_ms365_signsInWithXoauth2_andCarriesNoSecret() {
+        Properties p = oauthManager(mock(Ms365TokenProvider.class)).javaMailProperties(ms365Mailbox(), null);
+
+        assertThat(p.getProperty("mail.imaps.auth.mechanisms")).isEqualTo("XOAUTH2");
+        assertThat(p).doesNotContainKey("mail.imaps.password");
+    }
+
+    @Test
+    void tokenAuthenticator_hasAFreshTokenAtEveryConnect() throws Exception {
+        // IDLE reconnects for hours on one adapter; a token baked in at build time would be dead
+        // after ~1 h. JavaMail asks the authenticator again whenever the last token is rejected.
+        Ms365TokenProvider tokens = mock(Ms365TokenProvider.class);
+        when(tokens.accessToken("dir-1")).thenReturn("token-1", "token-2");
+        Session session = Session.getInstance(new Properties(),
+                oauthManager(tokens).tokenAuthenticator(ms365Mailbox()));
+
+        PasswordAuthentication first = session.requestPasswordAuthentication(null, 993, "imaps", null, null);
+        PasswordAuthentication second = session.requestPasswordAuthentication(null, 993, "imaps", null, null);
+
+        assertThat(first.getUserName()).isEqualTo("inbox@acme.co.uk");
+        assertThat(first.getPassword()).isEqualTo("token-1");
+        assertThat(second.getPassword()).isEqualTo("token-2");
+    }
+
+    @Test
+    void tokenAuthenticator_tokenFailure_meansNoCredentials_notAnEscapingException() {
+        Ms365TokenProvider tokens = mock(Ms365TokenProvider.class);
+        when(tokens.accessToken("dir-1")).thenThrow(new Ms365TokenProvider.Ms365TokenException("consent revoked"));
+        Session session = Session.getInstance(new Properties(),
+                oauthManager(tokens).tokenAuthenticator(ms365Mailbox()));
+
+        assertThat(session.requestPasswordAuthentication(null, 993, "imaps", null, null)).isNull();
     }
 
     private static TenantMailbox mailbox(String host) {

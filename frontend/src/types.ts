@@ -174,6 +174,21 @@ export interface MailboxRow {
   smtpHost: string | null
   smtpPort: number | null
   fromAddress: string | null
+  // V38: how it signs in, and the connected Microsoft organisation of an M365 mailbox.
+  authType: 'PASSWORD' | 'MS365_OAUTH'
+  msDirectoryId: string | null
+}
+
+// Microsoft 365 (V38) — mirrors Ms365ConsentController.Ms365StatusDto.
+export interface Ms365Directory {
+  directoryId: string
+  boundBy: string | null
+  boundAt: string
+}
+
+export interface Ms365Status {
+  configured: boolean
+  directories: Ms365Directory[]
 }
 
 // Rates DTOs — mirror com.smartfreight.inbox.controller.dto. Monetary fields are

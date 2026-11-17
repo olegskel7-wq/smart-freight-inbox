@@ -2,7 +2,7 @@ package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
-import com.smartfreight.inbox.service.SecretCipher;
+import com.smartfreight.inbox.service.MailboxCredentials;
 import com.smartfreight.inbox.tenancy.TenantContext;
 import com.smartfreight.inbox.util.EmailAddressUtils;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -56,7 +56,7 @@ public class MailboxHealthMonitor {
     private static final int MAX_ERROR_CHARS = 200;
 
     private final TenantMailboxRepository mailboxes;
-    private final SecretCipher secretCipher;
+    private final MailboxCredentials credentials;
     private final MailboxImapAdapterManager adapterManager;
     private final MailboxCatchUp catchUp;
     private final MultiGauge upGauge;
@@ -80,13 +80,13 @@ public class MailboxHealthMonitor {
     });
 
     public MailboxHealthMonitor(TenantMailboxRepository mailboxes,
-                                SecretCipher secretCipher,
+                                MailboxCredentials credentials,
                                 MailboxImapAdapterManager adapterManager,
                                 MailboxCatchUp catchUp,
                                 MeterRegistry meterRegistry,
                                 @Value("${mailbox.health-check-interval-ms:300000}") long intervalMs) {
         this.mailboxes = mailboxes;
-        this.secretCipher = secretCipher;
+        this.credentials = credentials;
         this.adapterManager = adapterManager;
         this.catchUp = catchUp;
         this.intervalMs = intervalMs;
@@ -126,10 +126,11 @@ public class MailboxHealthMonitor {
     }
 
     public void probeAll() {
-        if (!secretCipher.isConfigured()) {
-            return; // no adapters run either — nothing to probe
-        }
-        List<TenantMailbox> enabled = TenantContext.callAsSystem(mailboxes::findByEnabledTrue);
+        // A mailbox the platform cannot sign in to (no encryption key / no Entra app) has no adapter
+        // either — nothing to probe, and no false "down" alert for a config that was never there.
+        List<TenantMailbox> enabled = TenantContext.callAsSystem(mailboxes::findByEnabledTrue).stream()
+                .filter(credentials::canSignIn)
+                .toList();
         Set<Long> ids = enabled.stream().map(TenantMailbox::getId).collect(Collectors.toSet());
         health.keySet().retainAll(ids); // deleted / disabled mailboxes drop out of the metrics
 
@@ -145,6 +146,11 @@ public class MailboxHealthMonitor {
             login(mailbox);
             return null;
         } catch (Exception e) {
+            if (e instanceof jakarta.mail.AuthenticationFailedException) {
+                // A rejected Microsoft 365 token (consent revoked, then re-granted) must not be served
+                // from the cache for the rest of its hour — the next connect asks Entra again.
+                credentials.forget(mailbox);
+            }
             String reason = EmailAddressUtils.maskAddresses(String.valueOf(e.getMessage()));
             return reason.length() > MAX_ERROR_CHARS ? reason.substring(0, MAX_ERROR_CHARS) + "…" : reason;
         }
@@ -156,7 +162,9 @@ public class MailboxHealthMonitor {
      * Overridden in tests.
      */
     void login(TenantMailbox mailbox) throws Exception {
-        String password = secretCipher.decrypt(mailbox.getPasswordEnc());
+        // The password, or (V38) a current Microsoft 365 token — a probe is a fresh connect, so the
+        // token goes straight into connect() like a password; XOAUTH2 comes from the adapter's props.
+        String password = credentials.secret(mailbox);
         Properties props = adapterManager.javaMailProperties(mailbox, password);
         props.put("mail.imaps.timeout", "15000"); // a login answers in seconds; the adapter's 60 s is for IDLE
         Session session = Session.getInstance(props);

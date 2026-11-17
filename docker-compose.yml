@@ -80,6 +80,11 @@ services:
       # USE_SYSTEM_CA_CERTS=1 in .env to also trust the *.crt files in certs/extra-ca (e.g. an
       # antivirus that re-signs IMAPS/SMTP traffic) — see certs/extra-ca/README.md. Unset in prod.
       - USE_SYSTEM_CA_CERTS=${USE_SYSTEM_CA_CERTS:-}
+      # V38: our Entra app for Microsoft 365 mailboxes (XOAUTH2); its secret is the MS365_CLIENT_SECRET
+      # file below. Blank = M365 sign-in off. Setup: docs/ops/m365-oauth2-setup.md
+      - MS365_CLIENT_ID=${MS365_CLIENT_ID:-}
+      # Where Microsoft returns the consent flow — the public origin (Gate C3), registered on the app.
+      - MS365_CONSENT_REDIRECT_URI=https://${PUBLIC_HOST:-localhost}/ms365/consent/callback
     volumes:
       - ./certs/extra-ca:/certificates:ro
     # Gate C5: read by Spring's configtree import (application.yaml) — each file becomes the property
@@ -99,6 +104,8 @@ services:
       - SMTP_PASSWORD
       # Optional: the cloud LLM key (L2b). Empty = no tenant can be switched to llm.provider=cloud.
       - ANTHROPIC_API_KEY
+      # Optional: Microsoft 365 mailboxes (V38). Empty = no MS365_OAUTH mailbox can sign in.
+      - MS365_CLIENT_SECRET
     depends_on:
       postgres:
         condition: service_healthy
@@ -709,6 +716,8 @@ secrets:
     file: ${SECRETS_DIR:-./secrets.dev}/PORT_SERVICE_API_KEY
   MAILBOX_ENCRYPTION_KEY:
     file: ${SECRETS_DIR:-./secrets.dev}/MAILBOX_ENCRYPTION_KEY
+  MS365_CLIENT_SECRET:
+    file: ${SECRETS_DIR:-./secrets.dev}/MS365_CLIENT_SECRET
   IMAP_PASSWORD:
     file: ${SECRETS_DIR:-./secrets.dev}/IMAP_PASSWORD
   SMTP_PASSWORD:

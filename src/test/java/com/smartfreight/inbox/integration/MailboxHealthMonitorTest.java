@@ -2,7 +2,7 @@ package com.smartfreight.inbox.integration;
 
 import com.smartfreight.inbox.entity.TenantMailbox;
 import com.smartfreight.inbox.repository.TenantMailboxRepository;
-import com.smartfreight.inbox.service.SecretCipher;
+import com.smartfreight.inbox.service.MailboxCredentials;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.AuthenticationFailedException;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,7 +27,7 @@ import static org.mockito.Mockito.when;
 class MailboxHealthMonitorTest {
 
     private TenantMailboxRepository mailboxes;
-    private SecretCipher cipher;
+    private MailboxCredentials credentials;
     private SimpleMeterRegistry meters;
     private final Set<Long> failing = new HashSet<>();
     private MailboxHealthMonitor monitor;
@@ -34,10 +35,10 @@ class MailboxHealthMonitorTest {
     @BeforeEach
     void setUp() {
         mailboxes = mock(TenantMailboxRepository.class);
-        cipher = mock(SecretCipher.class);
-        when(cipher.isConfigured()).thenReturn(true);
+        credentials = mock(MailboxCredentials.class);
+        when(credentials.canSignIn(any())).thenReturn(true);
         meters = new SimpleMeterRegistry();
-        monitor = new MailboxHealthMonitor(mailboxes, cipher, mock(MailboxImapAdapterManager.class),
+        monitor = new MailboxHealthMonitor(mailboxes, credentials, mock(MailboxImapAdapterManager.class),
                 mock(MailboxCatchUp.class), meters, 300_000) {
             @Override
             void login(TenantMailbox mailbox) throws Exception {
@@ -108,11 +109,24 @@ class MailboxHealthMonitorTest {
     }
 
     @Test
-    void cipherNotConfigured_probesNothing() {
-        when(cipher.isConfigured()).thenReturn(false);
+    void mailboxThePlatformCannotSignInTo_isNotProbed() {
+        // e.g. an MS365_OAUTH mailbox while MS365_CLIENT_ID/SECRET are unset — no adapter runs for it
+        // either, so a probe would only raise a false MailboxDown.
+        when(credentials.canSignIn(any())).thenReturn(false);
+        when(mailboxes.findByEnabledTrue()).thenReturn(List.of(mailbox(5L, 1L)));
 
         monitor.probeAll();
 
-        verify(mailboxes, never()).findByEnabledTrue();
+        assertThat(monitor.health(5L)).isEmpty();
+    }
+
+    @Test
+    void refusedLogin_dropsTheCachedToken() {
+        failing.add(5L);
+        when(mailboxes.findByEnabledTrue()).thenReturn(List.of(mailbox(5L, 1L)));
+
+        monitor.probeAll();
+
+        verify(credentials).forget(org.mockito.ArgumentMatchers.argThat(m -> m.getId() == 5L));
     }
 }
