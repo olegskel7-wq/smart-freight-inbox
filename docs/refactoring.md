@@ -328,8 +328,8 @@ Branch coverage of the classes the plan touches (clean run):
    document — outcomes as enums the controller maps to 200 / 429 / 502 / 404) and `TrainingExampleService` (list,
    delete); `DocumentService` and `RateSheetService` gained list / find / idempotent delete. Controllers keep HTTP:
    parameter sanitising, the JWT (current user, admin check, signature name), status codes, DTOs. Paths, bodies, status
-   codes, messages and `@Transactional` (still on the endpoints; the services join it and carry none, like the
-   pipeline steps) are unchanged. `AdminController` still publishes the retry events itself — services may not depend
+   codes, messages and `@Transactional` (still on the endpoints; the command methods of the services carry
+   their own, which joins the endpoint's — safe for a caller without one) are unchanged. `AdminController` still publishes the retry events itself — services may not depend
    on `messaging`. `ArchitectureTest.controllersDoNotUseRepositories` has no exceptions left. Test bodies untouched:
    the `setUp`s build the real services over the same repository mocks; the document and rate tests keep `store` /
    `importCsv` mocked and delegate the new read / delete methods to a real service over the repository mock, so the

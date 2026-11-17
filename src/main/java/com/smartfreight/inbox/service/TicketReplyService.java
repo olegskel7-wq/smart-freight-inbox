@@ -11,6 +11,7 @@ import com.smartfreight.inbox.webhook.WebhookPayloads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -18,9 +19,9 @@ import java.util.Optional;
 
 /**
  * The operator's reply to a ticket: save, close or send the draft, and pick the on-file document that
- * goes out with it. Each method takes a ticket the caller already loaded and runs in the caller's
- * transaction (no {@code @Transactional} here — the API endpoints hold it), so the send, its audit row,
- * the quote follow-up, the captured correction and the webhooks commit together.
+ * goes out with it. Each method takes a ticket the caller already loaded and runs in one transaction
+ * (it joins the endpoint's), so the send, its audit row, the quote follow-up, the captured correction and
+ * the webhooks commit together.
  */
 @Service
 public class TicketReplyService {
@@ -85,6 +86,7 @@ public class TicketReplyService {
      * @param signedAs   the sending operator's display name for the signature (drafts are unsigned —
      *                   see {@link ReplySignatureService})
      */
+    @Transactional
     public DraftOutcome applyDraft(EmailTicket ticket, String action, String draftReply, String signedAs) {
         if (isTerminal(ticket)) {
             return DraftOutcome.TERMINAL;
@@ -130,6 +132,7 @@ public class TicketReplyService {
      * Attaches an on-file document of the current tenant to the reply, or detaches when
      * {@code documentId} is null.
      */
+    @Transactional
     public AttachOutcome attachDocument(EmailTicket ticket, Long documentId) {
         if (isTerminal(ticket)) {
             return AttachOutcome.TERMINAL;

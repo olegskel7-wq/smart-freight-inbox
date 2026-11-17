@@ -6,15 +6,15 @@ import com.smartfreight.inbox.repository.EmailTicketRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
 /**
  * Operator actions on a ticket that are not the reply: close, delete and the shared-queue
  * ownership (claim / hand-over / release). Each method takes a ticket the caller already loaded,
- * records its audit row and saves; it runs in the caller's transaction (no {@code @Transactional}
- * here — the API endpoints hold it). Who may do what (the admin check on hand-over) is decided by
- * the caller.
+ * records its audit row and saves in one transaction (it joins the endpoint's). Who may do what
+ * (the admin check on hand-over) is decided by the caller.
  */
 @Service
 public class TicketWorkflowService {
@@ -34,6 +34,7 @@ public class TicketWorkflowService {
     }
 
     /** Closes the ticket; AUTO_SENT is terminal, so closing it is a no-op. */
+    @Transactional
     public void close(EmailTicket ticket) {
         if (ticket.getStatus() == TicketStatus.AUTO_SENT) {
             return;
@@ -50,6 +51,7 @@ public class TicketWorkflowService {
      *
      * @return false (nothing deleted) while the ticket is PROCESSING
      */
+    @Transactional
     public boolean delete(EmailTicket ticket) {
         if (ticket.getStatus() == TicketStatus.PROCESSING) {
             return false;
@@ -64,6 +66,7 @@ public class TicketWorkflowService {
      * Gives the ticket to {@code userId} (a Keycloak user UUID). The {@code @PostUpdate} live event
      * refreshes every operator's list. Independent of status — ownership is orthogonal to the lifecycle.
      */
+    @Transactional
     public void assign(EmailTicket ticket, String userId) {
         ticket.setAssigneeUserId(userId);
         ticket.setUpdatedAt(LocalDateTime.now());
@@ -72,6 +75,7 @@ public class TicketWorkflowService {
     }
 
     /** Releases the ticket back to the unclaimed queue. */
+    @Transactional
     public void unassign(EmailTicket ticket) {
         ticket.setAssigneeUserId(null);
         ticket.setUpdatedAt(LocalDateTime.now());
