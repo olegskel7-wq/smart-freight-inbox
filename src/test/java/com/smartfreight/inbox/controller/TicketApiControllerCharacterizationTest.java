@@ -608,6 +608,66 @@ class TicketApiControllerCharacterizationTest extends TicketApiMockMvcSupport {
                 .andExpect(status().isNotFound());
     }
 
+    // ---- SLA: a ticket whose deadline passed is flagged when its clock stops ----
+
+    private EmailTicket overdue(long id) {
+        EmailTicket t = ticket(id, TicketStatus.DRAFT_READY);
+        t.setSlaDeadlineAt(LocalDateTime.now().minusMinutes(1));
+        when(emailTicketRepository.findById(id)).thenReturn(Optional.of(t));
+        return t;
+    }
+
+    @Test
+    void sendPastTheDeadlineFlagsTheBreach() throws Exception {
+        EmailTicket t = overdue(1);
+        when(sendRateLimiter.tryAcquire(1L)).thenReturn(true);
+
+        mockMvc.perform(post("/api/tickets/1/draft")
+                        .contentType("application/json").content("{\"action\":\"send\",\"draftReply\":\"R\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(t.isSlaBreached()).isTrue();
+    }
+
+    @Test
+    void failedSendPastTheDeadlineLeavesTheFlagToTheScheduler() throws Exception {
+        EmailTicket t = overdue(1);
+        when(sendRateLimiter.tryAcquire(anyLong())).thenReturn(true);
+        doThrow(new MailSendException("smtp down")).when(emailReplyService).sendReply(any(), any());
+
+        mockMvc.perform(post("/api/tickets/1/draft")
+                        .contentType("application/json").content("{\"action\":\"send\",\"draftReply\":\"R\"}"))
+                .andExpect(status().isBadGateway());
+
+        // Still open, so the sweep flags it on its next tick.
+        assertThat(t.isSlaBreached()).isFalse();
+    }
+
+    @Test
+    void draftClosePastTheDeadlineFlagsTheBreach() throws Exception {
+        EmailTicket t = overdue(1);
+
+        mockMvc.perform(post("/api/tickets/1/draft")
+                        .contentType("application/json").content("{\"action\":\"close\",\"draftReply\":\"R\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(t.isSlaBreached()).isTrue();
+    }
+
+    @Test
+    void closePastTheDeadlineFlagsTheBreach_closeOnTimeDoesNot() throws Exception {
+        EmailTicket late = overdue(1);
+        EmailTicket onTime = ticket(2, TicketStatus.DRAFT_READY);
+        onTime.setSlaDeadlineAt(LocalDateTime.now().plusHours(1));
+        when(emailTicketRepository.findById(2L)).thenReturn(Optional.of(onTime));
+
+        mockMvc.perform(post("/api/tickets/1/close")).andExpect(status().isOk());
+        mockMvc.perform(post("/api/tickets/2/close")).andExpect(status().isOk());
+
+        assertThat(late.isSlaBreached()).isTrue();
+        assertThat(onTime.isSlaBreached()).isFalse();
+    }
+
     // ---- close ----
 
     @Test

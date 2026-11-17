@@ -12,6 +12,7 @@ import com.smartfreight.inbox.service.FeedbackLoopService;
 import com.smartfreight.inbox.service.QuoteFollowUpService;
 import com.smartfreight.inbox.service.ReplySignatureService;
 import com.smartfreight.inbox.service.SendRateLimiter;
+import com.smartfreight.inbox.service.SlaService;
 import com.smartfreight.inbox.service.TicketAuditService;
 import com.smartfreight.inbox.webhook.WebhookEventPublisher;
 import com.smartfreight.inbox.webhook.WebhookEventType;
@@ -51,6 +52,7 @@ public class TicketReplyController {
     private final TenantDocumentRepository documentRepository;
     private final FeedbackLoopService feedbackLoopService;
     private final WebhookEventPublisher webhookEventPublisher;
+    private final SlaService slaService;
     private final TicketDetailAssembler details;
 
     public TicketReplyController(EmailTicketRepository emailTicketRepository,
@@ -61,6 +63,7 @@ public class TicketReplyController {
                                  TenantDocumentRepository documentRepository,
                                  FeedbackLoopService feedbackLoopService,
                                  WebhookEventPublisher webhookEventPublisher,
+                                 SlaService slaService,
                                  TicketDetailAssembler details) {
         this.emailTicketRepository = emailTicketRepository;
         this.emailReplyService = emailReplyService;
@@ -70,6 +73,7 @@ public class TicketReplyController {
         this.documentRepository = documentRepository;
         this.feedbackLoopService = feedbackLoopService;
         this.webhookEventPublisher = webhookEventPublisher;
+        this.slaService = slaService;
         this.details = details;
     }
 
@@ -106,6 +110,7 @@ public class TicketReplyController {
             try {
                 // Signed as the sending operator (drafts are unsigned — see ReplySignatureService).
                 emailReplyService.sendReply(ticket, ReplySignatureService.displayName(jwt));
+                slaService.markBreachedIfOverdue(ticket, LocalDateTime.now());
                 ticket.setStatus(TicketStatus.CLOSED);
                 log.info("Ticket {} draft sent and closed (API)", id);
                 auditService.record(id, TicketAuditService.ACTION_SEND, "to=" + ticket.getSenderEmail());
@@ -118,6 +123,7 @@ public class TicketReplyController {
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
             }
         } else if ("close".equalsIgnoreCase(action)) {
+            slaService.markBreachedIfOverdue(ticket, LocalDateTime.now());
             ticket.setStatus(TicketStatus.CLOSED);
             auditService.record(id, TicketAuditService.ACTION_CLOSE, null);
         } else {

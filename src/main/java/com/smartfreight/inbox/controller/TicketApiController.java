@@ -7,6 +7,7 @@ import com.smartfreight.inbox.controller.dto.TicketSummaryDto;
 import com.smartfreight.inbox.entity.EmailTicket;
 import com.smartfreight.inbox.entity.enums.TicketStatus;
 import com.smartfreight.inbox.repository.EmailTicketRepository;
+import com.smartfreight.inbox.service.SlaService;
 import com.smartfreight.inbox.service.TicketAuditService;
 import com.smartfreight.inbox.tenancy.TenantClaims;
 import org.slf4j.Logger;
@@ -74,13 +75,16 @@ public class TicketApiController {
     private final EmailTicketRepository emailTicketRepository;
     private final TicketAuditService auditService;
     private final TicketDetailAssembler details;
+    private final SlaService slaService;
 
     public TicketApiController(EmailTicketRepository emailTicketRepository,
                                TicketAuditService auditService,
-                               TicketDetailAssembler details) {
+                               TicketDetailAssembler details,
+                               SlaService slaService) {
         this.emailTicketRepository = emailTicketRepository;
         this.auditService = auditService;
         this.details = details;
+        this.slaService = slaService;
     }
 
     /**
@@ -153,6 +157,7 @@ public class TicketApiController {
     public TicketDetailDto close(@PathVariable Long id) {
         EmailTicket ticket = details.requireTicket(id);
         if (ticket.getStatus() != TicketStatus.AUTO_SENT) {
+            slaService.markBreachedIfOverdue(ticket, LocalDateTime.now());
             ticket.setStatus(TicketStatus.CLOSED);
             ticket.setUpdatedAt(LocalDateTime.now());
             emailTicketRepository.save(ticket);
