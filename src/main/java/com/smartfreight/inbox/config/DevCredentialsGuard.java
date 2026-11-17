@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -81,7 +82,7 @@ public class DevCredentialsGuard {
     static boolean isLocal(String issuer) {
         try {
             String host = URI.create(issuer.trim()).getHost();
-            return host == null || LOCAL_HOSTS.contains(host.toLowerCase());
+            return host == null || LOCAL_HOSTS.contains(host.toLowerCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             // Unparseable issuer: the JwtDecoder will fail on it anyway — don't mask that error here.
             return true;

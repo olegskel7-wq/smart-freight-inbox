@@ -23,6 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -165,7 +166,7 @@ public class QuoteFollowUpScheduler {
 
         // Satisfied — the customer engaged since the quote went out, so no nudge is needed.
         if (emailTicketRepository.existsInboundReplyFrom(
-                followUp.getCustomerEmail().toLowerCase(), followUp.getQuoteSentAt())) {
+                followUp.getCustomerEmail().toLowerCase(Locale.ROOT), followUp.getQuoteSentAt())) {
             followUp.setActive(false);
             followUp.setUpdatedAt(LocalDateTime.now());
             followUpRepository.save(followUp);

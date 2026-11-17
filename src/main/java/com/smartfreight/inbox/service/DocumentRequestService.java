@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -145,7 +146,7 @@ public class DocumentRequestService {
         if (answer == null || answer.isBlank()) {
             return DocumentType.OTHER;
         }
-        String upper = answer.toUpperCase();
+        String upper = answer.toUpperCase(Locale.ROOT);
         DocumentType best = DocumentType.OTHER;
         int bestIdx = Integer.MAX_VALUE;
         for (DocumentType type : DocumentType.values()) {
@@ -155,7 +156,7 @@ public class DocumentRequestService {
             int idx = earliestIndex(upper,
                     type.name(),
                     type.name().replace('_', ' '),
-                    type.getLabel().toUpperCase());
+                    type.getLabel().toUpperCase(Locale.ROOT));
             if (idx >= 0 && idx < bestIdx) {
                 bestIdx = idx;
                 best = type;

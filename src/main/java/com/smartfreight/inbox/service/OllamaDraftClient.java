@@ -43,7 +43,7 @@ public class OllamaDraftClient {
         this.draftingModel = draftingModel;
         this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
                 .description("Ollama response time per model")
-                .tag("model", "llama3.1:8b")
+                .tag("model", draftingModel)
                 .tag("operation", "drafting")
                 .register(meterRegistry);
     }

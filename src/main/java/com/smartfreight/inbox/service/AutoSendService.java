@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
@@ -261,7 +262,7 @@ public class AutoSendService {
         String raw = settingsService.getString(KEY_TYPES, DEFAULT_TYPES);
         EnumSet<TicketType> types = EnumSet.noneOf(TicketType.class);
         for (String name : raw.split(",")) {
-            String trimmed = name.trim().toUpperCase();
+            String trimmed = name.trim().toUpperCase(Locale.ROOT);
             if (trimmed.isEmpty()) {
                 continue;
             }

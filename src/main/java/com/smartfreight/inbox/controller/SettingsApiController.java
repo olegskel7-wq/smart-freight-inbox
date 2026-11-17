@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -80,7 +81,7 @@ public class SettingsApiController {
 
         List<String> validTypes = (request.types() == null ? List.<String>of() : request.types()).stream()
                 .filter(Objects::nonNull)
-                .map(t -> t.trim().toUpperCase())
+                .map(t -> t.trim().toUpperCase(Locale.ROOT))
                 .filter(this::isKnownType)
                 .toList();
 

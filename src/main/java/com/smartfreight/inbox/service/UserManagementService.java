@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -66,7 +67,7 @@ public class UserManagementService {
     public void createUser(String email, OperatorName name, String rawPassword, String role) {
         validatePassword(rawPassword);
         validateRole(role);
-        String normalised = email.trim().toLowerCase();
+        String normalised = email.trim().toLowerCase(Locale.ROOT);
         if (keycloakAdminService.emailExists(normalised)) {
             throw new IllegalArgumentException("User with email " + normalised + " already exists.");
         }

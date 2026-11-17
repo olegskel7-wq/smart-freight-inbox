@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Platform-level tenant administration —
@@ -83,7 +84,7 @@ public class TenantManagementService {
         if (adminEmail == null || adminEmail.isBlank()) {
             throw new IllegalArgumentException("Operator email must not be blank.");
         }
-        String email = adminEmail.trim().toLowerCase();
+        String email = adminEmail.trim().toLowerCase(Locale.ROOT);
         if (keycloakAdminService.emailExists(email)) {
             throw new IllegalArgumentException("User with email " + email + " already exists.");
         }

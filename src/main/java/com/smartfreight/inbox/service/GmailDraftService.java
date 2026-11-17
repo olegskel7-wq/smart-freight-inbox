@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -155,7 +156,7 @@ public class GmailDraftService {
 
         try {
             for (Folder f : store.getDefaultFolder().list("*")) {
-                if (f.getFullName().toLowerCase().contains("draft")) {
+                if (f.getFullName().toLowerCase(Locale.ROOT).contains("draft")) {
                     log.debug("Found Drafts folder by name match: {}", f.getFullName());
                     return f;
                 }

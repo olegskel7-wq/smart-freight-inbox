@@ -25,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -229,7 +230,7 @@ public class StatusWatchScheduler {
         String raw = settingsService.getString(KEY_MILESTONES, DEFAULT_MILESTONES);
         Set<String> result = new java.util.HashSet<>();
         for (String name : raw.split(",")) {
-            String trimmed = name.trim().toUpperCase();
+            String trimmed = name.trim().toUpperCase(Locale.ROOT);
             if (!trimmed.isEmpty()) {
                 result.add(trimmed);
             }

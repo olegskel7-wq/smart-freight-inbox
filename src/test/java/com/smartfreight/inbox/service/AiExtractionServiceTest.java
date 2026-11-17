@@ -2,6 +2,7 @@ package com.smartfreight.inbox.service;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -117,6 +119,20 @@ class AiExtractionServiceTest {
 
         assertEquals("MSCU1234567", result);
         verify(ollamaClients).recordUsage(eq("extraction"), anyString(), any());
+    }
+
+    @Test
+    void timer_isTaggedWithTheConfiguredModel() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        service = new AiExtractionService(ollamaClients, settingsService, registry, "custom-extractor:3b");
+        stubOllama(Map.of("response", "MSCU1234567", "done", true));
+
+        service.extractIdentifier("Please check container MSCU1234567");
+
+        Timer timer = registry.find("smartfreight_ollama_request_seconds")
+                .tags("model", "custom-extractor:3b", "operation", "extraction").timer();
+        assertNotNull(timer);
+        assertEquals(1, timer.count());
     }
 
     /**

@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -176,7 +177,7 @@ public class EmailClassificationService {
                 log.warn("Ollama returned null for classification - treating as relevant (fail-open)");
                 return record(failOpen(typed));
             }
-            answer = String.valueOf(response.getOrDefault("response", "")).trim().toUpperCase();
+            answer = String.valueOf(response.getOrDefault("response", "")).trim().toUpperCase(Locale.ROOT);
         } catch (CallNotPermittedException e) {
             // Breaker OPEN = Ollama is known to be down. Propagate so the pipeline parks the
             // ticket as RETRY_LATER — a real classification verdict will be made
