@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -179,7 +180,7 @@ public class TicketApiController {
     /** The status/assignee-filtered page: {@code mine}, {@code unassigned} or everything. */
     private Page<EmailTicket> filteredPage(String status, String assignee, Jwt jwt, Pageable pageable) {
         TicketStatus statusFilter = parseStatusOrNull(status);
-        String mode = assignee == null ? "all" : assignee.trim().toLowerCase();
+        String mode = assignee == null ? "all" : assignee.trim().toLowerCase(Locale.ROOT);
         if ("mine".equals(mode)) {
             String me = jwt == null ? null : jwt.getSubject();
             return (me == null)
@@ -202,7 +203,7 @@ public class TicketApiController {
         if (view == null || view.isBlank()) {
             return null;
         }
-        return switch (view.trim().toLowerCase()) {
+        return switch (view.trim().toLowerCase(Locale.ROOT)) {
             case "open" -> emailTicketRepository.findByStatusIn(OPEN_STATUSES, pageable);
             case "awaiting" -> emailTicketRepository.findByStatus(TicketStatus.DRAFT_READY, pageable);
             case "breached" -> emailTicketRepository.findByStatusInAndSlaBreachedTrue(OPEN_STATUSES, pageable);
@@ -217,7 +218,7 @@ public class TicketApiController {
             return null;
         }
         try {
-            return TicketStatus.valueOf(raw.trim().toUpperCase());
+            return TicketStatus.valueOf(raw.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return null;
         }

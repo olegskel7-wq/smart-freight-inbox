@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -69,7 +70,7 @@ public class PortServiceItemLookup implements ItemLookupService {
             return Optional.empty();
         }
 
-        String normalized = identifier.trim().toUpperCase();
+        String normalized = identifier.trim().toUpperCase(Locale.ROOT);
 
         try {
             // 4xx ("not found") raises WebClientResponseException, which the breaker config

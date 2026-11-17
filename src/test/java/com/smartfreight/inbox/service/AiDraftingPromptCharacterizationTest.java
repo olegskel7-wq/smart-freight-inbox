@@ -527,9 +527,9 @@ class AiDraftingPromptCharacterizationTest {
         assertEquals(false, body.get("stream"));
         assertEquals(3, body.size());
         verify(ollamaClients).recordUsage("drafting", "custom-model:3b", response);
-        // The timer's model tag is fixed, whatever model is configured.
+        // The timer is tagged with the configured model.
         Timer timer = meterRegistry.find("smartfreight_ollama_request_seconds")
-                .tags("model", "llama3.1:8b", "operation", "drafting").timer();
+                .tags("model", "custom-model:3b", "operation", "drafting").timer();
         assertNotNull(timer);
         assertEquals(1, timer.count());
     }

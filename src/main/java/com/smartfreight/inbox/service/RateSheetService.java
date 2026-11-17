@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -174,7 +175,7 @@ public class RateSheetService {
             throw new IllegalArgumentException("rate must not be negative");
         }
 
-        String currency = optionalValue(record, "currency", "GBP").toUpperCase();
+        String currency = optionalValue(record, "currency", "GBP").toUpperCase(Locale.ROOT);
         if (!currency.matches("[A-Z]{3}")) {
             throw new IllegalArgumentException("currency must be a 3-letter code, got '" + currency + "'");
         }

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Locale;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -192,6 +193,23 @@ class AutoSendServiceTest {
 
         assertThat(service.allowedTypes())
                 .containsExactlyInAnyOrder(TicketType.STATUS_UPDATE, TicketType.RFQ);
+    }
+
+    @Test
+    void lowerCaseTypeNames_parseUnderATurkishDefaultLocale() {
+        // Under tr, "i".toUpperCase() is the dotted "İ", so a locale-dependent parse would drop
+        // invoice_query; the case mapping must not follow the JVM default locale.
+        Locale saved = Locale.getDefault();
+        Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+        try {
+            when(settingsService.getString(eq(AutoSendService.KEY_TYPES), anyString()))
+                    .thenReturn("invoice_query, status_update");
+
+            assertThat(service.allowedTypes())
+                    .containsExactlyInAnyOrder(TicketType.INVOICE_QUERY, TicketType.STATUS_UPDATE);
+        } finally {
+            Locale.setDefault(saved);
+        }
     }
 
     // ---- autoSend: transition + refusal paths -------------------------------------------

@@ -12,6 +12,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -90,7 +91,7 @@ public class AiExtractionService {
                 .register(meterRegistry);
         this.ollamaTimer = Timer.builder("smartfreight_ollama_request_seconds")
                 .description("Ollama response time per model")
-                .tag("model", "qwen2.5:7b")
+                .tag("model", extractionModel)
                 .tag("operation", "extraction")
                 .register(meterRegistry);
     }
@@ -156,7 +157,7 @@ public class AiExtractionService {
                 return rawResponse;
             }
 
-            Matcher m = identifierPattern.matcher(rawResponse.toUpperCase());
+            Matcher m = identifierPattern.matcher(rawResponse.toUpperCase(Locale.ROOT));
             if (m.find()) {
                 log.info("Identifier extracted from LLM response via regex: {}", m.group(1));
                 return m.group(1);
@@ -205,7 +206,7 @@ public class AiExtractionService {
      */
     private String fallbackRegexExtraction(String body, Pattern pattern) {
         fallbackCounter.increment();
-        Matcher m = pattern.matcher(body.toUpperCase());
+        Matcher m = pattern.matcher(body.toUpperCase(Locale.ROOT));
         if (m.find()) {
             log.info("Identifier found via regex fallback: {}", m.group(1));
             return m.group(1);

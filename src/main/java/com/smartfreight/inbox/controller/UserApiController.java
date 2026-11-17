@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * JSON API backing the React {@code /users} page: DTOs over {@code /api/users}, secured by the
@@ -72,7 +73,7 @@ public class UserApiController {
         try {
             userManagementService.createUser(request.email(),
                     OperatorName.of(request.firstName(), request.lastName()), request.password(), role);
-            log.info("User created: {}", request.email().trim().toLowerCase());
+            log.info("User created: {}", request.email().trim().toLowerCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
