@@ -44,16 +44,13 @@ class TicketClassificationStep {
     }
 
     /**
-     * In typed mode the retry path re-enters classification when ticketType
-     * is still null — such a ticket never got a verdict (it was parked by an open
-     * breaker before step 0 completed, or swept out of RECEIVED). This is a first
-     * classification, not a re-judgement: tickets the operator sent back for a redraft
-     * carry their type and are not re-classified. Binary mode persists no verdict
-     * marker, so there the retry path keeps its historical fail-open skip.
+     * The retry path re-enters classification when ticketType is still null — such a ticket never
+     * got a verdict (it was parked by an open breaker before step 0 completed, or swept out of
+     * RECEIVED). This is a first classification, not a re-judgement: tickets the operator sent back
+     * for a redraft carry their type and are not re-classified.
      */
     boolean needsClassification(EmailTicket ticket) {
-        return ticket.getStatus() == TicketStatus.RECEIVED
-                || (ticket.getTicketType() == null && emailClassificationService.isTypedMode());
+        return ticket.getStatus() == TicketStatus.RECEIVED || ticket.getTicketType() == null;
     }
 
     /**
