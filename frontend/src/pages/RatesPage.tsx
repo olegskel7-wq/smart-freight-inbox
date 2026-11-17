@@ -4,8 +4,7 @@ import { usePageData } from '../api/usePageData.ts'
 import PageHeader from '../components/PageHeader.tsx'
 import type { RatesResponse, RateUploadResponse } from '../types.ts'
 import { errorMessage } from '../util/errors.ts'
-
-type Msg = { kind: 'success' | 'danger'; text: string } | null
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
 // Carrier rate sheets: CSV upload, table, per-row + clear-all
 // delete. The sell price and expiry are computed server-side (the margin never reaches the client).
@@ -70,12 +69,7 @@ export default function RatesPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       {importErrors.length > 0 && (
         <div className="alert alert-warning alert-dismissible">

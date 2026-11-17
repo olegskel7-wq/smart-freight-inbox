@@ -5,8 +5,7 @@ import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { KnowledgeResponse } from '../types.ts'
 import { errorMessage } from '../util/errors.ts'
-
-type Msg = { kind: 'success' | 'danger'; text: string } | null
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
 // Knowledge-base management page (docs/adr/0010-rag-feedback-and-knowledge.md). Operators store free-text knowledge
 // (FAQs / policies / quoting rules); the pipeline retrieves the most relevant documents at draft time
@@ -77,12 +76,7 @@ export default function KnowledgePage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="Knowledge base"

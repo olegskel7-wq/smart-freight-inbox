@@ -17,6 +17,7 @@ import TicketsListPage from './TicketsListPage.tsx'
 import TrainingExamplesPage from './TrainingExamplesPage.tsx'
 import UsersPage from './UsersPage.tsx'
 import WebhooksPage from './WebhooksPage.tsx'
+import { type FetchRoute, authOf, held, json, stubFetch } from '../test/fetchStub.ts'
 
 // Pins how every page loads its data today — the request it sends on mount, the loading state, the
 // load error, the refetch when a URL filter changes and the reload after a mutation — as the safety
@@ -44,29 +45,14 @@ vi.mock('react-chartjs-2', () => ({ Bar: () => null }))
 type Call = { method: string; url: string; auth: string | null }
 
 let calls: Call[]
-let routes: Record<string, () => Response | Promise<Response>>
+let routes: Record<string, FetchRoute>
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 const failure = (message: string) => () => json({ error: 'Internal', message }, 500)
-
-// A response the test releases by hand, to look at the page while the request is in flight.
-function held(response: () => Response) {
-  let release = () => {}
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  return { route: () => gate.then(response), release: () => act(async () => release()) }
-}
 
 beforeEach(() => {
   oidc.auth = SIGNED_IN
-  calls = []
   routes = {}
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    const method = init?.method ?? 'GET'
-    calls.push({ method, url, auth: new Headers(init?.headers).get('Authorization') })
-    const route = routes[`${method} ${url}`]
-    return route ? route() : json({ message: `unexpected ${method} ${url}` }, 404)
-  }))
+  calls = stubFetch(routes, (method, url, init) => ({ method, url, auth: authOf(init) }))
 })
 
 afterEach(() => {

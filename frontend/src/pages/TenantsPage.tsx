@@ -5,8 +5,7 @@ import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { Tenant } from '../types.ts'
 import { errorMessage } from '../util/errors.ts'
-
-type Msg = { kind: 'success' | 'danger'; text: string } | null
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
 // Platform admin (SUPER_ADMIN only — enforced by the
 // /api/admin/tenants/** matcher) for tenant onboarding: list every client organisation with its
@@ -52,12 +51,7 @@ export default function TenantsPage() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="Tenants"

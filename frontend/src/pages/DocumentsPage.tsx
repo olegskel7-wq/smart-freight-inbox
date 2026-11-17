@@ -5,8 +5,7 @@ import PageHeader from '../components/PageHeader.tsx'
 import { formatDateTime } from '../util/format.ts'
 import type { DocumentsResponse } from '../types.ts'
 import { errorMessage } from '../util/errors.ts'
-
-type Msg = { kind: 'success' | 'danger'; text: string } | null
+import { PageAlert, type Msg } from '../components/PageAlert.tsx'
 
 function formatSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`
@@ -95,12 +94,7 @@ export default function DocumentsPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      {msg && (
-        <div className={`alert alert-${msg.kind} alert-dismissible`}>
-          {msg.text}
-          <button type="button" className="btn-close" onClick={() => setMsg(null)} />
-        </div>
-      )}
+      <PageAlert msg={msg} onClose={() => setMsg(null)} />
 
       <PageHeader
         title="Document store"

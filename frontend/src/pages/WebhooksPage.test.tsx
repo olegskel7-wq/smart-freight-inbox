@@ -1,9 +1,10 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WebhookDelivery, WebhookSubscription, WebhooksResponse } from '../types.ts'
 import { formatDateTime } from '../util/format.ts'
 import WebhooksPage from './WebhooksPage.tsx'
+import { type FetchRoute, bodyOf as requestBody, held, json, stubFetch } from '../test/fetchStub.ts'
 
 // Pins what the webhooks page shows and sends today — the subscriptions table and its status
 // badges, the add form (all events / picked types, optional fields, the reset after a create), the
@@ -17,29 +18,14 @@ vi.mock('react-oidc-context', () => ({ useAuth: () => oidc.auth }))
 type Call = { method: string; url: string; body: string | null }
 
 let calls: Call[]
-let routes: Record<string, () => Response | Promise<Response>>
+let routes: Record<string, FetchRoute>
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 const failure = (message: string) => () => json({ error: 'Bad Request', message }, 400)
-
-// A response the test releases by hand, to look at the page while the request is in flight.
-function held(response: () => Response) {
-  let release = () => {}
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  return { route: () => gate.then(response), release: () => act(async () => release()) }
-}
 
 beforeEach(() => {
   oidc.auth = { user: { access_token: 'test-token', profile: { sub: 'me' } }, signinRedirect: vi.fn() }
-  calls = []
   routes = { 'GET /api/webhooks': () => json(SNAPSHOT) }
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    const method = init?.method ?? 'GET'
-    calls.push({ method, url, body: typeof init?.body === 'string' ? init.body : null })
-    const route = routes[`${method} ${url}`]
-    return route ? route() : json({ message: `unexpected ${method} ${url}` }, 404)
-  }))
+  calls = stubFetch(routes, (method, url, init) => ({ method, url, body: requestBody(init) }))
 })
 
 afterEach(() => {
