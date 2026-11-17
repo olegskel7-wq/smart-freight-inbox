@@ -171,10 +171,15 @@ public class SettingsApiController {
     /**
      * POST /api/settings/prompts — updates the AI prompt templates. Placeholders ({@code {email}},
      * {@code {itemContext}}, {@code {rateContext}}) are substituted at request time, so editing here
-     * re-tunes the pipeline without a rebuild.
+     * re-tunes the pipeline without a rebuild. Both templates are required (blank is allowed);
+     * a missing one is refused before either is written, so a save is never half-applied.
      */
     @PostMapping("/prompts")
     public SettingsResponse savePrompts(@RequestBody PromptsRequest request) {
+        if (request.extractionPrompt() == null || request.draftingPrompt() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Both extractionPrompt and draftingPrompt are required.");
+        }
         settingsService.setString(SettingsService.KEY_EXTRACTION_PROMPT, request.extractionPrompt());
         settingsService.setString(SettingsService.KEY_DRAFTING_PROMPT, request.draftingPrompt());
         return snapshotAssembler.snapshot();

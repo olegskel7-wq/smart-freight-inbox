@@ -341,6 +341,25 @@ class SettingsApiControllerCharacterizationTest extends SettingsApiMockMvcSuppor
         verify(settingsService).setString(SettingsService.KEY_DRAFTING_PROMPT, "DR");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"{\"extractionPrompt\":\"EX\"}", "{\"draftingPrompt\":\"DR\"}", "{}"})
+    void prompts_missingTemplate_isRefusedBeforeAnythingIsStored(String body) throws Exception {
+        postJson("/api/settings/prompts", body)
+                .andExpect(status().isBadRequest())
+                .andExpect(status().reason("Both extractionPrompt and draftingPrompt are required."));
+
+        verify(settingsService, never()).setString(anyString(), any());
+    }
+
+    @Test
+    void prompts_blankTemplatesAreStillStored() throws Exception {
+        postJson("/api/settings/prompts", "{\"extractionPrompt\":\"\",\"draftingPrompt\":\" \"}")
+                .andExpect(status().isOk());
+
+        verify(settingsService).setString(SettingsService.KEY_EXTRACTION_PROMPT, "");
+        verify(settingsService).setString(SettingsService.KEY_DRAFTING_PROMPT, " ");
+    }
+
     // ------------------------------------------------------------------------- mailboxes
 
     @Test
