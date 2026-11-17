@@ -61,7 +61,7 @@ class AiDraftingServiceTest {
         circuitBreaker = CircuitBreaker.ofDefaults("ollama-test");
         lenient().when(ollamaClients.client()).thenReturn(webClient);
         lenient().when(ollamaClients.circuitBreaker()).thenReturn(circuitBreaker);
-        service = new AiDraftingService(new OllamaDraftClient(ollamaClients,
+        service = new AiDraftingService(new OllamaDraftClient(new LlmClient(ollamaClients),
                 new ReplySignatureService(tenantRepository), new SimpleMeterRegistry(), "llama3.1:8b"),
                 settingsService, CLOCK);
     }

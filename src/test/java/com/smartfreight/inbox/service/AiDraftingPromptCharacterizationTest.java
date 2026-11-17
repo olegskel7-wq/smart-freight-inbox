@@ -74,7 +74,7 @@ class AiDraftingPromptCharacterizationTest {
         lenient().when(ollamaClients.client()).thenReturn(webClient);
         lenient().when(ollamaClients.circuitBreaker()).thenReturn(CircuitBreaker.ofDefaults("ollama-test"));
         meterRegistry = new SimpleMeterRegistry();
-        service = new AiDraftingService(new OllamaDraftClient(ollamaClients,
+        service = new AiDraftingService(new OllamaDraftClient(new LlmClient(ollamaClients),
                 new ReplySignatureService(tenantRepository), meterRegistry, "llama3.1:8b"),
                 settingsService, CLOCK);
     }
@@ -512,7 +512,7 @@ class AiDraftingPromptCharacterizationTest {
 
     @Test
     void ollamaCall_requestShape_metricAndUsage() {
-        service = new AiDraftingService(new OllamaDraftClient(ollamaClients,
+        service = new AiDraftingService(new OllamaDraftClient(new LlmClient(ollamaClients),
                 new ReplySignatureService(tenantRepository), meterRegistry, "custom-model:3b"),
                 settingsService, CLOCK);
         Map<String, Object> response = Map.of("response", "Draft", "done", true);

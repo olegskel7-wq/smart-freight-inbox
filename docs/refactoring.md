@@ -49,6 +49,11 @@ on main `d81a2c4` differed in **1 field out of 18 × 16**: `felixstowe-invoice` 
 difference there is noise; any other difference is a regression until proven otherwise (re-capture once
 to rule out noise).
 
+On the 26-scenario set (17 Nov 2026, L2a) two of the hard cases are just as unstable on unchanged code:
+`felixstowe-hard-reefer-polite` urgency 1 ↔ 2 (and with 2 the escalation auto-assign, so `assigned` and an `ASSIGN`
+audit row follow) and `midlands-hard-vague` urgency 0 ↔ 1 — the older local snapshots (`l1-local-*`, `l1b`, `l1c`)
+already disagree on both. Urgency differences on these three scenarios alone are noise.
+
 Known classifier quirks the baseline records as-is (not to be "fixed" inside a refactoring):
 `felixstowe-general-hazmat` → RFQ (expected GENERAL), `midlands-urgent-damage` → INVOICE_QUERY
 (expected GENERAL).
